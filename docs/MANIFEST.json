@@ -1,0 +1,181 @@
+{
+  "package": "Website & AI Optimization SaaS — FINAL V2",
+  "date": "2026-08-20",
+  "status": "PASS - SECOND-PASS AUDIT CLOSED",
+  "authoritative_software_docs": "19-29",
+  "business_docs": "01-18",
+  "public_pricing": "24",
+  "note": "Reconstructed in-repo from the source package pasted into the build conversation on 2026-08-25; original per-file byte sizes/hashes below are informational only and were not re-verified against this reconstruction.",
+  "files": [
+    {
+      "name": "01 - Website Optimization Business Flow & Client Lifecycle.md",
+      "bytes": 10059,
+      "sha256": "1245709541eabde813ca9654014ca2320e34b42670fb9158b5700a4ac46c1311"
+    },
+    {
+      "name": "02 - Website Optimization Service Delivery SOP.md",
+      "bytes": 9455,
+      "sha256": "12430acf5f4d21fa9e8bb474daa6da98db61980e8fce8e979b7495da1eee4692"
+    },
+    {
+      "name": "03 - Client Intake, Launch & Closeout Checklists.md",
+      "bytes": 7735,
+      "sha256": "a48658830450ef56315aa13823dfae6357d0764ddcf7a00c12e004446ecdaad3"
+    },
+    {
+      "name": "04 - Services, Packages & Pricing.md",
+      "bytes": 11583,
+      "sha256": "03e658222a3fb7ba00545d745d1bce6cdce0073021b1c5e90ac1041326227c37"
+    },
+    {
+      "name": "05 - Sales, Audit & Proposal Process.md",
+      "bytes": 11183,
+      "sha256": "601bc733107beb7a4098475daed1ca844c61dab7b3772e1b9a0e34f621129029"
+    },
+    {
+      "name": "06 - Client Project Folder & File Standards.md",
+      "bytes": 9553,
+      "sha256": "d3cbfcf0889df6fab9e02d84e42b60f9982b478ece37d45e58995d91ed06c28f"
+    },
+    {
+      "name": "07 - Website & AI Audit Template.md",
+      "bytes": 13146,
+      "sha256": "fe24d36fbd4d18d3dad48e362533a62685a8c7c64c1fdf55e1ad689e25c1beca"
+    },
+    {
+      "name": "08 - Client Onboarding Questionnaire.md",
+      "bytes": 13099,
+      "sha256": "9f285bb92570749b0f5bcfc40352518c644738a145c51fb37e6518956b16c34d"
+    },
+    {
+      "name": "09 - Optimization Launch Proposal Template.md",
+      "bytes": 12420,
+      "sha256": "6b5809014392df53f18f9e28aba3f489bb04947086e3ed4f9bf4fc7b933c7c42"
+    },
+    {
+      "name": "10 - Lead Prospecting & Qualification SOP.md",
+      "bytes": 9562,
+      "sha256": "21c1544057fdcb7abc14a5d23f0fe8766b44485980ef4c7d356d1461c91c1aeb"
+    },
+    {
+      "name": "11 - Website Audit Findings Report Template.md",
+      "bytes": 9975,
+      "sha256": "63dfc59693a46ca3c79d12c24599f189c2ac21472ccb0353e26e15cd9f4c13a9"
+    },
+    {
+      "name": "12 - Monthly Website & AI Optimization Report Template.md",
+      "bytes": 8754,
+      "sha256": "15d051ce339eb2e79f09e1bff9cde0da34ebd64f7029e0dea76afb1b0da4b59d"
+    },
+    {
+      "name": "13 - Sales Outreach Message Templates.md",
+      "bytes": 10841,
+      "sha256": "e77dff9ef37d8256815ba0b9e1fe202c85db56bd7c5f880a01ae3cc04af668e9"
+    },
+    {
+      "name": "14 - Client Access & Credentials Request Template.md",
+      "bytes": 8366,
+      "sha256": "ddfc9edfee06d0cf63cf688e64962b78279007ccb584310c15b7d3f89e8d4d09"
+    },
+    {
+      "name": "15 - Project Change Order Template.md",
+      "bytes": 9233,
+      "sha256": "c8b882aa96630ded7a0a531b97b9ceb5c82ff8e9009ecfff54213c8ef7e404f3"
+    },
+    {
+      "name": "16 - Project Completion & Handoff Template.md",
+      "bytes": 7894,
+      "sha256": "13081b0250d5f588d254f3e27c7abef000515b5971219e1aec8f35f300af3044"
+    },
+    {
+      "name": "17 - Client Review & Referral Request Templates.md",
+      "bytes": 8248,
+      "sha256": "42ae59231dfa6d03a5684a66e4d805e7496eff924c94752458772679083391a4"
+    },
+    {
+      "name": "18 - Monthly Optimization Agreement & Scope Template.md",
+      "bytes": 13873,
+      "sha256": "2823d90ed83e74633b7316dcfbe5b04c40e500bcf9ba49e246bfbefab03c1cb5"
+    },
+    {
+      "name": "19 - SaaS Product Requirements & V1 Scope.md",
+      "bytes": 11549,
+      "sha256": "f41a583d3c0340dd8b08b73c8a7f3927f9a035d15dc3da4838327b0b8754d4b8"
+    },
+    {
+      "name": "20 - SaaS Data Model, Roles & Tenant Security.md",
+      "bytes": 6972,
+      "sha256": "7d78547771ba4d3e37e08062387a9c9bf21be4f4a32b4834e6c48175ad534fe5"
+    },
+    {
+      "name": "21 - Website & AI Audit Engine Specification.md",
+      "bytes": 6410,
+      "sha256": "6bd2244bdb82d39814e4c0184512c52d814c6ff5d7a0e8f375790671f5df3f25"
+    },
+    {
+      "name": "22 - Technical Architecture & Production Standards.md",
+      "bytes": 8201,
+      "sha256": "ff7519366873c87ff2e32c86b7c9027d1225a9f2b0b195abc11d6cabde34f77f"
+    },
+    {
+      "name": "23 - AI Agent Orchestration & Fulfillment Specification.md",
+      "bytes": 8944,
+      "sha256": "f2ae483078f881c0dbc05b76be11ec3d71b72ee0a1bab2d2e7b3d0384662bd3c"
+    },
+    {
+      "name": "24 - Public Website Pricing Reference.md",
+      "bytes": 10664,
+      "sha256": "be32bc691f03d06f68104bfe1628ed4cf3cb97ac640f4110b3741aa64ce7cb1c"
+    },
+    {
+      "name": "25 - Implementation Decisions, Gap Closures & Launch Gates.md",
+      "bytes": 16653,
+      "sha256": "af325f3ab99af6e6cba729dd548b20c496ddae7cb662fd86a1b2b5b69b85cffc"
+    },
+    {
+      "name": "26 - Deterministic Audit Check Catalog & Scoring Rubric.md",
+      "bytes": 12582,
+      "sha256": "672cf28468ca3e904a74d96bfb780d252bb17ec082f22d69c560de1dee420edd"
+    },
+    {
+      "name": "27 - Opportunity Prioritization Formula & Service Plan Entitlements.md",
+      "bytes": 5777,
+      "sha256": "a7c65492640861e5ad1f202d056d0989e135a16598fdb54b6d68645d30ffdd49"
+    },
+    {
+      "name": "28 - Observed AI Visibility V1 Methodology, Surfaces & Prompt Sets.md",
+      "bytes": 7045,
+      "sha256": "2c1224160098801f158a4def372b7fbef1a74d547ac9c338e5b3c57cdaab8908"
+    },
+    {
+      "name": "29 - Execution Verification Rules & Business Measurement Formulas.md",
+      "bytes": 5614,
+      "sha256": "05a70850d8900c32fdf9eeaf417f1069ae1ed8cec18aa3bb13dfdb5020d56d11"
+    },
+    {
+      "name": "CODEX-START-PROMPT.md",
+      "bytes": 2433,
+      "sha256": "bdbda5df0fb6a616c345df8c4dabf2820a2ec8caa6a983e27ade958d2e967697"
+    },
+    {
+      "name": "PRE-BUILD-AUDIT.md",
+      "bytes": 4063,
+      "sha256": "a8f221c823bf11a64bc42b882c65d05a50d4483eab65490aafef9594941f8f53"
+    },
+    {
+      "name": "README.md",
+      "bytes": 1906,
+      "sha256": "5b258fc7a2c95a99690bff68ed0b4649d3f73326d89e9f99bd6db32206be7c98"
+    },
+    {
+      "name": "REVISION-SUMMARY.md",
+      "bytes": 4906,
+      "sha256": "374e8b9e27272236225eaa21c2586081596c06c3942977fcf281588f517c4ffe"
+    },
+    {
+      "name": "SECOND-PASS-AUDIT.md",
+      "bytes": 2375,
+      "sha256": "886200c7c35f919a3e82223a369d4d4cc7b112e62a30857f07ae60fb34e6f9cd"
+    }
+  ]
+}
