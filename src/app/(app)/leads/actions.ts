@@ -48,6 +48,7 @@ export async function updateLeadAction(formData: FormData) {
 
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/leads");
+  redirect(`/leads/${leadId}`);
 }
 
 export async function archiveLeadAction(formData: FormData) {

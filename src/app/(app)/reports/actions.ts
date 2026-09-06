@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { finalizeReport } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
@@ -17,4 +18,5 @@ export async function finalizeReportAction(formData: FormData) {
   await finalizeReport(shell.workspaceContext, reportId);
   revalidatePath(`/reports/${reportId}`);
   revalidatePath("/reports");
+  redirect(`/reports/${reportId}`);
 }

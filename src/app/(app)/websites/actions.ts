@@ -43,6 +43,7 @@ export async function updateWebsiteAction(formData: FormData) {
 
   revalidatePath(`/websites/${websiteId}`);
   revalidatePath("/websites");
+  redirect(`/websites/${websiteId}`);
 }
 
 export async function archiveWebsiteAction(formData: FormData) {

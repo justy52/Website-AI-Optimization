@@ -23,6 +23,7 @@ export async function updateClientAction(formData: FormData) {
 
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/clients");
+  redirect(`/clients/${clientId}`);
 }
 
 export async function archiveClientAction(formData: FormData) {

@@ -32,6 +32,7 @@ export async function finalizeAuditAction(formData: FormData) {
 
   await finalizeAudit(shell.workspaceContext, auditId);
   revalidatePath(`/audits/${auditId}`);
+  redirect(`/audits/${auditId}`);
 }
 
 export async function createReportAction(formData: FormData) {
