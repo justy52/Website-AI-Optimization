@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "reports_workspace_audit_unique" ON "reports" USING btree ("workspace_id","audit_id");

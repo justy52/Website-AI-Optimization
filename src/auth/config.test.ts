@@ -2,12 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import { authSchema } from "@/db/schema";
 
-import { GET, POST } from "@/app/api/auth/[...all]/route";
+import {
+  DELETE,
+  GET,
+  PATCH,
+  POST,
+  PUT,
+} from "@/app/api/auth/[...all]/route";
 
 describe("Better Auth foundation", () => {
-  it("wires GET and POST route handlers for the catch-all auth route", () => {
-    expect(typeof GET).toBe("function");
-    expect(typeof POST).toBe("function");
+  it("wires the Better Auth catch-all route handlers", () => {
+    for (const handler of [DELETE, GET, PATCH, POST, PUT]) {
+      expect(typeof handler).toBe("function");
+    }
   });
 
   it("keeps the Better Auth schema tables explicit", () => {

@@ -22,6 +22,27 @@
       "when": 1788725041915,
       "tag": "0002_seed_service_plan_definitions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788728893613,
+      "tag": "0003_phase1_revenue_loop",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788729242618,
+      "tag": "0004_phase1_conversion_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788730107536,
+      "tag": "0005_phase1_report_constraints",
+      "breakpoints": true
     }
   ]
 }

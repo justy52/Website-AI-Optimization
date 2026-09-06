@@ -25,6 +25,12 @@ const memberships: WorkspaceMembershipRecord[] = [
     role: "ANALYST",
     status: "SUSPENDED",
   },
+  {
+    workspaceId: "workspace-d",
+    userId: "user-1",
+    role: "ANALYST",
+    status: "INVITED",
+  },
 ];
 
 describe("workspace membership context resolution", () => {
@@ -45,6 +51,16 @@ describe("workspace membership context resolution", () => {
     });
   });
 
+  it("defaults to the authenticated user's first active membership", () => {
+    const context = resolveWorkspaceContextFromMembership({
+      actor: { userId: "user-1" },
+      memberships,
+    });
+
+    expect(context.workspaceId).toBe("workspace-a");
+    expect(context.userId).toBe("user-1");
+  });
+
   it("rejects unauthenticated access", () => {
     expect(() =>
       resolveWorkspaceContextFromMembership({
@@ -63,6 +79,14 @@ describe("workspace membership context resolution", () => {
         requestedWorkspaceId: "workspace-c",
       }),
     ).toThrow("A valid active workspace membership is required.");
+
+    expect(() =>
+      resolveWorkspaceContextFromMembership({
+        actor: { userId: "user-1" },
+        memberships,
+        requestedWorkspaceId: "workspace-d",
+      }),
+    ).toThrow("A valid active workspace membership is required.");
   });
 
   it("blocks workspace A from reading workspace B by changing a request identifier", () => {
@@ -71,6 +95,16 @@ describe("workspace membership context resolution", () => {
         actor: { userId: "user-1" },
         memberships,
         requestedWorkspaceId: "workspace-b",
+      }),
+    ).toThrow("A valid active workspace membership is required.");
+  });
+
+  it("rejects fabricated workspace identifiers", () => {
+    expect(() =>
+      resolveWorkspaceContextFromMembership({
+        actor: { userId: "user-1" },
+        memberships,
+        requestedWorkspaceId: "workspace-does-not-exist",
       }),
     ).toThrow("A valid active workspace membership is required.");
   });

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "clients_workspace_source_lead_unique" ON "clients" USING btree ("workspace_id","source_lead_id");

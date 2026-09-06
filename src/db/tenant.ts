@@ -9,9 +9,11 @@ export type TenantQueryExecutor = {
   execute(query: SQL): Promise<unknown>;
 };
 
-export type TenantTransactionCapable = {
+export type TenantTransactionCapable<
+  TExecutor extends TenantQueryExecutor = TenantQueryExecutor,
+> = {
   transaction<T>(
-    operation: (tx: TenantQueryExecutor) => Promise<T>,
+    operation: (tx: TExecutor) => Promise<T>,
   ): Promise<T>;
 };
 
@@ -32,10 +34,40 @@ export async function setTenantSessionContext(
   `);
 }
 
-export async function withTenantContext<T>(
-  database: TenantTransactionCapable,
+export async function setAuthenticatedUserBootstrapContext(
+  executor: TenantQueryExecutor,
+  userId: string,
+): Promise<void> {
+  if (!userId) {
+    throw new Error("An authenticated user id is required for membership bootstrap.");
+  }
+
+  await executor.execute(sql`
+    select set_config('app.user_id', ${userId}, true)
+  `);
+}
+
+export async function withAuthenticatedUserBootstrapContext<
+  T,
+  TExecutor extends TenantQueryExecutor,
+>(
+  database: TenantTransactionCapable<TExecutor>,
+  userId: string,
+  operation: (tx: TExecutor) => Promise<T>,
+): Promise<T> {
+  return database.transaction(async (tx) => {
+    await setAuthenticatedUserBootstrapContext(tx, userId);
+    return operation(tx);
+  });
+}
+
+export async function withTenantContext<
+  T,
+  TExecutor extends TenantQueryExecutor,
+>(
+  database: TenantTransactionCapable<TExecutor>,
   context: WorkspaceContext,
-  operation: (tx: TenantQueryExecutor) => Promise<T>,
+  operation: (tx: TExecutor) => Promise<T>,
 ): Promise<T> {
   assertWorkspaceContext(context);
 

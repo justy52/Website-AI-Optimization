@@ -13,6 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { SCORING_DEFINITION_VERSION } from "@/domain/audits/scoring";
 import { SERVICE_PLAN_DEFINITION_VERSION } from "@/domain/service-plans";
 
 export const workspaceRoleEnum = pgEnum("workspace_role", [
@@ -69,6 +70,68 @@ export const integrationStatusEnum = pgEnum("integration_status", [
 ]);
 
 export const actorTypeEnum = pgEnum("actor_type", ["USER", "AGENT", "SYSTEM"]);
+
+export const auditStatusEnum = pgEnum("audit_status", [
+  "DRAFT",
+  "QUEUED",
+  "RUNNING",
+  "REVIEW_REQUIRED",
+  "READY_TO_FINALIZE",
+  "FINALIZED",
+  "FAILED",
+  "CANCELED",
+]);
+
+export const auditRunStatusEnum = pgEnum("audit_run_status", [
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "PARTIAL",
+  "FAILED",
+  "CANCELED",
+]);
+
+export const auditResultStatusEnum = pgEnum("audit_result_status", [
+  "PASS",
+  "WARNING",
+  "FAIL",
+  "ERROR",
+  "UNAVAILABLE",
+  "NOT_APPLICABLE",
+]);
+
+export const auditScoreCategoryEnum = pgEnum("audit_score_category", [
+  "websitePerformance",
+  "seo",
+  "localSearch",
+  "conversion",
+  "aiReadiness",
+  "authority",
+]);
+
+export const auditEvidenceTypeEnum = pgEnum("audit_evidence_type", [
+  "HTTP_RESPONSE",
+  "HTML",
+  "HEADER",
+  "ROBOTS_TXT",
+  "SITEMAP_XML",
+  "STRUCTURED_DATA",
+  "LINK",
+  "TEXT",
+  "ERROR",
+]);
+
+export const findingSeverityEnum = pgEnum("finding_severity", [
+  "CRITICAL",
+  "HIGH",
+  "MEDIUM",
+  "LOW",
+]);
+
+export const reportStatusEnum = pgEnum("report_status", [
+  "DRAFT",
+  "FINALIZED",
+]);
 
 function createdAt() {
   return timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -267,6 +330,10 @@ export const clients = pgTable(
       table.workspaceId,
       table.id,
     ),
+    uniqueIndex("clients_workspace_source_lead_unique").on(
+      table.workspaceId,
+      table.sourceLeadId,
+    ),
     index("clients_workspace_status_idx").on(table.workspaceId, table.status),
     foreignKey({
       columns: [table.workspaceId, table.sourceLeadId],
@@ -313,6 +380,364 @@ export const websites = pgTable(
       foreignColumns: [clients.workspaceId, clients.id],
       name: "websites_client_workspace_fk",
     }).onDelete("cascade"),
+  ],
+);
+
+export const audits = pgTable(
+  "audits",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    websiteId: uuid("website_id").notNull(),
+    title: text("title").notNull(),
+    status: auditStatusEnum("status").notNull().default("DRAFT"),
+    scoringDefinitionVersion: text("scoring_definition_version")
+      .notNull()
+      .default(SCORING_DEFINITION_VERSION),
+    checkCatalogVersion: text("check_catalog_version")
+      .notNull()
+      .default(SCORING_DEFINITION_VERSION),
+    startedByUserId: text("started_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    finalizedByUserId: text("finalized_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("audits_workspace_id_id_unique").on(table.workspaceId, table.id),
+    uniqueIndex("audits_workspace_id_website_id_unique").on(
+      table.workspaceId,
+      table.id,
+      table.websiteId,
+    ),
+    index("audits_workspace_status_idx").on(table.workspaceId, table.status),
+    index("audits_workspace_website_idx").on(
+      table.workspaceId,
+      table.websiteId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.id],
+      name: "audits_website_workspace_fk",
+    }).onDelete("restrict"),
+  ],
+);
+
+export const auditRuns = pgTable(
+  "audit_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    auditId: uuid("audit_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    status: auditRunStatusEnum("status").notNull().default("QUEUED"),
+    scoringDefinitionVersion: text("scoring_definition_version")
+      .notNull()
+      .default(SCORING_DEFINITION_VERSION),
+    checkCatalogVersion: text("check_catalog_version")
+      .notNull()
+      .default(SCORING_DEFINITION_VERSION),
+    collectorVersion: text("collector_version")
+      .notNull()
+      .default("phase1-deterministic-v1.0"),
+    overallScore: integer("overall_score"),
+    provisional: boolean("provisional").notNull().default(true),
+    evidenceCoverageBasisPoints: integer("evidence_coverage_basis_points")
+      .notNull()
+      .default(0),
+    errorSummary: text("error_summary"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("audit_runs_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("audit_runs_workspace_id_id_audit_id_unique").on(
+      table.workspaceId,
+      table.id,
+      table.auditId,
+    ),
+    index("audit_runs_workspace_audit_idx").on(
+      table.workspaceId,
+      table.auditId,
+    ),
+    index("audit_runs_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.auditId, table.websiteId],
+      foreignColumns: [audits.workspaceId, audits.id, audits.websiteId],
+      name: "audit_runs_audit_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const auditEvidence = pgTable(
+  "audit_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    auditRunId: uuid("audit_run_id").notNull(),
+    checkKey: text("check_key"),
+    evidenceType: auditEvidenceTypeEnum("evidence_type").notNull(),
+    sourceUrl: text("source_url"),
+    sourceLabel: text("source_label").notNull(),
+    httpStatus: integer("http_status"),
+    contentHash: text("content_hash"),
+    excerpt: text("excerpt"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    collectedAt: timestamp("collected_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("audit_evidence_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("audit_evidence_workspace_run_idx").on(
+      table.workspaceId,
+      table.auditRunId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.auditRunId],
+      foreignColumns: [auditRuns.workspaceId, auditRuns.id],
+      name: "audit_evidence_run_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const auditCheckResults = pgTable(
+  "audit_check_results",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    auditId: uuid("audit_id").notNull(),
+    auditRunId: uuid("audit_run_id").notNull(),
+    checkKey: text("check_key").notNull(),
+    checkVersion: text("check_version").notNull(),
+    category: auditScoreCategoryEnum("category").notNull(),
+    status: auditResultStatusEnum("status").notNull(),
+    severity: findingSeverityEnum("severity"),
+    maxPenaltyWeight: integer("max_penalty_weight").notNull(),
+    reason: text("reason").notNull(),
+    evidenceRefs: jsonb("evidence_refs").$type<string[]>().notNull().default([]),
+    observedValue: jsonb("observed_value")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("audit_check_results_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("audit_check_results_workspace_run_check_unique").on(
+      table.workspaceId,
+      table.auditRunId,
+      table.checkKey,
+    ),
+    index("audit_check_results_workspace_audit_idx").on(
+      table.workspaceId,
+      table.auditId,
+    ),
+    index("audit_check_results_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.auditRunId, table.auditId],
+      foreignColumns: [
+        auditRuns.workspaceId,
+        auditRuns.id,
+        auditRuns.auditId,
+      ],
+      name: "audit_check_results_run_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const auditCategoryScores = pgTable(
+  "audit_category_scores",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    auditRunId: uuid("audit_run_id").notNull(),
+    category: auditScoreCategoryEnum("category").notNull(),
+    score: integer("score"),
+    evidenceCoverageBasisPoints: integer("evidence_coverage_basis_points")
+      .notNull()
+      .default(0),
+    lowCoverage: boolean("low_coverage").notNull().default(true),
+    applicableMaxPenalty: integer("applicable_max_penalty").notNull(),
+    availableMaxPenalty: integer("available_max_penalty").notNull(),
+    actualPenaltyBasisPoints: integer("actual_penalty_basis_points").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.auditRunId, table.category],
+      name: "audit_category_scores_pk",
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.auditRunId],
+      foreignColumns: [auditRuns.workspaceId, auditRuns.id],
+      name: "audit_category_scores_run_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const auditFindings = pgTable(
+  "audit_findings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    auditId: uuid("audit_id").notNull(),
+    auditRunId: uuid("audit_run_id").notNull(),
+    checkResultId: uuid("check_result_id").notNull(),
+    checkKey: text("check_key").notNull(),
+    severity: findingSeverityEnum("severity").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    evidenceRefs: jsonb("evidence_refs").$type<string[]>().notNull().default([]),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("audit_findings_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("audit_findings_workspace_run_check_unique").on(
+      table.workspaceId,
+      table.auditRunId,
+      table.checkKey,
+    ),
+    index("audit_findings_workspace_audit_idx").on(
+      table.workspaceId,
+      table.auditId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.checkResultId],
+      foreignColumns: [auditCheckResults.workspaceId, auditCheckResults.id],
+      name: "audit_findings_check_result_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const auditSnapshots = pgTable(
+  "audit_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    auditId: uuid("audit_id").notNull(),
+    auditRunId: uuid("audit_run_id").notNull(),
+    scoringDefinitionVersion: text("scoring_definition_version").notNull(),
+    checkCatalogVersion: text("check_catalog_version").notNull(),
+    snapshot: jsonb("snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    snapshotHash: text("snapshot_hash").notNull(),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("audit_snapshots_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("audit_snapshots_workspace_audit_unique").on(
+      table.workspaceId,
+      table.auditId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.auditRunId, table.auditId],
+      foreignColumns: [
+        auditRuns.workspaceId,
+        auditRuns.id,
+        auditRuns.auditId,
+      ],
+      name: "audit_snapshots_run_workspace_fk",
+    }).onDelete("restrict"),
+  ],
+);
+
+export const reports = pgTable(
+  "reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    auditId: uuid("audit_id").notNull(),
+    auditRunId: uuid("audit_run_id").notNull(),
+    auditSnapshotId: uuid("audit_snapshot_id"),
+    status: reportStatusEnum("status").notNull().default("DRAFT"),
+    title: text("title").notNull(),
+    executiveSummary: text("executive_summary").notNull(),
+    methodologyVersion: text("methodology_version").notNull(),
+    reportData: jsonb("report_data")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    finalizedByUserId: text("finalized_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("reports_workspace_id_id_unique").on(table.workspaceId, table.id),
+    uniqueIndex("reports_workspace_audit_unique").on(
+      table.workspaceId,
+      table.auditId,
+    ),
+    index("reports_workspace_audit_idx").on(table.workspaceId, table.auditId),
+    index("reports_workspace_status_idx").on(table.workspaceId, table.status),
+    foreignKey({
+      columns: [table.workspaceId, table.auditRunId, table.auditId],
+      foreignColumns: [
+        auditRuns.workspaceId,
+        auditRuns.id,
+        auditRuns.auditId,
+      ],
+      name: "reports_run_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.auditSnapshotId],
+      foreignColumns: [auditSnapshots.workspaceId, auditSnapshots.id],
+      name: "reports_snapshot_workspace_fk",
+    }).onDelete("restrict"),
   ],
 );
 
