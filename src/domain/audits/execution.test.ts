@@ -87,6 +87,7 @@ describe("Phase 1 deterministic audit execution", () => {
     expect(statusOf(result, "seo.title")).toBe("PASS");
     expect(statusOf(result, "seo.meta_description")).toBe("PASS");
     expect(statusOf(result, "seo.heading_structure")).toBe("PASS");
+    expect(statusOf(result, "seo.internal_links")).toBe("PASS");
     expect(statusOf(result, "conv.primary_cta")).toBe("PASS");
     expect(statusOf(result, "conv.mobile_contact")).toBe("PASS");
     expect(statusOf(result, "local.structured_business_data")).toBe("PASS");
@@ -108,6 +109,7 @@ describe("Phase 1 deterministic audit execution", () => {
     expect(statusOf(result, "seo.robots_sitemap")).toBe("WARNING");
     expect(statusOf(result, "seo.canonical")).toBe("WARNING");
     expect(statusOf(result, "seo.title")).toBe("WARNING");
+    expect(statusOf(result, "seo.internal_links")).toBe("FAIL");
     expect(statusOf(result, "conv.primary_cta")).toBe("FAIL");
     expect(statusOf(result, "perf.lcp")).toBe("UNAVAILABLE");
     expect(statusOf(result, "local.gbp_presence")).toBe("NOT_APPLICABLE");

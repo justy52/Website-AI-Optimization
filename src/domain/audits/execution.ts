@@ -89,7 +89,6 @@ const unsupportedCheckReasons: Record<string, string> = {
   "perf.cls": "Core Web Vitals are unavailable until an official lab or field data source is connected.",
   "perf.mobile_render": "Mobile rendering requires a browser/lab runner that is not part of Phase 1.",
   "perf.critical_functionality": "Critical functionality checks require configured forms or browser workflows.",
-  "seo.internal_links": "A meaningful internal-link graph requires a bounded crawler, which is deferred.",
   "seo.content_targeting": "Content targeting requires approved service/location facts and intent evidence.",
   "local.business_identity": "Business identity scoring requires verified business facts.",
   "local.gbp_presence": "Google Business Profile evidence requires a read-only integration.",
@@ -253,6 +252,24 @@ function hasContactFallback(analysis: PageAnalysis): boolean {
   return analysis.anchors.some((anchor) =>
     /^(tel:|mailto:)|contact/i.test(anchor.href) || /contact|email|phone/i.test(anchor.text),
   );
+}
+
+function sameHostInternalLinks(analysis: PageAnalysis, pageUrl: string) {
+  const page = new URL(pageUrl);
+
+  return analysis.anchors.flatMap((anchor) => {
+    try {
+      const url = new URL(anchor.href, page);
+
+      if (!["http:", "https:"].includes(url.protocol) || url.hostname !== page.hostname) {
+        return [];
+      }
+
+      return [{ href: url.toString(), text: anchor.text }];
+    } catch {
+      return [];
+    }
+  });
 }
 
 function evaluateImplementedCheck(
@@ -445,6 +462,37 @@ function evaluateImplementedCheck(
       return result(check, "PASS", "A single H1 heading was found on the homepage.", {
         evidenceRefs: ["homepage-html"],
         observedValue: { h1: analysis.h1[0] },
+      });
+    }
+
+    case "seo.internal_links": {
+      const internalLinks = sameHostInternalLinks(analysis, page.finalUrl);
+      const pageUrl = new URL(page.finalUrl);
+      const navigationalLinks = internalLinks.filter((link) => {
+        const linkUrl = new URL(link.href);
+        return (
+          linkUrl.pathname !== pageUrl.pathname ||
+          linkUrl.search !== pageUrl.search ||
+          !linkUrl.hash
+        );
+      });
+
+      if (navigationalLinks.length > 0) {
+        return result(check, "PASS", "Same-host internal links were found in the homepage HTML.", {
+          evidenceRefs: ["homepage-html"],
+          observedValue: { internalLinkCount: internalLinks.length },
+        });
+      }
+
+      if (internalLinks.length > 0) {
+        return result(check, "WARNING", "Only same-page internal links were found on the homepage.", {
+          evidenceRefs: ["homepage-html"],
+          observedValue: { internalLinkCount: internalLinks.length },
+        });
+      }
+
+      return result(check, "FAIL", "No same-host internal links were found in the homepage HTML.", {
+        evidenceRefs: ["homepage-html"],
       });
     }
 
