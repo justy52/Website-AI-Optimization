@@ -4,22 +4,29 @@ Multi-tenant SaaS for running website + AI-search optimization as a service, usi
 
 ## Status
 
-Early build. The complete, audited specification lives in [`docs/`](./docs) and is the source of truth. The visual/UX target is [`design/matrix-console.jsx`](./design/matrix-console.jsx).
+Phase 0 scaffold active. The complete, audited specification lives in [`docs/`](./docs) and is the source of truth. The visual/UX target is [`design/matrix-console.jsx`](./design/matrix-console.jsx).
+
+Current implementation includes the Next.js application shell, environment validation, Better Auth route wiring, Drizzle schema/migrations, workspace-scoped tenant helpers, versioned scoring/priority/service-plan definitions, and initial unit tests. Phase 0 does not implement audit execution, lead management, reports, billing, third-party workflows, or agents.
 
 ## Stack
 
-Next.js (App Router) - TypeScript - Tailwind + shadcn/ui - Neon Postgres + Drizzle - Better Auth - Vercel (Workflows, Cron, Blob, AI Gateway) - Vercel AI SDK - Vitest + Playwright - pnpm.
+Next.js (App Router) - TypeScript - Tailwind + shadcn/ui - Neon Postgres + Drizzle - Better Auth - Vercel-ready infrastructure - Vitest now, Playwright for later critical browser flows - pnpm.
 
 ## Getting started
 
 ```bash
-pnpm install
-cp .env.example .env.local     # then fill in values - see ENVIRONMENT-SETUP.md
-pnpm db:migrate                # apply Drizzle migrations
-pnpm dev                       # http://localhost:3000
+corepack pnpm install
+cp .env.example .env.local        # then fill in values - see ENVIRONMENT-SETUP.md
+corepack pnpm db:migrate          # apply Drizzle migrations after DATABASE_URL is set
+corepack pnpm dev                 # http://localhost:3000
 ```
 
-(Scripts above are the intended interface; they're created during Phase 0.)
+Useful checks:
+
+```bash
+corepack pnpm verify              # lint, typecheck, unit tests, migration check
+corepack pnpm build               # production build
+```
 
 ## Documentation
 
@@ -38,4 +45,4 @@ pnpm dev                       # http://localhost:3000
 
 ## Build order
 
-Ship the revenue slice first - **Lead -> Client -> Website -> Audit -> Report** - then layer agents, monitoring, and EXECUTE actions per the phase plan in the build prompt.
+Phase 0 stops at foundation. The future revenue slice starts after this baseline is reviewed: **Lead -> Client -> Website -> Audit -> Report**, then agents, monitoring, and EXECUTE actions per the phase plan.

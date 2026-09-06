@@ -10,7 +10,6 @@ out/
 dist/
 build/
 *.tsbuildinfo
-next-env.d.ts
 
 # Environment & secrets - NEVER commit real values
 .env
@@ -33,6 +32,7 @@ test-results/
 
 # Logs
 *.log
+*.err
 npm-debug.log*
 pnpm-debug.log*
 

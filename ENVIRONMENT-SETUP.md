@@ -2,7 +2,7 @@
 
 Set these up as you go. **Nothing here belongs in Git.** Keep real values in `.env.local` (local) and in Vercel project environment variables (QA / Production). Use separate credentials per environment - never point QA or preview at the production database.
 
-Copy `.env.example` to `.env.local` and fill it in. `.env.example` holds only placeholder keys, and it is safe to commit.
+Copy `.env.example` to `.env.local` and fill it in. `.env.example` holds variable names only, and it is safe to commit.
 
 ## Accounts you'll need
 
@@ -15,22 +15,26 @@ Copy `.env.example` to `.env.local` and fill it in. `.env.example` holds only pl
 | **Perplexity** | Sonar API - first AI-visibility surface | Phase 4 |
 | **Google AI (Gemini)** | Gemini API + Search grounding - third AI-visibility surface | Phase 4 |
 
-You do **not** need every key on day one. Phases 0-1 (the first revenue slice: Lead -> Client -> Website -> Audit -> Report) only need Vercel, Neon, and an AI provider key.
+You do **not** need every key on day one. Phase 0 needs application, authentication, database, and encryption variables only. AI provider keys stay blank until a later implementation phase requires them.
 
 ## Core variables
 
 ```
 # --- Database (Neon) ---
-DATABASE_URL=postgres://...                 # pooled connection string
-DATABASE_URL_UNPOOLED=postgres://...        # direct connection, for migrations
+# Pooled connection string.
+DATABASE_URL=
+# Direct connection string for migrations.
+DATABASE_URL_UNPOOLED=
 
 # --- Auth (self-hosted Better Auth) ---
-BETTER_AUTH_SECRET=                         # generate: openssl rand -base64 32
-BETTER_AUTH_URL=http://localhost:3000       # set to real URL per environment
+# Generate with openssl rand -base64 32.
+BETTER_AUTH_SECRET=
+BETTER_AUTH_URL=
 
 # --- Encryption for stored integration secrets (docs/25 section 7) ---
-CREDENTIAL_ENCRYPTION_KEY=                  # 32-byte key, authenticated encryption; rotate-able
-CREDENTIAL_KEY_VERSION=1
+# 32-byte key, authenticated encryption, rotate-able.
+CREDENTIAL_ENCRYPTION_KEY=
+CREDENTIAL_KEY_VERSION=
 
 # --- AI (via Vercel AI Gateway) ---
 AI_GATEWAY_API_KEY=
@@ -40,8 +44,8 @@ OPENAI_API_KEY=
 BLOB_READ_WRITE_TOKEN=
 
 # --- App ---
-NODE_ENV=development
-APP_ENV=local                               # local | qa | production
+NODE_ENV=
+APP_ENV=
 ```
 
 ## Added in later phases (leave blank until then)

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788724975180,
+      "tag": "0000_phase0_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788724989289,
+      "tag": "0001_phase0_rls_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788725041915,
+      "tag": "0002_seed_service_plan_definitions",
+      "breakpoints": true
+    }
+  ]
+}
