@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
+import type { LookupAddress, LookupOptions } from "node:dns";
 import { lookup } from "node:dns/promises";
+import http from "node:http";
+import https from "node:https";
+import type { IncomingHttpHeaders } from "node:http";
 import { isIP } from "node:net";
+import type { LookupFunction } from "node:net";
 
 export type SafeFetchErrorCode =
   | "INVALID_SCHEME"
@@ -37,9 +42,33 @@ export type SafeFetchOptions = {
   maxRedirects?: number;
   maxBytes?: number;
   timeoutMs?: number;
-  fetchImpl?: typeof fetch;
   lookupHost?: (hostname: string) => Promise<string[]>;
+  requestImpl?: PinnedHttpRequest;
 };
+
+type ValidatedAddress = {
+  address: string;
+  family: 4 | 6;
+};
+
+export type PinnedHttpRequestOptions = {
+  timeoutMs: number;
+  maxBytes: number;
+  headers: Record<string, string>;
+  lookup: LookupFunction;
+  validatedAddresses: ValidatedAddress[];
+};
+
+export type PinnedHttpResponse = {
+  status: number;
+  headers: Record<string, string>;
+  bodyText: string;
+};
+
+export type PinnedHttpRequest = (
+  url: URL,
+  options: PinnedHttpRequestOptions,
+) => Promise<PinnedHttpResponse>;
 
 const defaultMaxRedirects = 5;
 const defaultMaxBytes = 1_000_000;
@@ -206,14 +235,14 @@ function assertHttpUrl(url: URL): void {
 }
 
 async function defaultLookupHost(hostname: string): Promise<string[]> {
-  const addresses = await lookup(hostname, { all: true, verbatim: false });
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
   return addresses.map((address) => address.address);
 }
 
-export async function assertSafePublicUrl(
+async function resolveSafePublicAddresses(
   url: URL,
   lookupHost: (hostname: string) => Promise<string[]> = defaultLookupHost,
-): Promise<void> {
+): Promise<ValidatedAddress[]> {
   assertHttpUrl(url);
 
   const hostname = normalizeHostname(url.hostname);
@@ -229,7 +258,7 @@ export async function assertSafePublicUrl(
       throw new SafeFetchError("BLOCKED_HOST", "Private or local IP targets are blocked.");
     }
 
-    return;
+    return [{ address: hostname, family: ipVersion as 4 | 6 }];
   }
 
   let addresses: string[];
@@ -247,48 +276,153 @@ export async function assertSafePublicUrl(
   if (addresses.some((address) => isBlockedIpAddress(address))) {
     throw new SafeFetchError("BLOCKED_HOST", "Resolved private or local IP targets are blocked.");
   }
+
+  return addresses.map((address) => {
+    const family = isIP(address);
+
+    if (family !== 4 && family !== 6) {
+      throw new SafeFetchError("DNS_UNAVAILABLE", "Website host resolved to an invalid address.");
+    }
+
+    return { address, family };
+  });
 }
 
-function selectedHeaders(headers: Headers): Record<string, string> {
+export async function assertSafePublicUrl(
+  url: URL,
+  lookupHost: (hostname: string) => Promise<string[]> = defaultLookupHost,
+): Promise<void> {
+  await resolveSafePublicAddresses(url, lookupHost);
+}
+
+function selectedHeaders(headers: IncomingHttpHeaders): Record<string, string> {
   const selected = ["content-type", "x-robots-tag", "location"];
 
   return Object.fromEntries(
     selected.flatMap((header) => {
-      const value = headers.get(header);
-      return value ? [[header, value]] : [];
+      const value = headers[header];
+      if (!value) return [];
+      return [[header, Array.isArray(value) ? value.join(", ") : String(value)]];
     }),
   );
 }
 
-async function readLimitedText(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) {
-    return "";
-  }
+function createPinnedLookup(
+  expectedHostname: string,
+  validatedAddresses: ValidatedAddress[],
+): LookupFunction {
+  const normalizedExpected = normalizeHostname(expectedHostname);
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const chunks: string[] = [];
-  let bytesRead = 0;
+  return (hostname: string, options: LookupOptions, callback) => {
+    const normalizedRequested = normalizeHostname(hostname);
+    const all = typeof options === "object" && options?.all === true;
+    const family =
+      typeof options === "object" && (options.family === 4 || options.family === 6)
+        ? options.family
+        : undefined;
+    const candidates = family
+      ? validatedAddresses.filter((address) => address.family === family)
+      : validatedAddresses;
+    const error = Object.assign(new Error("Pinned DNS lookup rejected the target."), {
+      code: "ENOTFOUND",
+    }) as NodeJS.ErrnoException;
 
-  while (true) {
-    const { done, value } = await reader.read();
-
-    if (done) break;
-
-    bytesRead += value.byteLength;
-
-    if (bytesRead > maxBytes) {
-      throw new SafeFetchError(
-        "RESPONSE_TOO_LARGE",
-        "Website response exceeded the configured size limit.",
-      );
+    if (normalizedRequested !== normalizedExpected || candidates.length === 0) {
+      queueMicrotask(() => callback(error, all ? [] : "", family ?? 0));
+      return;
     }
 
-    chunks.push(decoder.decode(value, { stream: true }));
-  }
+    if (all) {
+      const addresses: LookupAddress[] = candidates.map((address) => ({
+        address: address.address,
+        family: address.family,
+      }));
+      queueMicrotask(() => callback(null, addresses));
+      return;
+    }
 
-  chunks.push(decoder.decode());
-  return chunks.join("");
+    const selected = candidates[0];
+    queueMicrotask(() => callback(null, selected.address, selected.family));
+  };
+}
+
+const requestHeaders = {
+  accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
+  "user-agent": "OPTIQ-Phase1-Audit/1.0",
+} as const;
+
+const defaultPinnedRequest: PinnedHttpRequest = (url, options) =>
+  new Promise((resolve, reject) => {
+    const transport = url.protocol === "https:" ? https : http;
+    const requestRef: { current?: http.ClientRequest } = {};
+    const timeout = setTimeout(() => {
+      requestRef.current?.destroy(
+        new SafeFetchError("TIMEOUT", "Website fetch timed out."),
+      );
+    }, options.timeoutMs);
+    const clearRequestTimeout = () => {
+      clearTimeout(timeout);
+    };
+    timeout.unref?.();
+
+    const request = transport.request(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port || undefined,
+        path: `${url.pathname}${url.search}`,
+        method: "GET",
+        headers: options.headers,
+        lookup: options.lookup,
+        servername: url.protocol === "https:" ? url.hostname : undefined,
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        let bytesRead = 0;
+
+        response.on("data", (chunk: Buffer) => {
+          bytesRead += chunk.byteLength;
+
+          if (bytesRead > options.maxBytes) {
+            response.destroy(
+              new SafeFetchError(
+                "RESPONSE_TOO_LARGE",
+                "Website response exceeded the configured size limit.",
+              ),
+            );
+            return;
+          }
+
+          chunks.push(chunk);
+        });
+
+        response.on("end", () => {
+          clearRequestTimeout();
+          resolve({
+            status: response.statusCode ?? 0,
+            headers: selectedHeaders(response.headers),
+            bodyText: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+
+        response.on("error", (error) => {
+          clearRequestTimeout();
+          reject(error);
+        });
+      },
+    );
+    requestRef.current = request;
+
+    request.on("error", (error) => {
+      clearRequestTimeout();
+      reject(error);
+    });
+
+    request.end();
+  });
+
+function redirectLocation(headers: Record<string, string>): string | undefined {
+  return headers.location;
 }
 
 export async function safeFetchText(
@@ -298,7 +432,7 @@ export async function safeFetchText(
   const maxRedirects = options.maxRedirects ?? defaultMaxRedirects;
   const maxBytes = options.maxBytes ?? defaultMaxBytes;
   const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const requestImpl = options.requestImpl ?? defaultPinnedRequest;
   const lookupHost = options.lookupHost ?? defaultLookupHost;
   const redirects: string[] = [];
   const visited = new Set<string>();
@@ -306,7 +440,7 @@ export async function safeFetchText(
   let currentUrl = new URL(input);
 
   for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
-    await assertSafePublicUrl(currentUrl, lookupHost);
+    const validatedAddresses = await resolveSafePublicAddresses(currentUrl, lookupHost);
 
     const current = currentUrl.toString();
 
@@ -316,22 +450,30 @@ export async function safeFetchText(
 
     visited.add(current);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    let response: Response;
+    let response: PinnedHttpResponse;
+    let timeout: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        reject(new SafeFetchError("TIMEOUT", "Website fetch timed out."));
+      }, timeoutMs);
+
+      timeout.unref?.();
+    });
 
     try {
-      response = await fetchImpl(currentUrl, {
-        redirect: "manual",
-        signal: controller.signal,
-        headers: {
-          accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
-          "user-agent": "OPTIQ-Phase1-Audit/1.0",
-        },
-      });
+      response = await Promise.race([
+        requestImpl(currentUrl, {
+          timeoutMs,
+          maxBytes,
+          headers: requestHeaders,
+          lookup: createPinnedLookup(currentUrl.hostname, validatedAddresses),
+          validatedAddresses,
+        }),
+        timeoutPromise,
+      ]);
     } catch (error) {
-      if (controller.signal.aborted) {
-        throw new SafeFetchError("TIMEOUT", "Website fetch timed out.");
+      if (error instanceof SafeFetchError) {
+        throw error;
       }
 
       throw new SafeFetchError(
@@ -339,11 +481,20 @@ export async function safeFetchText(
         error instanceof Error ? error.message : "Website fetch failed.",
       );
     } finally {
-      clearTimeout(timeout);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (Buffer.byteLength(response.bodyText, "utf8") > maxBytes) {
+      throw new SafeFetchError(
+        "RESPONSE_TOO_LARGE",
+        "Website response exceeded the configured size limit.",
+      );
     }
 
     if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
+      const location = redirectLocation(response.headers);
 
       if (!location) {
         throw new SafeFetchError("FETCH_FAILED", "Redirect response was missing a location.");
@@ -358,15 +509,13 @@ export async function safeFetchText(
       continue;
     }
 
-    const bodyText = await readLimitedText(response, maxBytes);
-
     return {
       requestedUrl,
       finalUrl: current,
       status: response.status,
-      headers: selectedHeaders(response.headers),
-      bodyText,
-      contentHash: createHash("sha256").update(bodyText).digest("hex"),
+      headers: response.headers,
+      bodyText: response.bodyText,
+      contentHash: createHash("sha256").update(response.bodyText).digest("hex"),
       redirects,
     };
   }

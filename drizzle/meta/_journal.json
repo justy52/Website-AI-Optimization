@@ -43,6 +43,13 @@
       "when": 1788730107536,
       "tag": "0005_phase1_report_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788730231890,
+      "tag": "0006_phase1_security_hardening",
+      "breakpoints": true
     }
   ]
 }

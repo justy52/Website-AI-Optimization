@@ -1,21 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { safeFetchText, SafeFetchError } from "./safe-fetch";
+import {
+  safeFetchText,
+  SafeFetchError,
+  type PinnedHttpRequest,
+  type PinnedHttpResponse,
+} from "./safe-fetch";
 
 const publicLookup = async () => ["93.184.216.34"];
 
-function textResponse(body: string, init?: ResponseInit) {
-  return new Response(body, init);
+function textResponse(
+  bodyText: string,
+  init: {
+    status?: number;
+    headers?: Record<string, string>;
+  } = {},
+): PinnedHttpResponse {
+  return {
+    status: init.status ?? 200,
+    headers: init.headers ?? {},
+    bodyText,
+  };
 }
 
 describe("safeFetchText SSRF guard", () => {
   it("rejects non-http schemes before fetching", async () => {
-    const fetchImpl = vi.fn<typeof fetch>();
+    const requestImpl = vi.fn<PinnedHttpRequest>();
 
     await expect(
-      safeFetchText("file:///etc/passwd", { fetchImpl }),
+      safeFetchText("file:///etc/passwd", { requestImpl }),
     ).rejects.toMatchObject({ code: "INVALID_SCHEME" });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(requestImpl).not.toHaveBeenCalled();
   });
 
   it("blocks localhost and loopback targets", async () => {
@@ -55,7 +70,7 @@ describe("safeFetchText SSRF guard", () => {
   });
 
   it("revalidates redirects and blocks redirect-to-private targets", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+    const requestImpl = vi.fn<PinnedHttpRequest>().mockResolvedValue(
       textResponse("", {
         status: 302,
         headers: { location: "http://127.0.0.1/admin" },
@@ -63,12 +78,12 @@ describe("safeFetchText SSRF guard", () => {
     );
 
     await expect(
-      safeFetchText("https://example.com", { fetchImpl, lookupHost: publicLookup }),
+      safeFetchText("https://example.com", { requestImpl, lookupHost: publicLookup }),
     ).rejects.toMatchObject({ code: "BLOCKED_HOST" });
   });
 
   it("detects redirect loops", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+    const requestImpl = vi.fn<PinnedHttpRequest>().mockResolvedValue(
       textResponse("", {
         status: 302,
         headers: { location: "https://example.com/" },
@@ -77,7 +92,7 @@ describe("safeFetchText SSRF guard", () => {
 
     await expect(
       safeFetchText("https://example.com/", {
-        fetchImpl,
+        requestImpl,
         lookupHost: publicLookup,
         maxRedirects: 5,
       }),
@@ -85,8 +100,8 @@ describe("safeFetchText SSRF guard", () => {
   });
 
   it("limits redirect chains", async () => {
-    const fetchImpl = vi
-      .fn<typeof fetch>()
+    const requestImpl = vi
+      .fn<PinnedHttpRequest>()
       .mockResolvedValueOnce(
         textResponse("", { status: 302, headers: { location: "/one" } }),
       )
@@ -96,7 +111,7 @@ describe("safeFetchText SSRF guard", () => {
 
     await expect(
       safeFetchText("https://example.com", {
-        fetchImpl,
+        requestImpl,
         lookupHost: publicLookup,
         maxRedirects: 1,
       }),
@@ -106,7 +121,7 @@ describe("safeFetchText SSRF guard", () => {
   it("rejects oversized responses while reading", async () => {
     await expect(
       safeFetchText("https://example.com", {
-        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(textResponse("x".repeat(12))),
+        requestImpl: vi.fn<PinnedHttpRequest>().mockResolvedValue(textResponse("x".repeat(12))),
         lookupHost: publicLookup,
         maxBytes: 10,
       }),
@@ -114,18 +129,11 @@ describe("safeFetchText SSRF guard", () => {
   });
 
   it("times out slow fetches", async () => {
-    const fetchImpl = vi.fn<typeof fetch>(
-      (_input, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => {
-            reject(new DOMException("Aborted", "AbortError"));
-          });
-        }),
-    );
+    const requestImpl = vi.fn<PinnedHttpRequest>(() => new Promise(() => undefined));
 
     await expect(
       safeFetchText("https://example.com", {
-        fetchImpl,
+        requestImpl,
         lookupHost: publicLookup,
         timeoutMs: 1,
       }),
@@ -134,7 +142,7 @@ describe("safeFetchText SSRF guard", () => {
 
   it("returns bounded response evidence for public websites", async () => {
     const result = await safeFetchText("https://example.com", {
-      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(
+      requestImpl: vi.fn<PinnedHttpRequest>().mockResolvedValue(
         textResponse("<html><title>Example</title></html>", {
           headers: { "content-type": "text/html" },
         }),
@@ -146,6 +154,106 @@ describe("safeFetchText SSRF guard", () => {
     expect(result.status).toBe(200);
     expect(result.headers).toEqual({ "content-type": "text/html" });
     expect(result.contentHash).toHaveLength(64);
+  });
+
+  it("pins the connection lookup to the validated public DNS answer", async () => {
+    const lookupHost = vi
+      .fn<() => Promise<string[]>>()
+      .mockResolvedValueOnce(["93.184.216.34"]);
+    const requestImpl = vi.fn<PinnedHttpRequest>(
+      async (_url, { lookup, validatedAddresses }) => {
+        const connected = await new Promise<{ address: string; family: number }>(
+          (resolve, reject) => {
+            lookup("example.com", { family: 4 }, (error, address, family) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+
+              resolve({ address: address as string, family: family ?? 0 });
+            });
+          },
+        );
+
+        expect(validatedAddresses).toEqual([
+          { address: "93.184.216.34", family: 4 },
+        ]);
+        expect(connected).toEqual({ address: "93.184.216.34", family: 4 });
+
+        return textResponse("ok", { headers: { "content-type": "text/plain" } });
+      },
+    );
+
+    await expect(
+      safeFetchText("https://example.com", {
+        lookupHost,
+        requestImpl,
+      }),
+    ).resolves.toMatchObject({ bodyText: "ok" });
+
+    expect(lookupHost).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not perform a second unvalidated DNS lookup that can rebind to private IPs", async () => {
+    const lookupHost = vi
+      .fn<() => Promise<string[]>>()
+      .mockResolvedValueOnce(["93.184.216.34"])
+      .mockResolvedValueOnce(["127.0.0.1"]);
+    const requestImpl = vi.fn<PinnedHttpRequest>(
+      async (_url, { lookup }) => {
+        const connected = await new Promise<{ address: string; family: number }>(
+          (resolve, reject) => {
+            lookup("example.com", {}, (error, address, family) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+
+              resolve({ address: address as string, family: family ?? 0 });
+            });
+          },
+        );
+
+        expect(connected.address).toBe("93.184.216.34");
+        expect(connected.address).not.toBe("127.0.0.1");
+
+        return textResponse("ok");
+      },
+    );
+
+    await expect(
+      safeFetchText("https://example.com", { lookupHost, requestImpl }),
+    ).resolves.toMatchObject({ bodyText: "ok" });
+
+    expect(lookupHost).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a transport lookup request for a hostname outside the validated target", async () => {
+    const requestImpl = vi.fn<PinnedHttpRequest>(
+      async (_url, { lookup }) => {
+        await expect(
+          new Promise((resolve, reject) => {
+            lookup("127.0.0.1", {}, (error, address) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+
+              resolve(address);
+            });
+          }),
+        ).rejects.toMatchObject({ code: "ENOTFOUND" });
+
+        return textResponse("ok");
+      },
+    );
+
+    await expect(
+      safeFetchText("https://example.com", {
+        lookupHost: publicLookup,
+        requestImpl,
+      }),
+    ).resolves.toMatchObject({ bodyText: "ok" });
   });
 
   it("uses typed SafeFetchError values", async () => {

@@ -50,7 +50,10 @@ describe("phase 0 migrations", () => {
   });
 
   it("keeps membership bootstrap scoped to the authenticated user without opening writes", () => {
-    const migration = readMigration("0003_phase1_revenue_loop.sql");
+    const migration = [
+      readMigration("0003_phase1_revenue_loop.sql"),
+      readMigration("0006_phase1_security_hardening.sql"),
+    ].join("\n");
 
     expect(migration).toContain("CREATE OR REPLACE FUNCTION public.current_app_user_id()");
     expect(migration).toContain(
@@ -67,6 +70,16 @@ describe("phase 0 migrations", () => {
     expect(migration).toContain(
       'CREATE POLICY "workspace_memberships_workspace_context_delete"',
     );
+    expect(migration).toContain(
+      'CREATE POLICY "workspaces_bootstrap_active_membership_select"',
+    );
+    expect(migration).toContain("public.current_app_workspace_id() IS NULL");
+    expect(migration).toContain('"workspace_memberships"."workspace_id" = "workspaces"."id"');
+    expect(migration).toContain('"workspace_memberships"."user_id" = public.current_app_user_id()');
+    expect(migration).toContain('"workspace_memberships"."status" = \'ACTIVE\'');
+    expect(migration).toContain('"archived_at" IS NULL');
+    expect(migration).toContain('"deletion_pending_at" IS NULL');
+    expect(migration).not.toMatch(/SECURITY\s+DEFINER/i);
   });
 
   it("keeps service-plan seed initialization idempotent", () => {
@@ -139,6 +152,7 @@ describe("phase 0 migrations", () => {
       readMigration("0003_phase1_revenue_loop.sql"),
       readMigration("0004_phase1_conversion_constraints.sql"),
       readMigration("0005_phase1_report_constraints.sql"),
+      readMigration("0006_phase1_security_hardening.sql"),
     ].join("\n");
 
     expect(migration).not.toMatch(/\bDROP\s+(TABLE|TYPE|SCHEMA|DATABASE)\b/i);
