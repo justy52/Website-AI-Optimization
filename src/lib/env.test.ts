@@ -31,8 +31,21 @@ describe("server environment validation", () => {
         BETTER_AUTH_SECRET: "short",
         BETTER_AUTH_URL: "https://example.invalid",
         CREDENTIAL_ENCRYPTION_KEY: "short",
-        BLOB_READ_WRITE_TOKEN: "placeholder",
       }),
     ).toThrow("BETTER_AUTH_SECRET must be at least 32 characters long.");
+  });
+
+  it("does not require later-phase blob storage for QA startup", () => {
+    const env = getServerEnv({
+      APP_ENV: "qa",
+      DATABASE_URL: "postgres://example.invalid/app",
+      DATABASE_URL_UNPOOLED: "postgres://example.invalid/app",
+      BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+      BETTER_AUTH_URL: "https://qa.example.invalid",
+      CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
+    });
+
+    expect(env.APP_ENV).toBe("qa");
+    expect(env.BLOB_READ_WRITE_TOKEN).toBeUndefined();
   });
 });

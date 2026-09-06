@@ -43,17 +43,12 @@ const rawEnvSchema = z.object({
   GEMINI_API_KEY: optionalNonEmpty,
 });
 
-const phaseZeroRequiredKeys = [
+const deployedRequiredKeys = [
   "DATABASE_URL",
   "DATABASE_URL_UNPOOLED",
   "BETTER_AUTH_SECRET",
   "BETTER_AUTH_URL",
   "CREDENTIAL_ENCRYPTION_KEY",
-] as const;
-
-const deployedRequiredKeys = [
-  ...phaseZeroRequiredKeys,
-  "BLOB_READ_WRITE_TOKEN",
 ] as const;
 
 export type AppEnv = "local" | "qa" | "production";
@@ -110,9 +105,7 @@ function assertRequiredValues(
   env: z.infer<typeof rawEnvSchema>,
   appEnv: AppEnv,
 ): asserts env is ServerEnv {
-  const requiredKeys =
-    appEnv === "local" ? phaseZeroRequiredKeys : deployedRequiredKeys;
-  const missing = requiredKeys.filter((key) => !env[key]);
+  const missing = deployedRequiredKeys.filter((key) => !env[key]);
 
   if (missing.length > 0) {
     throw new Error(
