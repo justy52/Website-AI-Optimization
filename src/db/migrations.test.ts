@@ -27,6 +27,15 @@ function readMigration(name: string): string {
   return readFileSync(join(process.cwd(), "drizzle", name), "utf8");
 }
 
+function expectBefore(sql: string, earlier: string, later: string): void {
+  const earlierIndex = sql.indexOf(earlier);
+  const laterIndex = sql.indexOf(later);
+
+  expect(earlierIndex).toBeGreaterThanOrEqual(0);
+  expect(laterIndex).toBeGreaterThanOrEqual(0);
+  expect(earlierIndex).toBeLessThan(laterIndex);
+}
+
 describe("phase 0 migrations", () => {
   it("enables and forces RLS on every tenant-owned table", () => {
     const migration = [
@@ -123,6 +132,42 @@ describe("phase 0 migrations", () => {
     );
     expect(migration).toContain(
       'CONSTRAINT "reports_run_workspace_fk" FOREIGN KEY ("workspace_id","audit_run_id","audit_id")',
+    );
+  });
+
+  it("creates composite unique indexes before foreign keys that depend on them", () => {
+    const phase0 = readMigration("0000_phase0_foundation.sql");
+    const phase1 = readMigration("0003_phase1_revenue_loop.sql");
+
+    expectBefore(
+      phase0,
+      'CREATE UNIQUE INDEX "leads_workspace_id_id_unique"',
+      'CONSTRAINT "clients_source_lead_workspace_fk"',
+    );
+    expectBefore(
+      phase0,
+      'CREATE UNIQUE INDEX "clients_workspace_id_id_unique"',
+      'CONSTRAINT "websites_client_workspace_fk"',
+    );
+    expectBefore(
+      phase0,
+      'CREATE UNIQUE INDEX "websites_workspace_id_id_unique"',
+      'CONSTRAINT "integration_connections_website_workspace_fk"',
+    );
+    expectBefore(
+      phase1,
+      'CREATE UNIQUE INDEX "audits_workspace_id_website_id_unique"',
+      'CONSTRAINT "audit_runs_audit_workspace_fk"',
+    );
+    expectBefore(
+      phase1,
+      'CREATE UNIQUE INDEX "audit_runs_workspace_id_id_audit_id_unique"',
+      'CONSTRAINT "reports_run_workspace_fk"',
+    );
+    expectBefore(
+      phase1,
+      'CREATE UNIQUE INDEX "audit_snapshots_workspace_id_id_unique"',
+      'CONSTRAINT "reports_snapshot_workspace_fk"',
     );
   });
 

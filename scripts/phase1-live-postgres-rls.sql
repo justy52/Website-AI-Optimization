@@ -13,6 +13,57 @@ VALUES
 COMMIT;
 
 BEGIN;
+DO $$
+DECLARE
+  role_record record;
+  unforced_tables text[];
+BEGIN
+  SELECT rolname, rolsuper, rolbypassrls
+  INTO role_record
+  FROM pg_roles
+  WHERE rolname = current_user;
+
+  IF role_record.rolsuper OR role_record.rolbypassrls THEN
+    RAISE EXCEPTION 'RLS proof role % bypasses RLS: rolsuper=%, rolbypassrls=%',
+      role_record.rolname,
+      role_record.rolsuper,
+      role_record.rolbypassrls;
+  END IF;
+
+  WITH tenant_tables(name) AS (
+    VALUES
+      ('workspaces'),
+      ('workspace_memberships'),
+      ('leads'),
+      ('clients'),
+      ('websites'),
+      ('audits'),
+      ('audit_runs'),
+      ('audit_evidence'),
+      ('audit_check_results'),
+      ('audit_category_scores'),
+      ('audit_findings'),
+      ('audit_snapshots'),
+      ('reports'),
+      ('approval_policies'),
+      ('integration_connections'),
+      ('workspace_feature_flags'),
+      ('activity_events')
+  )
+  SELECT array_agg(c.relname ORDER BY c.relname)
+  INTO unforced_tables
+  FROM tenant_tables t
+  JOIN pg_class c ON c.relname = t.name
+  JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+  WHERE NOT c.relrowsecurity OR NOT c.relforcerowsecurity;
+
+  IF unforced_tables IS NOT NULL THEN
+    RAISE EXCEPTION 'Tenant tables are not forced under RLS: %', unforced_tables;
+  END IF;
+END $$;
+COMMIT;
+
+BEGIN;
 SELECT set_config('app.workspace_id', '00000000-0000-4000-8000-0000000000a1', true);
 SELECT set_config('app.user_id', 'rls-user-a', true);
 INSERT INTO "workspaces" ("id", "name", "slug")
@@ -44,8 +95,18 @@ INSERT INTO "audits" ("id", "workspace_id", "website_id", "title", "status")
 VALUES ('40000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'Audit B', 'READY_TO_FINALIZE');
 INSERT INTO "audit_runs" ("id", "workspace_id", "audit_id", "website_id", "status")
 VALUES ('50000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'SUCCEEDED');
-INSERT INTO "reports" ("id", "workspace_id", "audit_id", "audit_run_id", "status", "title", "executive_summary", "methodology_version", "report_data")
-VALUES ('60000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', 'DRAFT', 'Report B', 'Summary B', 'phase1-deterministic-v1.0', '{}'::jsonb);
+INSERT INTO "audit_evidence" ("id", "workspace_id", "audit_run_id", "evidence_type", "source_label")
+VALUES ('51000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', 'HTML', 'Homepage HTML');
+INSERT INTO "audit_check_results" ("id", "workspace_id", "audit_id", "audit_run_id", "check_key", "check_version", "category", "status", "severity", "max_penalty_weight", "reason")
+VALUES ('52000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', 'seo.title', 'seo.title@dv-score-v1.0', 'seo', 'FAIL', 'HIGH', 8, 'Fixture result');
+INSERT INTO "audit_category_scores" ("workspace_id", "audit_run_id", "category", "score", "evidence_coverage_basis_points", "low_coverage", "applicable_max_penalty", "available_max_penalty", "actual_penalty_basis_points")
+VALUES ('00000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', 'seo', 92, 10000, false, 100, 100, 800);
+INSERT INTO "audit_findings" ("id", "workspace_id", "audit_id", "audit_run_id", "check_result_id", "check_key", "severity", "title", "summary")
+VALUES ('53000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', '52000000-0000-4000-8000-0000000000b1', 'seo.title', 'HIGH', 'Title issue', 'Fixture finding');
+INSERT INTO "audit_snapshots" ("id", "workspace_id", "audit_id", "audit_run_id", "scoring_definition_version", "check_catalog_version", "snapshot", "snapshot_hash")
+VALUES ('54000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', 'dv-score-v1.0', 'dv-score-v1.0', '{"fixture":true}'::jsonb, repeat('b', 64));
+INSERT INTO "reports" ("id", "workspace_id", "audit_id", "audit_run_id", "audit_snapshot_id", "status", "title", "executive_summary", "methodology_version", "report_data")
+VALUES ('60000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', '54000000-0000-4000-8000-0000000000b1', 'DRAFT', 'Report B', 'Summary B', 'phase1-deterministic-v1.0', '{}'::jsonb);
 COMMIT;
 
 BEGIN;
@@ -87,12 +148,31 @@ VALUES ('00000000-0000-4000-8000-0000000000f1', 'rls-user-a', 'ANALYST', 'ACTIVE
 COMMIT;
 
 BEGIN;
-SELECT set_config('app.workspace_id', '00000000-0000-4000-8000-0000000000g1', true);
+SELECT set_config('app.workspace_id', '00000000-0000-4000-8000-000000000091', true);
 SELECT set_config('app.user_id', 'rls-user-a', true);
 INSERT INTO "workspaces" ("id", "name", "slug", "deletion_pending_at")
-VALUES ('00000000-0000-4000-8000-0000000000g1', 'Workspace G', 'rls-workspace-g', now());
+VALUES ('00000000-0000-4000-8000-000000000091', 'Workspace G', 'rls-workspace-g', now());
 INSERT INTO "workspace_memberships" ("workspace_id", "user_id", "role", "status")
-VALUES ('00000000-0000-4000-8000-0000000000g1', 'rls-user-a', 'ANALYST', 'ACTIVE');
+VALUES ('00000000-0000-4000-8000-000000000091', 'rls-user-a', 'ANALYST', 'ACTIVE');
+COMMIT;
+
+BEGIN;
+DO $$
+DECLARE
+  visible_count integer;
+BEGIN
+  SELECT count(*)
+  INTO visible_count
+  FROM "workspace_memberships" wm
+  INNER JOIN "workspaces" w ON w.id = wm.workspace_id
+  WHERE wm.status = 'ACTIVE'
+    AND w.archived_at IS NULL
+    AND w.deletion_pending_at IS NULL;
+
+  IF visible_count <> 0 THEN
+    RAISE EXCEPTION 'Bootstrap without app.user_id exposed % workspaces.', visible_count;
+  END IF;
+END $$;
 COMMIT;
 
 BEGIN;
@@ -158,6 +238,11 @@ DECLARE
   other_leads integer;
   changed_rows integer;
   other_audits integer;
+  other_audit_runs integer;
+  other_audit_evidence integer;
+  other_audit_check_results integer;
+  other_audit_findings integer;
+  other_audit_snapshots integer;
   other_reports integer;
 BEGIN
   SELECT count(*) INTO own_leads
@@ -200,12 +285,60 @@ BEGIN
     RAISE EXCEPTION 'Workspace A mutated Workspace B leads.';
   END IF;
 
+  DELETE FROM "leads"
+  WHERE "id" = '10000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A deleted Workspace B leads.';
+  END IF;
+
   SELECT count(*) INTO other_audits
   FROM "audits"
   WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
 
   IF other_audits <> 0 THEN
     RAISE EXCEPTION 'Workspace A should not read Workspace B audits, saw %', other_audits;
+  END IF;
+
+  SELECT count(*) INTO other_audit_runs
+  FROM "audit_runs"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_audit_runs <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B audit runs, saw %', other_audit_runs;
+  END IF;
+
+  SELECT count(*) INTO other_audit_evidence
+  FROM "audit_evidence"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_audit_evidence <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B evidence, saw %', other_audit_evidence;
+  END IF;
+
+  SELECT count(*) INTO other_audit_check_results
+  FROM "audit_check_results"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_audit_check_results <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B check results, saw %', other_audit_check_results;
+  END IF;
+
+  SELECT count(*) INTO other_audit_findings
+  FROM "audit_findings"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_audit_findings <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B findings, saw %', other_audit_findings;
+  END IF;
+
+  SELECT count(*) INTO other_audit_snapshots
+  FROM "audit_snapshots"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_audit_snapshots <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B snapshots, saw %', other_audit_snapshots;
   END IF;
 
   UPDATE "audits"
@@ -215,6 +348,50 @@ BEGIN
 
   IF changed_rows <> 0 THEN
     RAISE EXCEPTION 'Workspace A mutated Workspace B audits.';
+  END IF;
+
+  UPDATE "audit_runs"
+  SET "status" = 'FAILED'
+  WHERE "id" = '50000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B audit runs.';
+  END IF;
+
+  UPDATE "audit_evidence"
+  SET "source_label" = 'cross-workspace evidence mutation'
+  WHERE "id" = '51000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B audit evidence.';
+  END IF;
+
+  UPDATE "audit_check_results"
+  SET "reason" = 'cross-workspace check mutation'
+  WHERE "id" = '52000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B check results.';
+  END IF;
+
+  UPDATE "audit_findings"
+  SET "summary" = 'cross-workspace finding mutation'
+  WHERE "id" = '53000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B findings.';
+  END IF;
+
+  DELETE FROM "audit_snapshots"
+  WHERE "id" = '54000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A deleted Workspace B snapshots.';
   END IF;
 
   SELECT count(*) INTO other_reports
@@ -266,9 +443,17 @@ BEGIN
   END;
 
   BEGIN
-    INSERT INTO "reports" ("id", "workspace_id", "audit_id", "audit_run_id", "status", "title", "executive_summary", "methodology_version", "report_data")
-    VALUES ('60000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', 'DRAFT', 'Blocked Report', 'Blocked', 'phase1-deterministic-v1.0', '{}'::jsonb);
-    RAISE EXCEPTION 'Workspace A linked a report to Workspace B audit/run.';
+    INSERT INTO "audits" ("id", "workspace_id", "website_id", "title", "status")
+    VALUES ('40000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000b1', 'Blocked Audit', 'DRAFT');
+    RAISE EXCEPTION 'Workspace A linked an audit to Workspace B website.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "reports" ("id", "workspace_id", "audit_id", "audit_run_id", "audit_snapshot_id", "status", "title", "executive_summary", "methodology_version", "report_data")
+    VALUES ('60000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', '54000000-0000-4000-8000-0000000000b1', 'DRAFT', 'Blocked Report', 'Blocked', 'phase1-deterministic-v1.0', '{}'::jsonb);
+    RAISE EXCEPTION 'Workspace A linked a report to Workspace B audit/run/snapshot.';
   EXCEPTION
     WHEN foreign_key_violation THEN NULL;
   END;

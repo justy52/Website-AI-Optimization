@@ -188,6 +188,9 @@ CREATE TABLE "workspaces" (
 	"deletion_pending_at" timestamp with time zone
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "clients_workspace_id_id_unique" ON "clients" USING btree ("workspace_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "leads_workspace_id_id_unique" ON "leads" USING btree ("workspace_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "websites_workspace_id_id_unique" ON "websites" USING btree ("workspace_id","id");--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_actor_user_id_user_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -211,14 +214,11 @@ CREATE INDEX "activity_events_workspace_created_idx" ON "activity_events" USING 
 CREATE INDEX "activity_events_correlation_idx" ON "activity_events" USING btree ("correlation_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "approval_policies_workspace_id_id_unique" ON "approval_policies" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE INDEX "approval_policies_workspace_active_idx" ON "approval_policies" USING btree ("workspace_id","active");--> statement-breakpoint
-CREATE UNIQUE INDEX "clients_workspace_id_id_unique" ON "clients" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE INDEX "clients_workspace_status_idx" ON "clients" USING btree ("workspace_id","status");--> statement-breakpoint
 CREATE UNIQUE INDEX "integration_connections_workspace_id_id_unique" ON "integration_connections" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE INDEX "integration_connections_workspace_provider_idx" ON "integration_connections" USING btree ("workspace_id","provider");--> statement-breakpoint
-CREATE UNIQUE INDEX "leads_workspace_id_id_unique" ON "leads" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE INDEX "leads_workspace_status_idx" ON "leads" USING btree ("workspace_id","status");--> statement-breakpoint
 CREATE INDEX "session_user_id_idx" ON "session" USING btree ("user_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "websites_workspace_id_id_unique" ON "websites" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "websites_workspace_domain_unique" ON "websites" USING btree ("workspace_id","domain");--> statement-breakpoint
 CREATE INDEX "websites_workspace_client_idx" ON "websites" USING btree ("workspace_id","client_id");--> statement-breakpoint
 CREATE INDEX "workspace_memberships_user_id_idx" ON "workspace_memberships" USING btree ("user_id");--> statement-breakpoint

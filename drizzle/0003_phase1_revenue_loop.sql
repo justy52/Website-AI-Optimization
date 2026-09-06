@@ -130,6 +130,12 @@ CREATE TABLE "reports" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "audit_check_results_workspace_id_id_unique" ON "audit_check_results" USING btree ("workspace_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "audit_runs_workspace_id_id_unique" ON "audit_runs" USING btree ("workspace_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "audit_runs_workspace_id_id_audit_id_unique" ON "audit_runs" USING btree ("workspace_id","id","audit_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "audit_snapshots_workspace_id_id_unique" ON "audit_snapshots" USING btree ("workspace_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "audits_workspace_id_id_unique" ON "audits" USING btree ("workspace_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "audits_workspace_id_website_id_unique" ON "audits" USING btree ("workspace_id","id","website_id");--> statement-breakpoint
 ALTER TABLE "audit_category_scores" ADD CONSTRAINT "audit_category_scores_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_category_scores" ADD CONSTRAINT "audit_category_scores_run_workspace_fk" FOREIGN KEY ("workspace_id","audit_run_id") REFERENCES "public"."audit_runs"("workspace_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_check_results" ADD CONSTRAINT "audit_check_results_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -151,7 +157,6 @@ ALTER TABLE "reports" ADD CONSTRAINT "reports_created_by_user_id_user_id_fk" FOR
 ALTER TABLE "reports" ADD CONSTRAINT "reports_finalized_by_user_id_user_id_fk" FOREIGN KEY ("finalized_by_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reports" ADD CONSTRAINT "reports_run_workspace_fk" FOREIGN KEY ("workspace_id","audit_run_id","audit_id") REFERENCES "public"."audit_runs"("workspace_id","id","audit_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reports" ADD CONSTRAINT "reports_snapshot_workspace_fk" FOREIGN KEY ("workspace_id","audit_snapshot_id") REFERENCES "public"."audit_snapshots"("workspace_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "audit_check_results_workspace_id_id_unique" ON "audit_check_results" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "audit_check_results_workspace_run_check_unique" ON "audit_check_results" USING btree ("workspace_id","audit_run_id","check_key");--> statement-breakpoint
 CREATE INDEX "audit_check_results_workspace_audit_idx" ON "audit_check_results" USING btree ("workspace_id","audit_id");--> statement-breakpoint
 CREATE INDEX "audit_check_results_workspace_status_idx" ON "audit_check_results" USING btree ("workspace_id","status");--> statement-breakpoint
@@ -160,14 +165,9 @@ CREATE INDEX "audit_evidence_workspace_run_idx" ON "audit_evidence" USING btree 
 CREATE UNIQUE INDEX "audit_findings_workspace_id_id_unique" ON "audit_findings" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "audit_findings_workspace_run_check_unique" ON "audit_findings" USING btree ("workspace_id","audit_run_id","check_key");--> statement-breakpoint
 CREATE INDEX "audit_findings_workspace_audit_idx" ON "audit_findings" USING btree ("workspace_id","audit_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "audit_runs_workspace_id_id_unique" ON "audit_runs" USING btree ("workspace_id","id");--> statement-breakpoint
-CREATE UNIQUE INDEX "audit_runs_workspace_id_id_audit_id_unique" ON "audit_runs" USING btree ("workspace_id","id","audit_id");--> statement-breakpoint
 CREATE INDEX "audit_runs_workspace_audit_idx" ON "audit_runs" USING btree ("workspace_id","audit_id");--> statement-breakpoint
 CREATE INDEX "audit_runs_workspace_status_idx" ON "audit_runs" USING btree ("workspace_id","status");--> statement-breakpoint
-CREATE UNIQUE INDEX "audit_snapshots_workspace_id_id_unique" ON "audit_snapshots" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "audit_snapshots_workspace_audit_unique" ON "audit_snapshots" USING btree ("workspace_id","audit_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "audits_workspace_id_id_unique" ON "audits" USING btree ("workspace_id","id");--> statement-breakpoint
-CREATE UNIQUE INDEX "audits_workspace_id_website_id_unique" ON "audits" USING btree ("workspace_id","id","website_id");--> statement-breakpoint
 CREATE INDEX "audits_workspace_status_idx" ON "audits" USING btree ("workspace_id","status");--> statement-breakpoint
 CREATE INDEX "audits_workspace_website_idx" ON "audits" USING btree ("workspace_id","website_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "reports_workspace_id_id_unique" ON "reports" USING btree ("workspace_id","id");--> statement-breakpoint
