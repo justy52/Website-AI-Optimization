@@ -10,12 +10,12 @@ Copy `.env.example` to `.env.local` and fill it in. `.env.example` holds variabl
 |---|---|---|
 | **Vercel** | Hosting, Cron, Blob storage, Workflows, AI Gateway | Phase 0 |
 | **Neon** | Postgres database (create separate Local/QA/Prod projects or branches) | Phase 0 |
-| **OpenAI** | AI drafting/classification via AI Gateway; web-grounded AI-visibility (Phase 4) | Phase 1 (drafting), Phase 4 (visibility) |
+| **OpenAI** | AI drafting/classification via AI Gateway; web-grounded AI-visibility (Phase 4) | Later phases only |
 | **Google Cloud** | Search Console + GA4 OAuth (read integrations) | Phase 4 |
 | **Perplexity** | Sonar API - first AI-visibility surface | Phase 4 |
 | **Google AI (Gemini)** | Gemini API + Search grounding - third AI-visibility surface | Phase 4 |
 
-You do **not** need every key on day one. Phase 0 needs application, authentication, database, and encryption variables only. AI provider keys stay blank until a later implementation phase requires them.
+You do **not** need every key on day one. Phase 0 and Phase 1 need application, authentication, database, and encryption variables only. AI provider keys stay blank until a later implementation phase requires them.
 
 ## Core variables
 

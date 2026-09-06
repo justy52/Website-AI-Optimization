@@ -12,7 +12,7 @@ describe("/api/health", () => {
     expect(body).toEqual({
       status: "ok",
       app: "optiq",
-      phase: "0",
+      phase: "1",
     });
     expect(JSON.stringify(body)).not.toMatch(
       /DATABASE_URL|BETTER_AUTH_SECRET|CREDENTIAL_ENCRYPTION_KEY|postgres:\/\//,

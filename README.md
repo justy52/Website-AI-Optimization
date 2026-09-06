@@ -4,9 +4,9 @@ Multi-tenant SaaS for running website + AI-search optimization as a service, usi
 
 ## Status
 
-Phase 0 scaffold active. The complete, audited specification lives in [`docs/`](./docs) and is the source of truth. The visual/UX target is [`design/matrix-console.jsx`](./design/matrix-console.jsx).
+Phase 1 revenue-loop scaffold active. The complete, audited specification lives in [`docs/`](./docs) and is the source of truth. The visual/UX target is [`design/matrix-console.jsx`](./design/matrix-console.jsx).
 
-Current implementation includes the Next.js application shell, environment validation, Better Auth route wiring, Drizzle schema/migrations, workspace-scoped tenant helpers, versioned scoring/priority/service-plan definitions, and initial unit tests. Phase 0 does not implement audit execution, lead management, reports, billing, third-party workflows, or agents.
+Current implementation includes the authenticated Next.js application shell, environment validation, Better Auth route wiring, Drizzle schema/migrations, workspace-scoped tenant helpers, versioned scoring/priority/service-plan definitions, lead/client/website workflow, deterministic Phase 1 audit execution, immutable audit snapshots, report preview, and tests. Phase 1 does not implement billing, subscriptions, agents, third-party workflows, public report links, background automation, or external EXECUTE behavior.
 
 ## Stack
 
@@ -20,6 +20,8 @@ cp .env.example .env.local        # then fill in values - see ENVIRONMENT-SETUP.
 corepack pnpm db:migrate          # apply Drizzle migrations after DATABASE_URL is set
 corepack pnpm dev                 # http://localhost:3000
 ```
+
+On first sign-in, use the workspace setup screen to create the initial owner workspace membership. Membership bootstrap is intentionally narrow: the app sets only the authenticated Better Auth `user_id` in transaction-local database context to discover that user's active memberships. Normal tenant operations then switch to the resolved workspace context and workspace RLS.
 
 Useful checks:
 
@@ -45,4 +47,4 @@ corepack pnpm build               # production build
 
 ## Build order
 
-Phase 0 stops at foundation. The future revenue slice starts after this baseline is reviewed: **Lead -> Client -> Website -> Audit -> Report**, then agents, monitoring, and EXECUTE actions per the phase plan.
+Phase 1 implements the first internal revenue slice: **Lead -> Client -> Website -> Audit -> Report**. Later phases add agents, monitoring, integrations, opportunities, approvals, and EXECUTE actions per the phase plan.
