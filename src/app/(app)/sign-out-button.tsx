@@ -11,8 +11,13 @@ export function SignOutButton() {
       className="mx-btn mx-btn-ghost"
       type="button"
       onClick={async () => {
-        await fetch("/api/auth/sign-out", { method: "POST" });
-        router.push("/login");
+        await fetch("/api/auth/sign-out", {
+          body: JSON.stringify({}),
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          method: "POST",
+        });
+        router.replace("/login");
         router.refresh();
       }}
     >
