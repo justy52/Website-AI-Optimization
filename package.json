@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -19,6 +20,7 @@
     "verify": "corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm verify:db"
   },
   "dependencies": {
+    "@ai-sdk/gateway": "^4.0.75",
     "@neondatabase/serverless": "^1.1.0",
     "@workflow/next": "^4.1.9",
     "@workflow/vitest": "^4.0.21",
@@ -35,6 +37,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",

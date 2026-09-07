@@ -346,6 +346,23 @@ describe("phase 0 migrations", () => {
     expect(migration).toContain('"proposed_external_execution" = false');
   });
 
+  it("adds Phase 3 AI Gateway usage metadata additively", () => {
+    const migration = readMigration("0009_phase3_ai_gateway_hardening.sql");
+
+    expect(migration).toContain(
+      'ALTER TABLE "agent_runs" ADD COLUMN "estimated_total_tokens"',
+    );
+    expect(migration).toContain(
+      'ALTER TABLE "agent_runs" ADD COLUMN "actual_total_tokens"',
+    );
+    expect(migration).toContain(
+      'ALTER TABLE "agent_runs" ADD COLUMN "model_generation_id"',
+    );
+    expect(migration).toContain(
+      'ALTER TABLE "agent_runs" ADD COLUMN "provider_metadata"',
+    );
+  });
+
   it("does not include destructive table or type drops", () => {
     const migration = [
       readMigration("0000_phase0_foundation.sql"),
@@ -357,6 +374,7 @@ describe("phase 0 migrations", () => {
       readMigration("0006_phase1_security_hardening.sql"),
       readMigration("0007_phase2_opportunities.sql"),
       readMigration("0008_phase3_governed_prepare.sql"),
+      readMigration("0009_phase3_ai_gateway_hardening.sql"),
     ].join("\n");
 
     expect(migration).not.toMatch(/\bDROP\s+(TABLE|TYPE|SCHEMA|DATABASE)\b/i);

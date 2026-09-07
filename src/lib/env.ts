@@ -35,11 +35,12 @@ const rawEnvSchema = z.object({
   CREDENTIAL_KEY_VERSION: versionString,
   AI_GATEWAY_API_KEY: optionalNonEmpty,
   AI_GATEWAY_MODEL: optionalNonEmpty,
+  VERCEL: optionalNonEmpty,
+  VERCEL_OIDC_TOKEN: optionalNonEmpty,
   AGENT_PROVIDER: z
     .enum(["deterministic", "ai_gateway"])
     .optional()
     .default("deterministic"),
-  OPENAI_API_KEY: optionalNonEmpty,
   BLOB_READ_WRITE_TOKEN: optionalNonEmpty,
   GOOGLE_OAUTH_CLIENT_ID: optionalNonEmpty,
   GOOGLE_OAUTH_CLIENT_SECRET: optionalNonEmpty,
@@ -129,13 +130,20 @@ function assertRequiredValues(
   }
 
   if (env.AGENT_PROVIDER === "ai_gateway") {
-    const missingGatewayKeys = ["AI_GATEWAY_API_KEY", "AI_GATEWAY_MODEL"].filter(
-      (key) => !env[key as "AI_GATEWAY_API_KEY" | "AI_GATEWAY_MODEL"],
-    );
-
-    if (missingGatewayKeys.length > 0) {
+    if (!env.AI_GATEWAY_MODEL) {
       throw new Error(
-        `Missing required ${appEnv} AI Gateway variables: ${missingGatewayKeys.join(", ")}`,
+        `Missing required ${appEnv} AI Gateway variables: AI_GATEWAY_MODEL`,
+      );
+    }
+
+    const hasGatewayAuth =
+      Boolean(env.AI_GATEWAY_API_KEY) ||
+      Boolean(env.VERCEL_OIDC_TOKEN) ||
+      env.VERCEL === "1";
+
+    if (!hasGatewayAuth) {
+      throw new Error(
+        `Missing AI Gateway authentication for ${appEnv}: use Vercel OIDC on Vercel or provide a scoped AI_GATEWAY_API_KEY.`,
       );
     }
   }

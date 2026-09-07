@@ -49,6 +49,7 @@ export async function createBusinessFactAction(formData: FormData) {
     value: value(formData, "factValue"),
     sourceReference: value(formData, "sourceReference"),
     verificationStatus: value(formData, "verificationStatus"),
+    sensitivity: value(formData, "sensitivity"),
   });
 
   revalidatePath(`/clients/${clientId}`);

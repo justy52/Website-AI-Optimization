@@ -64,6 +64,13 @@
       "when": 1788748119309,
       "tag": "0008_phase3_governed_prepare",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788754780558,
+      "tag": "0009_phase3_ai_gateway_hardening",
+      "breakpoints": true
     }
   ]
 }

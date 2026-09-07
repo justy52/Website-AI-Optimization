@@ -608,6 +608,7 @@ textarea.mx-input {
 .mx-method span:last-child,
 .mx-method a {
   color: var(--green-soft);
+  overflow-wrap: anywhere;
   text-align: right;
 }
 
@@ -654,6 +655,7 @@ textarea.mx-input {
 
 .mx-report {
   max-width: 1080px;
+  overflow-x: auto;
 }
 
 .sr-only {

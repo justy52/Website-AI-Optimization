@@ -234,6 +234,14 @@ export default async function ClientDetailPage({
                 <option value="VERIFIED">Verified fact</option>
               </select>
             </label>
+            <label>
+              Sensitivity
+              <select className="mx-input" name="sensitivity">
+                <option value="PUBLIC">Public</option>
+                <option value="INTERNAL">Internal</option>
+                <option value="CONFIDENTIAL">Confidential</option>
+              </select>
+            </label>
             <label className="mx-form-wide">
               Value
               <input className="mx-input" name="factValue" required type="text" />
@@ -262,6 +270,8 @@ export default async function ClientDetailPage({
             <select className="mx-input" name="ruleType">
               <option value="ALLOWED">Allowed</option>
               <option value="REQUIRES_APPROVAL">Requires approval</option>
+              <option value="REQUIRED_DISCLAIMER">Required disclaimer</option>
+              <option value="STRICTER_REVIEW">Stricter review</option>
               <option value="PROHIBITED">Prohibited</option>
             </select>
           </label>
@@ -316,7 +326,7 @@ export default async function ClientDetailPage({
                 <div className="mx-row-main">
                   <span className="mx-row-title">{fact.value}</span>
                   <span className="mx-row-meta">
-                    {fact.factType} - {fact.sourceReference}
+                    {fact.factType} - {fact.sensitivity} - {fact.sourceReference}
                   </span>
                 </div>
                 <StatusChip

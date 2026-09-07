@@ -70,15 +70,15 @@ describe("server environment validation", () => {
       BETTER_AUTH_URL: "https://qa.example.invalid",
       CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
       AGENT_PROVIDER: "ai_gateway",
-      AI_GATEWAY_API_KEY: "qa-ai-gateway-key-placeholder-for-validation",
-      AI_GATEWAY_MODEL: "openai/gpt-5.2",
+      VERCEL: "1",
+      AI_GATEWAY_MODEL: "openai/gpt-5.4-mini",
     });
 
     expect(gateway.AGENT_PROVIDER).toBe("ai_gateway");
-    expect(gateway.AI_GATEWAY_MODEL).toBe("openai/gpt-5.2");
+    expect(gateway.AI_GATEWAY_MODEL).toBe("openai/gpt-5.4-mini");
   });
 
-  it("fails safely when AI Gateway is selected without required variables", () => {
+  it("fails safely when AI Gateway is selected without a model", () => {
     expect(() =>
       getServerEnv({
         APP_ENV: "qa",
@@ -88,7 +88,39 @@ describe("server environment validation", () => {
         BETTER_AUTH_URL: "https://qa.example.invalid",
         CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
         AGENT_PROVIDER: "ai_gateway",
+        VERCEL: "1",
       }),
     ).toThrow("Missing required qa AI Gateway variables");
+  });
+
+  it("fails safely when AI Gateway has neither Vercel OIDC nor a scoped key", () => {
+    expect(() =>
+      getServerEnv({
+        APP_ENV: "qa",
+        DATABASE_URL: "postgres://example.invalid/app",
+        DATABASE_URL_UNPOOLED: "postgres://example.invalid/app",
+        BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+        BETTER_AUTH_URL: "https://qa.example.invalid",
+        CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
+        AGENT_PROVIDER: "ai_gateway",
+        AI_GATEWAY_MODEL: "openai/gpt-5.4-mini",
+      }),
+    ).toThrow("Missing AI Gateway authentication for qa");
+  });
+
+  it("allows a scoped AI Gateway key outside Vercel when explicitly supplied", () => {
+    const env = getServerEnv({
+      APP_ENV: "qa",
+      DATABASE_URL: "postgres://example.invalid/app",
+      DATABASE_URL_UNPOOLED: "postgres://example.invalid/app",
+      BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+      BETTER_AUTH_URL: "https://qa.example.invalid",
+      CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
+      AGENT_PROVIDER: "ai_gateway",
+      AI_GATEWAY_API_KEY: "qa-ai-gateway-key-placeholder-for-validation",
+      AI_GATEWAY_MODEL: "openai/gpt-5.4-mini",
+    });
+
+    expect(env.AGENT_PROVIDER).toBe("ai_gateway");
   });
 });

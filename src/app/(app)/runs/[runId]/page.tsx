@@ -126,6 +126,30 @@ export default async function RunDetailPage({
         )}
       </Panel>
       <div className="mx-spacer" />
+      <Panel title="Usage and Gateway metadata">
+        <div className="mx-method">
+          <span>Estimated tokens</span>
+          <span>{detail.run.estimatedTotalTokens}</span>
+        </div>
+        <div className="mx-method">
+          <span>Actual tokens</span>
+          <span>{detail.run.actualTotalTokens}</span>
+        </div>
+        <div className="mx-method">
+          <span>Estimated cost</span>
+          <span>{detail.run.estimatedCostCents} cents</span>
+        </div>
+        <div className="mx-method">
+          <span>Actual cost</span>
+          <span>{detail.run.actualCostCents} cents</span>
+        </div>
+        <div className="mx-method">
+          <span>Generation ID</span>
+          <span>{detail.run.modelGenerationId ?? "Not available"}</span>
+        </div>
+        <pre className="mx-report">{json(detail.run.providerMetadata)}</pre>
+      </Panel>
+      <div className="mx-spacer" />
       <div className="mx-grid mx-grid-2">
         <Panel title="Budget snapshot">
           <pre className="mx-report">{json(detail.run.budgetSnapshot)}</pre>

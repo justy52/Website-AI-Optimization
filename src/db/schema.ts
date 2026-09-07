@@ -1243,8 +1243,15 @@ export const agentRuns = pgTable(
     actualInputTokens: integer("actual_input_tokens").notNull().default(0),
     estimatedOutputTokens: integer("estimated_output_tokens").notNull().default(0),
     actualOutputTokens: integer("actual_output_tokens").notNull().default(0),
+    estimatedTotalTokens: integer("estimated_total_tokens").notNull().default(0),
+    actualTotalTokens: integer("actual_total_tokens").notNull().default(0),
     estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
     actualCostCents: integer("actual_cost_cents").notNull().default(0),
+    modelGenerationId: text("model_generation_id"),
+    providerMetadata: jsonb("provider_metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     errorCode: text("error_code"),
     errorSummary: text("error_summary"),
     retryCount: integer("retry_count").notNull().default(0),

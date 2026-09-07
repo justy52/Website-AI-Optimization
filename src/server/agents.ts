@@ -40,6 +40,7 @@ import {
   assertPrepareOutputPolicy,
   createAiGatewayPrepareProvider,
   createDeterministicPrepareProvider,
+  filterModelVisibleBusinessFacts,
   PAGE_OPTIMIZATION_PROMPT_VERSION,
   renderDraftPreview,
   type ExistingPageOptimizationInput,
@@ -78,6 +79,8 @@ function safeErrorSummary(error: unknown): string {
 
 function providerForRun(
   budget: AgentRunBudgetSnapshot,
+  context: WorkspaceContext,
+  runId: string,
   override?: PrepareModelProvider,
 ): PrepareModelProvider {
   if (override) return override;
@@ -86,7 +89,17 @@ function providerForRun(
     return createAiGatewayPrepareProvider({
       model: serverEnv.AI_GATEWAY_MODEL,
       maxOutputTokens: budget.maxOutputTokens,
-      timeoutMs: budget.maxModelCalls > 0 ? budget.maxOutputTokens * 20 : 1_000,
+      timeoutMs: 60_000,
+      budget,
+      tags: [
+        `environment:${serverEnv.APP_ENV}`,
+        "feature:governed-prepare",
+        "agent:existing-page-optimization",
+        `run:${runId}`,
+        `workspace:${context.workspaceId}`,
+      ],
+      user: context.userId ? `user:${context.userId}` : undefined,
+      quotaEntityId: `workspace:${context.workspaceId}`,
     });
   }
 
@@ -426,6 +439,8 @@ async function loadPrepareInput(
       and(
         eq(businessFacts.workspaceId, context.workspaceId),
         eq(businessFacts.clientId, row.client.id),
+        eq(businessFacts.verificationStatus, "VERIFIED"),
+        eq(businessFacts.sensitivity, "PUBLIC"),
         isNull(businessFacts.archivedAt),
       ),
     );
@@ -476,14 +491,16 @@ async function loadPrepareInput(
       excerpt: evidence.excerpt?.slice(0, 2_000),
       metadata: evidence.metadata,
     })),
-    businessFacts: factRows.map((fact) => ({
-      id: fact.id,
-      factType: fact.factType,
-      value: fact.value,
-      verificationStatus: fact.verificationStatus,
-      sensitivity: fact.sensitivity,
-      sourceReference: fact.sourceReference,
-    })),
+    businessFacts: filterModelVisibleBusinessFacts(
+      factRows.map((fact) => ({
+        id: fact.id,
+        factType: fact.factType,
+        value: fact.value,
+        verificationStatus: fact.verificationStatus,
+        sensitivity: fact.sensitivity,
+        sourceReference: fact.sourceReference,
+      })),
+    ),
     claimPolicies: policyRows.map((policy) => ({
       id: policy.id,
       ruleType: policy.ruleType,
@@ -661,7 +678,12 @@ export async function executePrepareDraftAgentRun(
       return { loaded, budget, inputBytes, evidenceBytes };
     });
 
-    const provider = providerForRun(prepared.budget, providerOverride);
+    const provider = providerForRun(
+      prepared.budget,
+      context,
+      runId,
+      providerOverride,
+    );
     const generated = await provider.generate(prepared.loaded.input);
     const output = assertPrepareOutputPolicy(
       generated.output,
@@ -669,6 +691,8 @@ export async function executePrepareDraftAgentRun(
     );
     const renderedPreview = renderDraftPreview(output);
     const outputBytes = byteLength(JSON.stringify(output));
+    const runCostCents =
+      generated.usage.actualCostCents ?? generated.usage.estimatedCostCents ?? 0;
 
     assertWithinBudget(prepared.budget, {
       toolCalls: 8,
@@ -676,7 +700,7 @@ export async function executePrepareDraftAgentRun(
       evidenceBytes: prepared.evidenceBytes,
       inputBytes: prepared.inputBytes,
       outputBytes,
-      costCents: 0,
+      costCents: runCostCents,
     });
 
     return await withTenantContext(database, context, async (tx) => {
@@ -808,12 +832,22 @@ export async function executePrepareDraftAgentRun(
           nextAction: output.nextAction,
           actualToolCalls: 8,
           actualModelCalls: 1,
+          estimatedInputTokens: generated.usage.estimatedInputTokens ?? 0,
+          estimatedOutputTokens: generated.usage.estimatedOutputTokens ?? 0,
+          estimatedTotalTokens:
+            (generated.usage.estimatedInputTokens ?? 0) +
+            (generated.usage.estimatedOutputTokens ?? 0),
+          estimatedCostCents: generated.usage.estimatedCostCents ?? 0,
           actualInputTokens: generated.usage.inputTokens ?? 0,
           actualOutputTokens: generated.usage.outputTokens ?? 0,
+          actualTotalTokens: generated.usage.totalTokens ?? 0,
+          actualCostCents: generated.usage.actualCostCents ?? 0,
+          modelGenerationId: generated.usage.gatewayGenerationId,
+          providerMetadata: generated.usage.providerMetadata ?? {},
           completedAt: now(),
           updatedAt: now(),
           provider: provider.provider,
-          model: provider.model,
+          model: generated.usage.actualModel ?? provider.model,
         })
         .where(
           and(
@@ -1558,6 +1592,7 @@ export async function createBusinessFact(
     value: string;
     sourceReference: string;
     verificationStatus?: string;
+    sensitivity?: string;
   },
   database = db,
 ) {
@@ -1584,6 +1619,11 @@ export async function createBusinessFact(
           input.verificationStatus === "VERIFIED" ? "VERIFIED" : "NEEDS_REVIEW",
         approvedByUserId:
           input.verificationStatus === "VERIFIED" ? context.userId : null,
+        sensitivity:
+          input.sensitivity === "INTERNAL" ||
+          input.sensitivity === "CONFIDENTIAL"
+            ? input.sensitivity
+            : "PUBLIC",
       })
       .returning();
 
@@ -1681,7 +1721,11 @@ export async function createClaimPolicy(
             ? "PROHIBITED"
             : input.ruleType === "REQUIRES_APPROVAL"
               ? "REQUIRES_APPROVAL"
-              : "ALLOWED",
+              : input.ruleType === "REQUIRED_DISCLAIMER"
+                ? "REQUIRED_DISCLAIMER"
+                : input.ruleType === "STRICTER_REVIEW"
+                  ? "STRICTER_REVIEW"
+                  : "ALLOWED",
         claimCategory,
         rule,
         requiredDisclaimer: input.requiredDisclaimer?.trim() || null,
