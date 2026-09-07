@@ -12,6 +12,7 @@ const eslintConfig = [
       "drizzle/meta/**",
       "node_modules/**",
       "playwright-report/**",
+      "src/app/.well-known/workflow/**",
       "test-results/**"
     ],
   },

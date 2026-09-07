@@ -1,12 +1,14 @@
 import Link from "next/link";
 
 import {
+  Bot,
   FileText,
   Globe2,
   LayoutDashboard,
   ListChecks,
   Radar,
   Settings,
+  ShieldCheck,
   Terminal,
   Users,
 } from "lucide-react";
@@ -24,6 +26,8 @@ const navItems = [
   { href: "/audits", label: "Audits", icon: Radar },
   { href: "/opportunities", label: "Opportunities", icon: ListChecks },
   { href: "/work-plan", label: "Work Plan", icon: ListChecks },
+  { href: "/runs", label: "Runs", icon: Bot },
+  { href: "/approvals", label: "Approvals", icon: ShieldCheck },
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;

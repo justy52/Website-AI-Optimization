@@ -34,6 +34,11 @@ const rawEnvSchema = z.object({
   CREDENTIAL_ENCRYPTION_KEY: optionalNonEmpty,
   CREDENTIAL_KEY_VERSION: versionString,
   AI_GATEWAY_API_KEY: optionalNonEmpty,
+  AI_GATEWAY_MODEL: optionalNonEmpty,
+  AGENT_PROVIDER: z
+    .enum(["deterministic", "ai_gateway"])
+    .optional()
+    .default("deterministic"),
   OPENAI_API_KEY: optionalNonEmpty,
   BLOB_READ_WRITE_TOKEN: optionalNonEmpty,
   GOOGLE_OAUTH_CLIENT_ID: optionalNonEmpty,
@@ -121,6 +126,18 @@ function assertRequiredValues(
     throw new Error(
       "CREDENTIAL_ENCRYPTION_KEY must be at least 32 characters long.",
     );
+  }
+
+  if (env.AGENT_PROVIDER === "ai_gateway") {
+    const missingGatewayKeys = ["AI_GATEWAY_API_KEY", "AI_GATEWAY_MODEL"].filter(
+      (key) => !env[key as "AI_GATEWAY_API_KEY" | "AI_GATEWAY_MODEL"],
+    );
+
+    if (missingGatewayKeys.length > 0) {
+      throw new Error(
+        `Missing required ${appEnv} AI Gateway variables: ${missingGatewayKeys.join(", ")}`,
+      );
+    }
   }
 }
 

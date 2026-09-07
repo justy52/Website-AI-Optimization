@@ -48,4 +48,47 @@ describe("server environment validation", () => {
     expect(env.APP_ENV).toBe("qa");
     expect(env.BLOB_READ_WRITE_TOKEN).toBeUndefined();
   });
+
+  it("uses deterministic governed PREPARE unless AI Gateway is configured", () => {
+    const deterministic = getServerEnv({
+      APP_ENV: "qa",
+      DATABASE_URL: "postgres://example.invalid/app",
+      DATABASE_URL_UNPOOLED: "postgres://example.invalid/app",
+      BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+      BETTER_AUTH_URL: "https://qa.example.invalid",
+      CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
+    });
+
+    expect(deterministic.AGENT_PROVIDER).toBe("deterministic");
+    expect(deterministic.AI_GATEWAY_MODEL).toBeUndefined();
+
+    const gateway = getServerEnv({
+      APP_ENV: "qa",
+      DATABASE_URL: "postgres://example.invalid/app",
+      DATABASE_URL_UNPOOLED: "postgres://example.invalid/app",
+      BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+      BETTER_AUTH_URL: "https://qa.example.invalid",
+      CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
+      AGENT_PROVIDER: "ai_gateway",
+      AI_GATEWAY_API_KEY: "qa-ai-gateway-key-placeholder-for-validation",
+      AI_GATEWAY_MODEL: "openai/gpt-5.2",
+    });
+
+    expect(gateway.AGENT_PROVIDER).toBe("ai_gateway");
+    expect(gateway.AI_GATEWAY_MODEL).toBe("openai/gpt-5.2");
+  });
+
+  it("fails safely when AI Gateway is selected without required variables", () => {
+    expect(() =>
+      getServerEnv({
+        APP_ENV: "qa",
+        DATABASE_URL: "postgres://example.invalid/app",
+        DATABASE_URL_UNPOOLED: "postgres://example.invalid/app",
+        BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+        BETTER_AUTH_URL: "https://qa.example.invalid",
+        CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
+        AGENT_PROVIDER: "ai_gateway",
+      }),
+    ).toThrow("Missing required qa AI Gateway variables");
+  });
 });

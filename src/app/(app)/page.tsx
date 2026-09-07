@@ -2,14 +2,17 @@ import Link from "next/link";
 
 import {
   AlertTriangle,
+  Bot,
   FileText,
   Globe2,
   ListChecks,
   Radar,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 
 import { getWorkspaceShellContext } from "@/server/auth";
+import { getAgentDashboardSummary } from "@/server/agents";
 import { getOpportunityDashboardSummary } from "@/server/opportunities";
 import { getDashboardSummary } from "@/server/revenue";
 
@@ -23,9 +26,10 @@ const statCards = [
 
 export default async function DashboardPage() {
   const shell = await getWorkspaceShellContext();
-  const [summary, opportunitySummary] = await Promise.all([
+  const [summary, opportunitySummary, agentSummary] = await Promise.all([
     getDashboardSummary(shell.workspaceContext),
     getOpportunityDashboardSummary(shell.workspaceContext),
+    getAgentDashboardSummary(shell.workspaceContext),
   ]);
 
   return (
@@ -37,7 +41,7 @@ export default async function DashboardPage() {
             Start audit
           </Link>
         }
-        eyebrow="Phase 2 optimization operations"
+        eyebrow="Phase 3 governed PREPARE operations"
         title="Command Center"
       />
       <div className="mx-grid mx-grid-3">
@@ -87,6 +91,51 @@ export default async function DashboardPage() {
             <AlertTriangle aria-hidden size={14} />
           </span>
           <span className="mx-kpi-value">{opportunitySummary.blocked}</span>
+        </Link>
+      </div>
+      <div className="mx-spacer" />
+      <div className="mx-grid mx-grid-3">
+        <Link className="mx-panel mx-kpi" href={"/runs" as never}>
+          <span className="mx-kpi-label">
+            Runs in progress
+            <Bot aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">{agentSummary.runsInProgress}</span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/approvals" as never}>
+          <span className="mx-kpi-label">
+            Approvals pending
+            <ShieldCheck aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">{agentSummary.approvalsPending}</span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/opportunities" as never}>
+          <span className="mx-kpi-label">
+            Ready for PREPARE
+            <ListChecks aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {agentSummary.opportunitiesReadyForPrepare}
+          </span>
+        </Link>
+      </div>
+      <div className="mx-spacer" />
+      <div className="mx-grid mx-grid-2">
+        <Link className="mx-panel mx-kpi" href={"/approvals" as never}>
+          <span className="mx-kpi-label">
+            Drafts awaiting review
+            <FileText aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {agentSummary.draftsAwaitingReview}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/runs" as never}>
+          <span className="mx-kpi-label">
+            Failed or limited runs
+            <AlertTriangle aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">{agentSummary.failedRuns}</span>
         </Link>
       </div>
       <div className="mx-spacer" />

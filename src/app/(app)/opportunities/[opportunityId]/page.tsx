@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { ArrowLeft, ClipboardList, Save } from "lucide-react";
+import { ArrowLeft, Bot, ClipboardList, Save, ShieldCheck } from "lucide-react";
 
 import {
   opportunityStatuses,
@@ -10,9 +10,10 @@ import {
   type DependencyState,
 } from "@/domain/opportunities/generation";
 import { getWorkspaceShellContext } from "@/server/auth";
+import { getOpportunityPrepareState } from "@/server/agents";
 import { getOpportunityDetail } from "@/server/opportunities";
 
-import { updateOpportunityAction } from "../actions";
+import { requestPrepareDraftAction, updateOpportunityAction } from "../actions";
 import {
   formatDate,
   PageHeader,
@@ -53,6 +54,13 @@ function statusTone(status: string) {
   return "info";
 }
 
+function runTone(status: string) {
+  if (status === "SUCCEEDED") return "good";
+  if (status === "FAILED" || status === "BUDGET_LIMITED") return "bad";
+  if (status === "QUEUED" || status === "RUNNING") return "info";
+  return "neutral";
+}
+
 function factorSelect(name: string, label: string, value: number) {
   return (
     <label>
@@ -75,7 +83,10 @@ export default async function OpportunityDetailPage({
 }) {
   const { opportunityId } = await params;
   const shell = await getWorkspaceShellContext();
-  const detail = await getOpportunityDetail(shell.workspaceContext, opportunityId);
+  const [detail, prepareState] = await Promise.all([
+    getOpportunityDetail(shell.workspaceContext, opportunityId),
+    getOpportunityPrepareState(shell.workspaceContext, opportunityId),
+  ]);
 
   if (!detail) {
     notFound();
@@ -166,6 +177,72 @@ export default async function OpportunityDetailPage({
           ) : null}
         </Panel>
       </div>
+      <div className="mx-spacer" />
+      <Panel
+        right={
+          prepareState.approval ? (
+            <StatusChip tone={statusTone(prepareState.approval.status)}>
+              {prepareState.approval.status}
+            </StatusChip>
+          ) : prepareState.run ? (
+            <StatusChip tone={runTone(prepareState.run.status)}>
+              {prepareState.run.status}
+            </StatusChip>
+          ) : (
+            <StatusChip tone="neutral">No draft</StatusChip>
+          )
+        }
+        title="Governed PREPARE"
+      >
+        <div className="mx-grid mx-grid-2">
+          <div className="mx-safety-lock">
+            <ShieldCheck aria-hidden size={16} />
+            <span>
+              PREPARE can create an internal draft and approval request only. It
+              cannot publish, email, edit a website, or execute externally.
+            </span>
+          </div>
+          <div className="mx-action-stack">
+            {prepareState.run ? (
+              <Link
+                className="mx-btn mx-btn-ghost"
+                href={`/runs/${prepareState.run.id}` as never}
+              >
+                <Bot aria-hidden size={14} />
+                Inspect run
+              </Link>
+            ) : null}
+            {prepareState.artifact ? (
+              <Link
+                className="mx-btn mx-btn-ghost"
+                href={`/drafts/${prepareState.artifact.id}` as never}
+              >
+                <ClipboardList aria-hidden size={14} />
+                Review draft
+              </Link>
+            ) : null}
+            {prepareState.approval ? (
+              <Link
+                className="mx-btn mx-btn-ghost"
+                href={`/approvals/${prepareState.approval.id}` as never}
+              >
+                <ShieldCheck aria-hidden size={14} />
+                Open approval
+              </Link>
+            ) : null}
+            {!prepareState.approval ||
+            prepareState.approval.status !== "PENDING" ? (
+              <form action={requestPrepareDraftAction}>
+                <input name="opportunityId" type="hidden" value={opportunity.id} />
+                <button className="mx-btn" type="submit">
+                  <Bot aria-hidden size={14} />
+                  Prepare draft
+                </button>
+              </form>
+            ) : null}
+          </div>
+        </div>
+      </Panel>
       <div className="mx-spacer" />
       <Panel title="Operational update">
         <form action={updateOpportunityAction} className="mx-form">
@@ -282,8 +359,8 @@ export default async function OpportunityDetailPage({
           <span>{opportunity.recommendedAction}</span>
         </div>
         <p className="mx-muted">
-          This is internal planning only. No external EXECUTE behavior is present
-          in Phase 2.
+          This remains internal planning and human-approved PREPARE work only.
+          No external EXECUTE behavior is present in Phase 3.
         </p>
       </Panel>
     </>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CheckCircle2, ListChecks, PlusCircle, XCircle } from "lucide-react";
 
 import { getWorkspaceShellContext } from "@/server/auth";
+import { getPrepareStatesForOpportunities } from "@/server/agents";
 import {
   getClientWorkPlan,
   getWorkPlanOverview,
@@ -53,6 +54,12 @@ export default async function WorkPlanPage({
   const plan = selectedClientId
     ? await getClientWorkPlan(shell.workspaceContext, selectedClientId)
     : null;
+  const prepareStates = plan
+    ? await getPrepareStatesForOpportunities(
+        shell.workspaceContext,
+        plan.opportunities.map((opportunity) => opportunity.id),
+      )
+    : new Map();
 
   return (
     <>
@@ -99,32 +106,56 @@ export default async function WorkPlanPage({
         >
           {plan.opportunities.length > 0 ? (
             <div className="mx-list">
-              {plan.opportunities.map((opportunity) => (
-                <div className="mx-check-row" key={opportunity.id}>
-                  <div>
-                    <Link
-                      className="mx-row-title"
-                      href={`/opportunities/${opportunity.id}` as never}
-                    >
-                      {opportunity.title}
-                    </Link>
-                    <div className="mx-row-meta">
-                      {opportunity.domain} - effort {opportunity.effort}/5 -
-                      created {formatDate(opportunity.createdAt)}
+              {plan.opportunities.map((opportunity) => {
+                const prepareState = prepareStates.get(opportunity.id);
+
+                return (
+                  <div className="mx-check-row" key={opportunity.id}>
+                    <div>
+                      <Link
+                        className="mx-row-title"
+                        href={`/opportunities/${opportunity.id}` as never}
+                      >
+                        {opportunity.title}
+                      </Link>
+                      <div className="mx-row-meta">
+                        {opportunity.domain} - effort {opportunity.effort}/5 -
+                        created {formatDate(opportunity.createdAt)}
+                      </div>
+                      <div className="mx-action-inline">
+                        <StatusChip tone={bandTone(opportunity.priorityBand)}>
+                          {opportunity.finalPriority} {opportunity.priorityBand}
+                        </StatusChip>
+                        <StatusChip tone={planTone(opportunity.planScope)}>
+                          {opportunity.planScope}
+                        </StatusChip>
+                        <StatusChip
+                          tone={
+                            opportunity.status === "BLOCKED" ? "warn" : "neutral"
+                          }
+                        >
+                          {opportunity.status}
+                        </StatusChip>
+                        {prepareState?.approval ? (
+                          <Link
+                            href={`/approvals/${prepareState.approval.id}` as never}
+                          >
+                            <StatusChip tone="warn">
+                              {prepareState.approval.status}
+                            </StatusChip>
+                          </Link>
+                        ) : prepareState?.run ? (
+                          <Link href={`/runs/${prepareState.run.id}` as never}>
+                            <StatusChip tone="info">
+                              {prepareState.run.status}
+                            </StatusChip>
+                          </Link>
+                        ) : (
+                          <StatusChip tone="neutral">Awaiting draft</StatusChip>
+                        )}
+                      </div>
                     </div>
-                    <div className="mx-action-inline">
-                      <StatusChip tone={bandTone(opportunity.priorityBand)}>
-                        {opportunity.finalPriority} {opportunity.priorityBand}
-                      </StatusChip>
-                      <StatusChip tone={planTone(opportunity.planScope)}>
-                        {opportunity.planScope}
-                      </StatusChip>
-                      <StatusChip tone={opportunity.status === "BLOCKED" ? "warn" : "neutral"}>
-                        {opportunity.status}
-                      </StatusChip>
-                    </div>
-                  </div>
-                  {opportunity.selectedForCycle ? (
+                    {opportunity.selectedForCycle ? (
                     <form action={removeOpportunityFromWorkPlanAction}>
                       <input name="opportunityId" type="hidden" value={opportunity.id} />
                       <input name="clientId" type="hidden" value={plan.client.id} />
@@ -142,9 +173,10 @@ export default async function WorkPlanPage({
                         Select
                       </button>
                     </form>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <EmptyState>

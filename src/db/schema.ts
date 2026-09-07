@@ -186,6 +186,120 @@ export const workPlanStatusEnum = pgEnum("work_plan_status", [
   "CLOSED",
 ]);
 
+export const agentPermissionLevelEnum = pgEnum("agent_permission_level", [
+  "OBSERVE",
+  "PREPARE",
+  "EXECUTE",
+]);
+
+export const agentRunStatusEnum = pgEnum("agent_run_status", [
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "PARTIAL",
+  "FAILED",
+  "CANCELED",
+  "TIMED_OUT",
+  "BUDGET_LIMITED",
+  "BLOCKED",
+]);
+
+export const agentTriggerTypeEnum = pgEnum("agent_trigger_type", [
+  "USER",
+  "SCHEDULE",
+  "EVENT",
+  "ORCHESTRATOR",
+]);
+
+export const agentToolCallStatusEnum = pgEnum("agent_tool_call_status", [
+  "SUCCEEDED",
+  "FAILED",
+  "SKIPPED",
+  "BUDGET_LIMITED",
+]);
+
+export const knowledgeSourceTypeEnum = pgEnum("knowledge_source_type", [
+  "WEBSITE_PAGE",
+  "ONBOARDING_ANSWER",
+  "SERVICE_LIST",
+  "SERVICE_AREA",
+  "PRICING_STATEMENT",
+  "CREDENTIAL_LICENSE",
+  "WARRANTY_GUARANTEE",
+  "BRAND_GUIDANCE",
+  "REFERENCE_MATERIAL",
+]);
+
+export const factVerificationStatusEnum = pgEnum("fact_verification_status", [
+  "VERIFIED",
+  "SOURCE_DERIVED_DRAFT",
+  "NEEDS_REVIEW",
+  "REJECTED",
+]);
+
+export const factSensitivityEnum = pgEnum("fact_sensitivity", [
+  "PUBLIC",
+  "INTERNAL",
+  "CONFIDENTIAL",
+]);
+
+export const claimPolicyRuleTypeEnum = pgEnum("claim_policy_rule_type", [
+  "ALLOWED",
+  "REQUIRES_APPROVAL",
+  "PROHIBITED",
+  "REQUIRED_DISCLAIMER",
+  "STRICTER_REVIEW",
+]);
+
+export const draftArtifactTypeEnum = pgEnum("draft_artifact_type", [
+  "METADATA_PROPOSAL",
+  "EXISTING_PAGE_OPTIMIZATION_PROPOSAL",
+  "INTERNAL_LINK_PROPOSAL",
+  "SCHEMA_PROPOSAL",
+  "CONTENT_BRIEF",
+  "CONTENT_DRAFT",
+  "CLIENT_MESSAGE_DRAFT",
+  "REPORT_SECTION",
+  "OTHER",
+]);
+
+export const draftArtifactStatusEnum = pgEnum("draft_artifact_status", [
+  "DRAFT",
+  "AWAITING_APPROVAL",
+  "APPROVED",
+  "REJECTED",
+  "SUPERSEDED",
+]);
+
+export const approvalRequestStatusEnum = pgEnum("approval_request_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "CHANGES_REQUESTED",
+  "EXPIRED",
+  "CANCELED",
+]);
+
+export const approvalDecisionEnum = pgEnum("approval_decision", [
+  "APPROVED_UNCHANGED",
+  "APPROVED_MINOR_EDIT",
+  "APPROVED_MAJOR_EDIT",
+  "REJECTED",
+  "CHANGES_REQUESTED",
+]);
+
+export const riskLevelEnum = pgEnum("risk_level", [
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "CRITICAL",
+]);
+
+export const operationalNotificationStatusEnum = pgEnum(
+  "operational_notification_status",
+  ["UNREAD", "READ", "ARCHIVED"],
+);
+
 function createdAt() {
   return timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 }
@@ -1041,6 +1155,578 @@ export const workPlanItems = pgTable(
       ],
       name: "work_plan_items_opportunity_workspace_fk",
     }).onDelete("cascade"),
+  ],
+);
+
+export const agentDefinitions = pgTable(
+  "agent_definitions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    key: text("key").notNull(),
+    version: text("version").notNull(),
+    name: text("name").notNull(),
+    capabilityType: text("capability_type").notNull(),
+    defaultPermissionLevel: agentPermissionLevelEnum("default_permission_level")
+      .notNull(),
+    allowedToolKeys: jsonb("allowed_tool_keys").$type<string[]>().notNull(),
+    defaultTimeoutSeconds: integer("default_timeout_seconds").notNull(),
+    budgetLimits: jsonb("budget_limits")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    outputSchemaVersion: text("output_schema_version").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("agent_definitions_key_version_unique").on(
+      table.key,
+      table.version,
+    ),
+    index("agent_definitions_enabled_idx").on(table.enabled),
+  ],
+);
+
+export const agentRuns = pgTable(
+  "agent_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    agentDefinitionId: uuid("agent_definition_id").references(
+      () => agentDefinitions.id,
+      { onDelete: "restrict" },
+    ),
+    clientId: uuid("client_id"),
+    websiteId: uuid("website_id"),
+    auditId: uuid("audit_id"),
+    opportunityId: uuid("opportunity_id"),
+    workPlanCycleId: uuid("work_plan_cycle_id"),
+    parentRunId: uuid("parent_run_id"),
+    triggerType: agentTriggerTypeEnum("trigger_type").notNull(),
+    agentKey: text("agent_key").notNull(),
+    agentVersion: text("agent_version").notNull(),
+    permissionLevel: agentPermissionLevelEnum("permission_level").notNull(),
+    status: agentRunStatusEnum("status").notNull().default("QUEUED"),
+    inputSummary: jsonb("input_summary")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    evidenceRefs: jsonb("evidence_refs").$type<string[]>().notNull().default([]),
+    allowedToolSnapshot: jsonb("allowed_tool_snapshot")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    budgetSnapshot: jsonb("budget_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    timeoutSeconds: integer("timeout_seconds").notNull(),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    promptTemplateVersion: text("prompt_template_version").notNull(),
+    outputSchemaVersion: text("output_schema_version").notNull(),
+    structuredOutput: jsonb("structured_output")
+      .$type<Record<string, unknown>>(),
+    outputRef: text("output_ref"),
+    rationale: text("rationale"),
+    confidence: evidenceConfidenceEnum("confidence"),
+    source: text("source"),
+    nextAction: text("next_action"),
+    estimatedToolCalls: integer("estimated_tool_calls").notNull().default(0),
+    actualToolCalls: integer("actual_tool_calls").notNull().default(0),
+    estimatedModelCalls: integer("estimated_model_calls").notNull().default(0),
+    actualModelCalls: integer("actual_model_calls").notNull().default(0),
+    estimatedInputTokens: integer("estimated_input_tokens").notNull().default(0),
+    actualInputTokens: integer("actual_input_tokens").notNull().default(0),
+    estimatedOutputTokens: integer("estimated_output_tokens").notNull().default(0),
+    actualOutputTokens: integer("actual_output_tokens").notNull().default(0),
+    estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
+    actualCostCents: integer("actual_cost_cents").notNull().default(0),
+    errorCode: text("error_code"),
+    errorSummary: text("error_summary"),
+    retryCount: integer("retry_count").notNull().default(0),
+    idempotencyKey: text("idempotency_key").notNull(),
+    workflowRunId: text("workflow_run_id"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("agent_runs_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("agent_runs_workspace_idempotency_unique").on(
+      table.workspaceId,
+      table.idempotencyKey,
+    ),
+    index("agent_runs_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    index("agent_runs_workspace_opportunity_idx").on(
+      table.workspaceId,
+      table.opportunityId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "agent_runs_client_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "agent_runs_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.auditId],
+      foreignColumns: [audits.workspaceId, audits.id],
+      name: "agent_runs_audit_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.opportunityId],
+      foreignColumns: [
+        opportunities.workspaceId,
+        opportunities.clientId,
+        opportunities.id,
+      ],
+      name: "agent_runs_opportunity_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.workPlanCycleId],
+      foreignColumns: [
+        workPlanCycles.workspaceId,
+        workPlanCycles.clientId,
+        workPlanCycles.id,
+      ],
+      name: "agent_runs_work_plan_cycle_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.parentRunId],
+      foreignColumns: [table.workspaceId, table.id],
+      name: "agent_runs_parent_workspace_fk",
+    }).onDelete("restrict"),
+    check("agent_runs_timeout_positive_check", sql`${table.timeoutSeconds} > 0`),
+  ],
+);
+
+export const agentToolCalls = pgTable(
+  "agent_tool_calls",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    agentRunId: uuid("agent_run_id").notNull(),
+    toolKey: text("tool_key").notNull(),
+    toolVersion: text("tool_version").notNull(),
+    permissionLevel: agentPermissionLevelEnum("permission_level").notNull(),
+    targetSummary: jsonb("target_summary")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    inputSummary: jsonb("input_summary")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    outputSummary: jsonb("output_summary")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    status: agentToolCallStatusEnum("status").notNull(),
+    costCents: integer("cost_cents").notNull().default(0),
+    externalRequestId: text("external_request_id"),
+    errorSummary: text("error_summary"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("agent_tool_calls_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("agent_tool_calls_workspace_run_idx").on(
+      table.workspaceId,
+      table.agentRunId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.agentRunId],
+      foreignColumns: [agentRuns.workspaceId, agentRuns.id],
+      name: "agent_tool_calls_run_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const clientKnowledgeSources = pgTable(
+  "client_knowledge_sources",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id"),
+    sourceType: knowledgeSourceTypeEnum("source_type").notNull(),
+    title: text("title").notNull(),
+    sourceUrl: text("source_url"),
+    sourceRef: text("source_ref"),
+    excerpt: text("excerpt"),
+    verificationStatus: factVerificationStatusEnum("verification_status")
+      .notNull()
+      .default("NEEDS_REVIEW"),
+    approvedByUserId: text("approved_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    sensitivity: factSensitivityEnum("sensitivity").notNull().default("PUBLIC"),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("client_knowledge_sources_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("client_knowledge_sources_workspace_client_idx").on(
+      table.workspaceId,
+      table.clientId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "client_knowledge_sources_client_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "client_knowledge_sources_website_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const businessFacts = pgTable(
+  "business_facts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id"),
+    knowledgeSourceId: uuid("knowledge_source_id"),
+    factType: text("fact_type").notNull(),
+    value: text("value").notNull(),
+    structuredValue: jsonb("structured_value")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    sourceReference: text("source_reference").notNull(),
+    verificationStatus: factVerificationStatusEnum("verification_status")
+      .notNull()
+      .default("NEEDS_REVIEW"),
+    approvedByUserId: text("approved_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    sensitivity: factSensitivityEnum("sensitivity").notNull().default("PUBLIC"),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("business_facts_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("business_facts_workspace_client_idx").on(
+      table.workspaceId,
+      table.clientId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "business_facts_client_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "business_facts_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.knowledgeSourceId],
+      foreignColumns: [
+        clientKnowledgeSources.workspaceId,
+        clientKnowledgeSources.id,
+      ],
+      name: "business_facts_knowledge_source_workspace_fk",
+    }).onDelete("restrict"),
+  ],
+);
+
+export const claimPolicies = pgTable(
+  "claim_policies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    ruleType: claimPolicyRuleTypeEnum("rule_type").notNull(),
+    claimCategory: text("claim_category").notNull(),
+    rule: text("rule").notNull(),
+    requiredDisclaimer: text("required_disclaimer"),
+    active: boolean("active").notNull().default(true),
+    version: integer("version").notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("claim_policies_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("claim_policies_workspace_client_idx").on(
+      table.workspaceId,
+      table.clientId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "claim_policies_client_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const draftArtifacts = pgTable(
+  "draft_artifacts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id"),
+    opportunityId: uuid("opportunity_id"),
+    artifactType: draftArtifactTypeEnum("artifact_type").notNull(),
+    artifactVersion: integer("artifact_version").notNull(),
+    status: draftArtifactStatusEnum("status").notNull().default("DRAFT"),
+    preparedByAgentRunId: uuid("prepared_by_agent_run_id"),
+    sourceEvidenceRefs: jsonb("source_evidence_refs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    structuredProposal: jsonb("structured_proposal")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    renderedPreview: text("rendered_preview").notNull(),
+    factualBasisRefs: jsonb("factual_basis_refs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    riskLevel: riskLevelEnum("risk_level").notNull().default("LOW"),
+    contentHash: text("content_hash").notNull(),
+    supersedesArtifactId: uuid("supersedes_artifact_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("draft_artifacts_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("draft_artifacts_workspace_version_unique").on(
+      table.workspaceId,
+      table.id,
+      table.artifactVersion,
+    ),
+    index("draft_artifacts_workspace_opportunity_idx").on(
+      table.workspaceId,
+      table.opportunityId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "draft_artifacts_client_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "draft_artifacts_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.opportunityId],
+      foreignColumns: [
+        opportunities.workspaceId,
+        opportunities.clientId,
+        opportunities.id,
+      ],
+      name: "draft_artifacts_opportunity_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.preparedByAgentRunId],
+      foreignColumns: [agentRuns.workspaceId, agentRuns.id],
+      name: "draft_artifacts_agent_run_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.supersedesArtifactId],
+      foreignColumns: [table.workspaceId, table.id],
+      name: "draft_artifacts_supersedes_workspace_fk",
+    }).onDelete("restrict"),
+    check(
+      "draft_artifacts_artifact_version_positive_check",
+      sql`${table.artifactVersion} > 0`,
+    ),
+  ],
+);
+
+export const approvalRequests = pgTable(
+  "approval_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id"),
+    websiteId: uuid("website_id"),
+    opportunityId: uuid("opportunity_id"),
+    requestType: text("request_type").notNull(),
+    targetType: text("target_type").notNull(),
+    targetArtifactId: uuid("target_artifact_id").notNull(),
+    targetArtifactVersion: integer("target_artifact_version").notNull(),
+    riskLevel: riskLevelEnum("risk_level").notNull(),
+    requestedByUserId: text("requested_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    requestedByAgentRunId: uuid("requested_by_agent_run_id"),
+    status: approvalRequestStatusEnum("status").notNull().default("PENDING"),
+    decision: approvalDecisionEnum("decision"),
+    approverUserId: text("approver_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    decisionComments: text("decision_comments"),
+    decisionReasonCategory: text("decision_reason_category"),
+    immutableSummary: jsonb("immutable_summary")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    proposedExternalExecution: boolean("proposed_external_execution")
+      .notNull()
+      .default(false),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("approval_requests_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("approval_requests_one_pending_artifact_version_unique")
+      .on(table.workspaceId, table.targetArtifactId, table.targetArtifactVersion)
+      .where(sql`${table.status} = 'PENDING'`),
+    index("approval_requests_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    index("approval_requests_workspace_opportunity_idx").on(
+      table.workspaceId,
+      table.opportunityId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "approval_requests_client_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "approval_requests_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.opportunityId],
+      foreignColumns: [
+        opportunities.workspaceId,
+        opportunities.clientId,
+        opportunities.id,
+      ],
+      name: "approval_requests_opportunity_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.workspaceId,
+        table.targetArtifactId,
+        table.targetArtifactVersion,
+      ],
+      foreignColumns: [
+        draftArtifacts.workspaceId,
+        draftArtifacts.id,
+        draftArtifacts.artifactVersion,
+      ],
+      name: "approval_requests_artifact_version_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.requestedByAgentRunId],
+      foreignColumns: [agentRuns.workspaceId, agentRuns.id],
+      name: "approval_requests_agent_run_workspace_fk",
+    }).onDelete("restrict"),
+    check(
+      "approval_requests_no_external_execute_phase3_check",
+      sql`${table.proposedExternalExecution} = false`,
+    ),
+  ],
+);
+
+export const operationalNotifications = pgTable(
+  "operational_notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    severity: riskLevelEnum("severity").notNull().default("LOW"),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    resourceType: text("resource_type"),
+    resourceId: text("resource_id"),
+    status: operationalNotificationStatusEnum("status")
+      .notNull()
+      .default("UNREAD"),
+    createdAt: createdAt(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("operational_notifications_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("operational_notifications_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    index("operational_notifications_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
   ],
 );
 

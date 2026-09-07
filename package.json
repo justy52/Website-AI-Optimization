@@ -20,6 +20,9 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
+    "@workflow/next": "^4.1.9",
+    "@workflow/vitest": "^4.0.21",
+    "ai": "^7.0.93",
     "better-auth": "^1.7.3",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
@@ -28,6 +31,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwind-merge": "^3.6.0",
+    "workflow": "^4.8.5",
     "zod": "^4.5.4"
   },
   "devDependencies": {
@@ -35,8 +39,8 @@
     "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
-    "drizzle-kit": "^0.31.10",
     "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.3.4",
     "jsdom": "^30.0.1",
