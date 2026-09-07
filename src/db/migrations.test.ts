@@ -243,6 +243,19 @@ describe("phase 0 migrations", () => {
     );
   });
 
+  it("keeps closed opportunities outside the open dedupe uniqueness window", () => {
+    const migration = readMigration("0007_phase2_opportunities.sql");
+    const uniqueIndexBlock = migration.match(
+      /CREATE UNIQUE INDEX "opportunities_open_equivalent_unique"[\s\S]*?statement-breakpoint/,
+    )?.[0];
+
+    expect(uniqueIndexBlock).toBeDefined();
+    expect(uniqueIndexBlock).toContain("'DRAFT', 'READY', 'BLOCKED', 'IN_PROGRESS'");
+    expect(uniqueIndexBlock).not.toContain("COMPLETED");
+    expect(uniqueIndexBlock).not.toContain("DISMISSED");
+    expect(uniqueIndexBlock).not.toContain("SUPERSEDED");
+  });
+
   it("prevents duplicate client conversion from the same source lead", () => {
     const migration = readMigration("0004_phase1_conversion_constraints.sql");
 

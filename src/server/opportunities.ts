@@ -26,6 +26,7 @@ import {
   buildOpportunityDraft,
   openOpportunityStatuses,
   opportunityStatuses,
+  recalculateDedupedOpportunityPriority,
   sortOpportunitiesForWorkPlan,
   type ApprovalBlockedState,
   type ClientInputState,
@@ -280,7 +281,19 @@ export async function generateOpportunitiesForAuditRun(
     }
 
     const [existing] = await tx
-      .select({ id: opportunities.id })
+      .select({
+        id: opportunities.id,
+        sourceSeverity: opportunities.sourceSeverity,
+        finalPriority: opportunities.finalPriority,
+        strategicFit: opportunities.strategicFit,
+        planFit: opportunities.planFit,
+        staleness: opportunities.staleness,
+        effort: opportunities.effort,
+        dependencyState: opportunities.dependencyState,
+        clientInputState: opportunities.clientInputState,
+        approvalBlockedState: opportunities.approvalBlockedState,
+        status: opportunities.status,
+      })
       .from(opportunities)
       .where(
         and(
@@ -297,6 +310,26 @@ export async function generateOpportunitiesForAuditRun(
       .limit(1);
 
     if (existing) {
+      const refreshedPriority = recalculateDedupedOpportunityPriority(
+        {
+          strategicFit: existing.strategicFit,
+          planFit: existing.planFit,
+          staleness: existing.staleness,
+          effort: existing.effort as PriorityInputs["effort"],
+          dependencyState: existing.dependencyState,
+          clientInputState: existing.clientInputState,
+          approvalBlockedState: existing.approvalBlockedState,
+          status: existing.status,
+        },
+        {
+          sourceSeverity: draft.sourceSeverity,
+          evidenceConfidence: row.evidenceConfidence,
+        },
+      );
+      const criticalEscalation =
+        existing.sourceSeverity !== "CRITICAL" &&
+        draft.sourceSeverity === "CRITICAL";
+
       await tx
         .update(opportunities)
         .set({
@@ -309,7 +342,15 @@ export async function generateOpportunitiesForAuditRun(
           sourceSeverity: draft.sourceSeverity,
           sourceEvidenceRefs: draft.sourceEvidenceRefs,
           evidenceConfidence: row.evidenceConfidence,
-          immediateAttention: draft.immediateAttention,
+          impact: refreshedPriority.impact,
+          confidence: refreshedPriority.confidence,
+          urgency: refreshedPriority.urgency,
+          basePriority: refreshedPriority.basePriority,
+          modifiers: refreshedPriority.modifiers,
+          finalPriority: refreshedPriority.finalPriority,
+          priorityBand: refreshedPriority.priorityBand,
+          priorityReasons: refreshedPriority.priorityReasons,
+          immediateAttention: refreshedPriority.immediateAttention,
           updatedAt: now(),
         })
         .where(
@@ -328,6 +369,11 @@ export async function generateOpportunitiesForAuditRun(
           reason: "deduplicated_new_audit_evidence",
           sourceAuditId: input.auditId,
           sourceCheckKey: row.checkKey,
+          priorPriority: existing.finalPriority,
+          newPriority: refreshedPriority.finalPriority,
+          priorSeverity: existing.sourceSeverity,
+          newSeverity: draft.sourceSeverity,
+          criticalEscalation,
         },
       );
       deduped += 1;

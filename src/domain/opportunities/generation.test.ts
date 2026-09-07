@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildOpportunityDraft,
   derivePlanFit,
+  recalculateDedupedOpportunityPriority,
   shouldAutoCreateOpportunity,
   sortOpportunitiesForWorkPlan,
   type AuditResultOpportunitySource,
+  type DedupedOpportunityOperationalState,
 } from "./generation";
 
 const baseSource: AuditResultOpportunitySource = {
@@ -152,5 +154,131 @@ describe("plan fit and work-plan ordering", () => {
       "lower-effort",
       "high",
     ]);
+  });
+});
+
+describe("deduped opportunity priority refresh", () => {
+  const operationalState: DedupedOpportunityOperationalState = {
+    strategicFit: 3,
+    planFit: 4,
+    staleness: 0,
+    effort: 2,
+    dependencyState: "NONE",
+    clientInputState: "NOT_REQUIRED",
+    approvalBlockedState: "NOT_BLOCKED",
+    status: "READY",
+  };
+
+  it("refreshes a MEDIUM-sourced opportunity to the CRITICAL priority floor", () => {
+    const refreshed = recalculateDedupedOpportunityPriority(
+      {
+        ...operationalState,
+        planFit: 0,
+        effort: 5,
+      },
+      {
+        sourceSeverity: "CRITICAL",
+        evidenceConfidence: "HIGH",
+      },
+    );
+
+    expect(refreshed.impact).toBe(5);
+    expect(refreshed.confidence).toBe(5);
+    expect(refreshed.urgency).toBe(5);
+    expect(refreshed.finalPriority).toBeGreaterThanOrEqual(95);
+    expect(refreshed.priorityBand).toBe("Immediate");
+    expect(refreshed.immediateAttention).toBe(true);
+    expect(refreshed.priorityReasons).toContain(
+      "Critical finding priority floor applied at 95.",
+    );
+  });
+
+  it("refreshes HIGH severity to CRITICAL and raises the stored priority", () => {
+    const high = recalculateDedupedOpportunityPriority(operationalState, {
+      sourceSeverity: "HIGH",
+      evidenceConfidence: "HIGH",
+    });
+    const critical = recalculateDedupedOpportunityPriority(operationalState, {
+      sourceSeverity: "CRITICAL",
+      evidenceConfidence: "HIGH",
+    });
+
+    expect(critical.finalPriority).toBeGreaterThan(high.finalPriority);
+    expect(critical.priorityBand).toBe("Immediate");
+    expect(critical.immediateAttention).toBe(true);
+  });
+
+  it("refreshes MEDIUM confidence to HIGH confidence consistently", () => {
+    const mediumConfidence = recalculateDedupedOpportunityPriority(
+      operationalState,
+      {
+        sourceSeverity: "HIGH",
+        evidenceConfidence: "MEDIUM",
+      },
+    );
+    const highConfidence = recalculateDedupedOpportunityPriority(
+      operationalState,
+      {
+        sourceSeverity: "HIGH",
+        evidenceConfidence: "HIGH",
+      },
+    );
+
+    expect(mediumConfidence.confidence).toBe(3);
+    expect(highConfidence.confidence).toBe(5);
+    expect(highConfidence.finalPriority).toBeGreaterThan(
+      mediumConfidence.finalPriority,
+    );
+  });
+
+  it("preserves human operational blockers while refreshing source-derived factors", () => {
+    const refreshed = recalculateDedupedOpportunityPriority(
+      {
+        ...operationalState,
+        effort: 4,
+        dependencyState: "HARD_DEPENDENCY",
+        clientInputState: "REQUIRED",
+        approvalBlockedState: "AWAITING_APPROVAL",
+        status: "BLOCKED",
+      },
+      {
+        sourceSeverity: "HIGH",
+        evidenceConfidence: "HIGH",
+      },
+    );
+
+    expect(refreshed.impact).toBe(4);
+    expect(refreshed.confidence).toBe(5);
+    expect(refreshed.urgency).toBe(4);
+    expect(refreshed.modifiers).toMatchObject({
+      dependencyState: "HARD_DEPENDENCY",
+      clientInputState: "REQUIRED",
+      approvalBlockedState: "AWAITING_APPROVAL",
+      effort: 4,
+    });
+    expect(refreshed.priorityReasons).toEqual(
+      expect.arrayContaining([
+        "Unresolved hard dependency modifier -25.",
+        "Awaiting required client input modifier -15.",
+      ]),
+    );
+  });
+
+  it("does not include human status in the dedupe refresh payload", () => {
+    const refreshed = recalculateDedupedOpportunityPriority(
+      {
+        ...operationalState,
+        status: "IN_PROGRESS",
+      },
+      {
+        sourceSeverity: "HIGH",
+        evidenceConfidence: "HIGH",
+      },
+    );
+
+    expect("status" in refreshed).toBe(false);
+    expect(refreshed.modifiers).toMatchObject({
+      refreshRule: "audit_source_refresh_preserve_operational_state",
+    });
   });
 });

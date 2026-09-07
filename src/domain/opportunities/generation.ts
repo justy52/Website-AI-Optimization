@@ -96,6 +96,36 @@ export type OpportunityDraft = {
   immediateAttention: boolean;
 };
 
+export type AuditDerivedOpportunityFactors = Pick<
+  PriorityInputs,
+  "impact" | "confidence" | "urgency"
+>;
+
+export type DedupedOpportunityOperationalState = {
+  strategicFit: number;
+  planFit: number;
+  staleness: number;
+  effort: PriorityInputs["effort"];
+  dependencyState: DependencyState;
+  clientInputState: ClientInputState;
+  approvalBlockedState: ApprovalBlockedState;
+  status: OpportunityStatus;
+};
+
+export type DedupedOpportunitySourceState = {
+  sourceSeverity: NonNullable<AuditResultOpportunitySource["severity"]>;
+  evidenceConfidence: EvidenceConfidence;
+};
+
+export type DedupedOpportunityPriorityRefresh = AuditDerivedOpportunityFactors & {
+  basePriority: number;
+  modifiers: Record<string, unknown>;
+  finalPriority: number;
+  priorityBand: PriorityBand;
+  priorityReasons: string[];
+  immediateAttention: boolean;
+};
+
 const checkDefinitionByKey = new Map(
   auditCheckDefinitions.map((definition) => [definition.key, definition]),
 );
@@ -207,6 +237,60 @@ function severityUrgency(severity: NonNullable<AuditResultOpportunitySource["sev
   if (severity === "HIGH") return 4;
   if (severity === "MEDIUM") return 3;
   return 2;
+}
+
+export function deriveAuditSourcePriorityFactors(source: {
+  severity: NonNullable<AuditResultOpportunitySource["severity"]>;
+  evidenceConfidence: EvidenceConfidence;
+}): AuditDerivedOpportunityFactors {
+  return {
+    impact: severityImpact(source.severity),
+    confidence: evidenceConfidenceFactor(source.evidenceConfidence),
+    urgency: severityUrgency(source.severity),
+  };
+}
+
+export function recalculateDedupedOpportunityPriority(
+  operationalState: DedupedOpportunityOperationalState,
+  sourceState: DedupedOpportunitySourceState,
+): DedupedOpportunityPriorityRefresh {
+  const sourceFactors = deriveAuditSourcePriorityFactors({
+    severity: sourceState.sourceSeverity,
+    evidenceConfidence: sourceState.evidenceConfidence,
+  });
+
+  // Deduped audit refreshes only audit-derived factors. Human operational
+  // decisions stay intact until the user edits them or closes the item.
+  const priority = calculateOpportunityPriority({
+    ...sourceFactors,
+    strategicFit: operationalState.strategicFit,
+    planFit: operationalState.planFit,
+    staleness: operationalState.staleness,
+    effort: operationalState.effort,
+    hasUnresolvedHardDependency:
+      operationalState.dependencyState === "HARD_DEPENDENCY",
+    awaitingClientInput: operationalState.clientInputState === "REQUIRED",
+    isConfirmedDuplicate: operationalState.status === "SUPERSEDED",
+    isCriticalFinding: sourceState.sourceSeverity === "CRITICAL",
+  });
+
+  return {
+    ...sourceFactors,
+    basePriority: priority.baseScore,
+    modifiers: {
+      dependencyState: operationalState.dependencyState,
+      clientInputState: operationalState.clientInputState,
+      approvalBlockedState: operationalState.approvalBlockedState,
+      effort: operationalState.effort,
+      modifierTotal: priority.modifierTotal,
+      superseded: operationalState.status === "SUPERSEDED",
+      refreshRule: "audit_source_refresh_preserve_operational_state",
+    },
+    finalPriority: priority.score,
+    priorityBand: priority.band,
+    priorityReasons: priority.reasons,
+    immediateAttention: sourceState.sourceSeverity === "CRITICAL",
+  };
 }
 
 export function normalizeRemediationFamily(checkKey: string): string {
@@ -323,10 +407,12 @@ export function buildOpportunityDraft(
     source.category,
     normalizedRemediationFamily,
   );
+  const sourceFactors = deriveAuditSourcePriorityFactors({
+    severity: source.severity,
+    evidenceConfidence: source.evidenceConfidence,
+  });
   const inputs: PriorityInputs = {
-    impact: severityImpact(source.severity),
-    confidence: evidenceConfidenceFactor(source.evidenceConfidence),
-    urgency: severityUrgency(source.severity),
+    ...sourceFactors,
     strategicFit: 3,
     planFit: planFit.planFit,
     staleness: 0,
