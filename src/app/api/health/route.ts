@@ -3,7 +3,7 @@ export async function GET() {
     {
       status: "ok",
       app: "optiq",
-      phase: "1",
+      phase: "3",
     },
     {
       headers: {
