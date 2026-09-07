@@ -46,6 +46,13 @@ function planTone(scope: string) {
   return "info";
 }
 
+function statusTone(status: string) {
+  if (status === "BLOCKED") return "warn";
+  if (status === "COMPLETED") return "good";
+  if (status === "DISMISSED" || status === "SUPERSEDED") return "neutral";
+  return "info";
+}
+
 function factorSelect(name: string, label: string, value: number) {
   return (
     <label>
@@ -80,10 +87,15 @@ export default async function OpportunityDetailPage({
     <>
       <PageHeader
         action={
-          <Link className="mx-btn mx-btn-ghost" href={"/opportunities" as never}>
-            <ArrowLeft aria-hidden size={14} />
-            Opportunities
-          </Link>
+          <div className="mx-top-actions">
+            <StatusChip tone={statusTone(opportunity.status)}>
+              {opportunity.status}
+            </StatusChip>
+            <Link className="mx-btn mx-btn-ghost" href={"/opportunities" as never}>
+              <ArrowLeft aria-hidden size={14} />
+              Opportunities
+            </Link>
+          </div>
         }
         eyebrow={`${detail.clientName} - ${detail.domain} - ${formatDate(opportunity.createdAt)}`}
         title={opportunity.title}
