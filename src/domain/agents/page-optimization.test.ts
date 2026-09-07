@@ -156,6 +156,22 @@ describe("existing page optimization PREPARE agent", () => {
     expect(JSON.stringify(output)).not.toMatch(/api key|publish|email/i);
   });
 
+  it("creates a valid CTA draft without unsupported protected claims", () => {
+    const input = maliciousFixtureInput({
+      opportunity: {
+        ...maliciousFixtureInput().opportunity,
+        title: "conv.primary_cta FAIL",
+        sourceCheckKey: "conv.primary_cta",
+      },
+    });
+    const output = createDeterministicPageOptimizationOutput(input);
+
+    expect(() => assertPrepareOutputPolicy(output, input)).not.toThrow();
+    expect(output.proposals[0]?.field).toBe("cta");
+    expect(output.proposals[0]?.requiresHumanInput).toBe(true);
+    expect(JSON.stringify(output)).not.toMatch(/\bguarantee/i);
+  });
+
   it("rejects unsupported factual claims without verified BusinessFacts", () => {
     const input = maliciousFixtureInput();
     const output: ExistingPageOptimizationOutput = {

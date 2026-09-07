@@ -835,7 +835,7 @@ export function createDeterministicPageOptimizationOutput(
           currentValue: null,
           proposedValue: "Contact us to discuss your project.",
           rationale:
-            "The audit found weak conversion-path evidence; the proposed CTA is generic and avoids unsupported guarantees.",
+            "The audit found weak conversion-path evidence; the proposed CTA stays generic and avoids unsupported factual claims.",
           evidenceRefs: refs,
           factualBasis: [
             {

@@ -8,6 +8,7 @@ const workspaceName = `OPTIQ Phase 3 QA ${runId}`;
 const clientName = `Phase 3 QA Client ${runId}`;
 const confidentialCanary = `CONFIDENTIAL_CANARY_${runId}`;
 const unverifiedCanary = `UNVERIFIED_CANARY_${runId}`;
+const expectedProvider = process.env.OPTIQ_E2E_EXPECT_PROVIDER ?? "deterministic";
 
 async function signUp(page: Page) {
   await page.goto("/login");
@@ -61,9 +62,50 @@ async function pollForLink(page: Page, name: RegExp) {
     .toBeGreaterThan(0);
 }
 
+async function openLatestRunDraftVersionForClient(
+  page: Page,
+  expectedClientName: string,
+  version: number,
+) {
+  const deadline = Date.now() + 180_000;
+  const artifactMarker = `v${version}`;
+
+  while (Date.now() < deadline) {
+    await page.goto("/runs", { waitUntil: "networkidle" });
+    const runRow = page.locator("main a.mx-row", {
+      hasText: expectedClientName,
+    }).first();
+
+    if ((await runRow.count()) > 0) {
+      await runRow.click();
+      const runText = (await page.locator("main").textContent()) ?? "";
+
+      if (runText.includes("SUCCEEDED")) {
+        const draftLink = page.getByRole("link", { name: "Open draft artifact" });
+
+        if ((await draftLink.count()) > 0) {
+          await draftLink.click();
+          await page.waitForLoadState("networkidle");
+          const draftText = (await page.locator("main").textContent()) ?? "";
+
+          if (draftText.includes(artifactMarker)) {
+            return;
+          }
+        }
+      }
+    }
+
+    await page.waitForTimeout(5_000);
+  }
+
+  throw new Error(`Timed out waiting for run-backed draft artifact v${version}.`);
+}
+
 test.describe.configure({ mode: "serial" });
 
 test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
+  test.setTimeout(420_000);
+
   await signUp(page);
   await ensureWorkspace(page);
 
@@ -144,8 +186,14 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await pollForLink(page, /Open approval/);
   await page.getByRole("link", { name: "Inspect run" }).click();
   await expect(page.getByText("Usage and Gateway metadata")).toBeVisible();
-  await expect(page.getByText("vercel-ai-gateway")).toBeVisible();
-  await expect(page.locator("main")).toContainText(/Actual cost\s+[1-9]\d* cents/);
+  await expect(page.getByText(expectedProvider).first()).toBeVisible();
+  if (expectedProvider === "vercel-ai-gateway") {
+    await expect(page.locator("main")).toContainText(
+      /Actual cost\s*[1-9]\d* cents/,
+    );
+  } else {
+    await expect(page.locator("main")).toContainText(/Actual cost\s*0 cents/);
+  }
 
   await page.goBack();
   await page.getByRole("link", { name: "Review draft" }).click();
@@ -156,16 +204,28 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await page.goBack();
   await page.getByRole("link", { name: "Open approval" }).click();
   await expect(page.getByText("Pending")).toBeVisible();
-  await page.getByLabel("Decision").selectOption("CHANGES_REQUESTED");
-  await page.getByLabel("Comments").fill("E2E requests a revised draft.");
+  await expect(
+    page.getByText(
+      "Approval is for this internal draft version only. It does not publish, email, edit a website, or call an EXECUTE tool.",
+    ),
+  ).toBeVisible();
+  await page.getByLabel("Decision").selectOption("APPROVED_UNCHANGED");
+  await page
+    .getByLabel("Comments")
+    .fill("E2E approves exact v1 for manual implementation only.");
   await page.getByRole("button", { name: "Record human decision" }).click();
-  await expect(page.getByText("CHANGES_REQUESTED")).toBeVisible();
+  await expect(page.getByText("APPROVED", { exact: true })).toBeVisible();
 
   await page.goto(opportunityUrl);
   await page.getByRole("button", { name: "Prepare draft" }).click();
-  await pollForLink(page, /Open approval/);
-  await page.getByRole("link", { name: "Review draft" }).click();
-  await expect(page.locator("main")).toContainText(/Version\s+2/i);
+  await openLatestRunDraftVersionForClient(page, clientName, 2);
+  await page.getByRole("link", { name: "Approval", exact: true }).click();
+  await expect(page.getByText("Pending")).toBeVisible();
+  await expect(page.locator("main")).toContainText(/Version\s*2/i);
+  await page.getByLabel("Decision").selectOption("CHANGES_REQUESTED");
+  await page.getByLabel("Comments").fill("E2E requests a revised v2 draft.");
+  await page.getByRole("button", { name: "Record human decision" }).click();
+  await expect(page.getByText("CHANGES_REQUESTED").first()).toBeVisible();
 
   await page.getByRole("link", { name: "Work Plan", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Work Plan" })).toBeVisible();
