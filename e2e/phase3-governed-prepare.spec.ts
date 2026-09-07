@@ -24,7 +24,9 @@ async function ensureWorkspace(page: Page) {
     await page.getByLabel("Workspace name").fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
   }
-  await expect(page.getByRole("link", { name: "Leads" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Leads", exact: true }),
+  ).toBeVisible();
 }
 
 async function addBusinessFact(
@@ -65,7 +67,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await signUp(page);
   await ensureWorkspace(page);
 
-  await page.getByRole("link", { name: "Leads" }).click();
+  await page.getByRole("link", { name: "Leads", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
   await page.getByLabel("Company").fill(clientName);
   await page.getByLabel("Status").selectOption("NEW");
@@ -85,12 +87,14 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
 
   await page.getByLabel("Service plan").selectOption("GROWTH");
   await page.getByRole("button", { name: "Save client" }).click();
-  await expect(page.getByText("Growth")).toBeVisible();
+  await expect(page.getByLabel("Service plan")).toHaveValue("GROWTH");
 
   await page.getByLabel("Display name").fill("Example");
   await page.getByLabel("Canonical URL").fill("https://example.com");
   await page.getByLabel("Domain").fill("example.com");
-  await page.getByLabel("Authorization scope").fill("Public homepage audit only.");
+  await page
+    .getByLabel("Authorization scope")
+    .selectOption("PUBLIC_PAGES_ONLY");
   await page.getByRole("button", { name: "Add website" }).click();
   await expect(page.getByRole("heading", { name: "Example" })).toBeVisible();
 
@@ -117,23 +121,23 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
     source: "QA unverified source",
   });
 
-  await page.getByRole("link", { name: "Websites" }).click();
+  await page.getByRole("link", { name: "Websites", exact: true }).click();
   await page.getByText("example.com").first().click();
   await page.getByRole("button", { name: "Start audit" }).click();
   await expect(page.getByRole("heading", { name: /Audit/ })).toBeVisible();
   await expect(page.getByText("UNAVAILABLE").first()).toBeVisible();
   await page.getByRole("button", { name: "Finalize audit snapshot" }).click();
   await page.getByRole("button", { name: "Create report" }).click();
-  await expect(page.getByRole("heading", { name: /Report/ })).toBeVisible();
-  await expect(page.getByText("Methodology")).toBeVisible();
+  await expect(page.getByText("Executive summary")).toBeVisible();
+  await expect(page.getByText("Scoring", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Finalize report" }).click();
 
-  await page.getByRole("link", { name: "Opportunities" }).click();
+  await page.getByRole("link", { name: "Opportunities", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Opportunities" })).toBeVisible();
   await page.locator("main a").filter({ hasText: /Priority|Immediate|High|Normal/i }).first().click();
   await expect(page.getByRole("heading")).toBeVisible();
   const opportunityUrl = page.url();
-  await expect(page.getByText("Score explanation")).toBeVisible();
+  await expect(page.getByText("Priority explanation")).toBeVisible();
   await page.getByRole("button", { name: "Prepare draft" }).click();
 
   await pollForLink(page, /Inspect run/);
@@ -163,16 +167,18 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await page.getByRole("link", { name: "Review draft" }).click();
   await expect(page.locator("main")).toContainText(/Version\s+2/i);
 
-  await page.getByRole("link", { name: "Work Plan" }).click();
+  await page.getByRole("link", { name: "Work Plan", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Work Plan" })).toBeVisible();
-  await page.getByRole("link", { name: "Runs" }).click();
+  await page.getByRole("link", { name: "Runs", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Agent Runs" })).toBeVisible();
-  await page.getByRole("link", { name: "Approvals" }).click();
+  await page.getByRole("link", { name: "Approvals", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Approval Queue" })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Opportunities" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Opportunities", exact: true }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login/);
