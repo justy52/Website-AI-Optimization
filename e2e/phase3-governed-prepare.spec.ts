@@ -230,8 +230,11 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await page.getByRole("link", { name: "Work Plan", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Work Plan" })).toBeVisible();
   await page.getByRole("link", { name: "Runs", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Agent Runs" })).toBeVisible();
-  await page.getByRole("link", { name: "Approvals", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "Approvals", exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Approval Queue" })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
