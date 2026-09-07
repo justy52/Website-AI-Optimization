@@ -45,6 +45,8 @@ describe("opportunity priority", () => {
 
     expect(result.score).toBe(92);
     expect(result.band).toBe("Immediate");
+    expect(result.baseScore).toBe(87);
+    expect(result.modifierTotal).toBe(5);
   });
 
   it("zeros confirmed duplicate opportunities", () => {
@@ -61,6 +63,7 @@ describe("opportunity priority", () => {
 
     expect(result.score).toBe(0);
     expect(result.band).toBe("Low");
+    expect(result.baseScore).toBe(0);
   });
 
   it("applies the critical finding floor", () => {
@@ -77,6 +80,68 @@ describe("opportunity priority", () => {
 
     expect(result.score).toBe(95);
     expect(result.band).toBe("Immediate");
+    expect(result.reasons).toContain("Critical finding priority floor applied at 95.");
+  });
+
+  it("applies effort, dependency, and client-input modifiers deterministically", () => {
+    const result = calculateOpportunityPriority({
+      impact: 4,
+      confidence: 5,
+      urgency: 4,
+      strategicFit: 3,
+      planFit: 4,
+      staleness: 1,
+      effort: 5,
+      hasUnresolvedHardDependency: true,
+      awaitingClientInput: true,
+    });
+
+    expect(result.baseScore).toBe(75);
+    expect(result.modifierTotal).toBe(-60);
+    expect(result.score).toBe(15);
+    expect(result.band).toBe("Low");
+  });
+
+  it("maps every priority band at the authoritative thresholds", () => {
+    expect(calculateOpportunityPriority({
+      impact: 5,
+      confidence: 5,
+      urgency: 5,
+      strategicFit: 5,
+      planFit: 5,
+      staleness: 5,
+      effort: 1,
+    }).band).toBe("Immediate");
+
+    expect(calculateOpportunityPriority({
+      impact: 4,
+      confidence: 4,
+      urgency: 4,
+      strategicFit: 4,
+      planFit: 4,
+      staleness: 0,
+      effort: 1,
+    }).band).toBe("High");
+
+    expect(calculateOpportunityPriority({
+      impact: 3,
+      confidence: 3,
+      urgency: 3,
+      strategicFit: 3,
+      planFit: 3,
+      staleness: 1,
+      effort: 3,
+    }).band).toBe("Normal");
+
+    expect(calculateOpportunityPriority({
+      impact: 2,
+      confidence: 2,
+      urgency: 2,
+      strategicFit: 2,
+      planFit: 2,
+      staleness: 0,
+      effort: 3,
+    }).band).toBe("Backlog");
   });
 
   it("blocks invalid scale values", () => {

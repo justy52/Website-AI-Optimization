@@ -15,6 +15,7 @@ import {
   type CheckStatus,
   type ScoreCategoryKey,
 } from "./scoring";
+import type { EvidenceConfidence } from "@/domain/opportunities/generation";
 import {
   safeFetchText,
   SafeFetchError,
@@ -51,6 +52,7 @@ export type Phase1CheckResult = {
   category: ScoreCategoryKey;
   status: CheckStatus;
   severity: FindingSeverity | null;
+  evidenceConfidence: EvidenceConfidence;
   maxPenaltyWeight: number;
   reason: string;
   evidenceRefs: string[];
@@ -131,6 +133,7 @@ function unavailable(check: AuditCheckDefinition, reason?: string): Phase1CheckR
     category: check.category,
     status: "UNAVAILABLE",
     severity: null,
+    evidenceConfidence: "LOW",
     maxPenaltyWeight: check.maxPenaltyWeight,
     reason: reason ?? unsupportedCheckReasons[check.key] ?? "No Phase 1 evidence source is available for this check.",
     evidenceRefs: [],
@@ -155,20 +158,32 @@ function result(
   reason: string,
   options: {
     severity?: FindingSeverity | null;
+    evidenceConfidence?: EvidenceConfidence;
     evidenceRefs?: string[];
     observedValue?: Record<string, unknown>;
   } = {},
 ): Phase1CheckResult {
+  const evidenceRefs = options.evidenceRefs ?? [];
+  const observedValue = options.observedValue ?? {};
+  const evidenceConfidence =
+    options.evidenceConfidence ??
+    (evidenceRefs.length > 0
+      ? "HIGH"
+      : Object.keys(observedValue).length > 0
+        ? "MEDIUM"
+        : "LOW");
+
   return {
     checkKey: check.key,
     checkVersion: checkVersion(check),
     category: check.category,
     status,
     severity: options.severity ?? (status === "FAIL" ? "HIGH" : status === "WARNING" ? "MEDIUM" : null),
+    evidenceConfidence,
     maxPenaltyWeight: check.maxPenaltyWeight,
     reason,
-    evidenceRefs: options.evidenceRefs ?? [],
-    observedValue: options.observedValue ?? {},
+    evidenceRefs,
+    observedValue,
   };
 }
 

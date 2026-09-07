@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -14,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { SCORING_DEFINITION_VERSION } from "@/domain/audits/scoring";
+import { PRIORITY_DEFINITION_VERSION } from "@/domain/opportunities/priority";
 import { SERVICE_PLAN_DEFINITION_VERSION } from "@/domain/service-plans";
 
 export const workspaceRoleEnum = pgEnum("workspace_role", [
@@ -131,6 +134,56 @@ export const findingSeverityEnum = pgEnum("finding_severity", [
 export const reportStatusEnum = pgEnum("report_status", [
   "DRAFT",
   "FINALIZED",
+]);
+
+export const evidenceConfidenceEnum = pgEnum("evidence_confidence", [
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+]);
+
+export const opportunityStatusEnum = pgEnum("opportunity_status", [
+  "DRAFT",
+  "READY",
+  "BLOCKED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "DISMISSED",
+  "SUPERSEDED",
+]);
+
+export const opportunityPriorityBandEnum = pgEnum("opportunity_priority_band", [
+  "Immediate",
+  "High",
+  "Normal",
+  "Backlog",
+  "Low",
+]);
+
+export const opportunityPlanScopeEnum = pgEnum("opportunity_plan_scope", [
+  "INCLUDED",
+  "MAY_REQUIRE_ADD_ON",
+  "OUT_OF_SCOPE",
+]);
+
+export const opportunityDependencyStateEnum = pgEnum(
+  "opportunity_dependency_state",
+  ["NONE", "HARD_DEPENDENCY"],
+);
+
+export const opportunityClientInputStateEnum = pgEnum(
+  "opportunity_client_input_state",
+  ["NOT_REQUIRED", "REQUIRED", "RECEIVED"],
+);
+
+export const opportunityApprovalBlockedStateEnum = pgEnum(
+  "opportunity_approval_blocked_state",
+  ["NOT_BLOCKED", "AWAITING_APPROVAL"],
+);
+
+export const workPlanStatusEnum = pgEnum("work_plan_status", [
+  "OPEN",
+  "CLOSED",
 ]);
 
 function createdAt() {
@@ -370,6 +423,11 @@ export const websites = pgTable(
       table.workspaceId,
       table.id,
     ),
+    uniqueIndex("websites_workspace_client_id_unique").on(
+      table.workspaceId,
+      table.clientId,
+      table.id,
+    ),
     uniqueIndex("websites_workspace_domain_unique").on(
       table.workspaceId,
       table.domain,
@@ -540,6 +598,9 @@ export const auditCheckResults = pgTable(
     category: auditScoreCategoryEnum("category").notNull(),
     status: auditResultStatusEnum("status").notNull(),
     severity: findingSeverityEnum("severity"),
+    evidenceConfidence: evidenceConfidenceEnum("evidence_confidence")
+      .notNull()
+      .default("LOW"),
     maxPenaltyWeight: integer("max_penalty_weight").notNull(),
     reason: text("reason").notNull(),
     evidenceRefs: jsonb("evidence_refs").$type<string[]>().notNull().default([]),
@@ -553,6 +614,12 @@ export const auditCheckResults = pgTable(
     uniqueIndex("audit_check_results_workspace_id_id_unique").on(
       table.workspaceId,
       table.id,
+    ),
+    uniqueIndex("audit_check_results_workspace_full_unique").on(
+      table.workspaceId,
+      table.id,
+      table.auditRunId,
+      table.auditId,
     ),
     uniqueIndex("audit_check_results_workspace_run_check_unique").on(
       table.workspaceId,
@@ -632,6 +699,13 @@ export const auditFindings = pgTable(
       table.workspaceId,
       table.id,
     ),
+    uniqueIndex("audit_findings_workspace_full_unique").on(
+      table.workspaceId,
+      table.id,
+      table.auditRunId,
+      table.auditId,
+      table.checkKey,
+    ),
     uniqueIndex("audit_findings_workspace_run_check_unique").on(
       table.workspaceId,
       table.auditRunId,
@@ -686,6 +760,287 @@ export const auditSnapshots = pgTable(
       ],
       name: "audit_snapshots_run_workspace_fk",
     }).onDelete("restrict"),
+  ],
+);
+
+export const opportunities = pgTable(
+  "opportunities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    sourceAuditId: uuid("source_audit_id").notNull(),
+    sourceAuditRunId: uuid("source_audit_run_id").notNull(),
+    sourceFindingId: uuid("source_finding_id"),
+    sourceCheckResultId: uuid("source_check_result_id").notNull(),
+    sourceCheckKey: text("source_check_key").notNull(),
+    sourceCheckVersion: text("source_check_version").notNull(),
+    sourceResultStatus: auditResultStatusEnum("source_result_status").notNull(),
+    sourceSeverity: findingSeverityEnum("source_severity").notNull(),
+    sourceEvidenceRefs: jsonb("source_evidence_refs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    evidenceConfidence: evidenceConfidenceEnum("evidence_confidence").notNull(),
+    category: auditScoreCategoryEnum("category").notNull(),
+    normalizedRemediationFamily: text("normalized_remediation_family").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    recommendedAction: text("recommended_action").notNull(),
+    status: opportunityStatusEnum("status").notNull().default("DRAFT"),
+    priorityDefinitionVersion: text("priority_definition_version")
+      .notNull()
+      .default(PRIORITY_DEFINITION_VERSION),
+    impact: integer("impact").notNull(),
+    confidence: integer("confidence").notNull(),
+    urgency: integer("urgency").notNull(),
+    strategicFit: integer("strategic_fit").notNull(),
+    planFit: integer("plan_fit").notNull(),
+    staleness: integer("staleness").notNull().default(0),
+    effort: integer("effort").notNull(),
+    dependencyState: opportunityDependencyStateEnum("dependency_state")
+      .notNull()
+      .default("NONE"),
+    clientInputState: opportunityClientInputStateEnum("client_input_state")
+      .notNull()
+      .default("NOT_REQUIRED"),
+    approvalBlockedState: opportunityApprovalBlockedStateEnum(
+      "approval_blocked_state",
+    )
+      .notNull()
+      .default("NOT_BLOCKED"),
+    basePriority: integer("base_priority").notNull(),
+    modifiers: jsonb("modifiers")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    finalPriority: integer("final_priority").notNull(),
+    priorityBand: opportunityPriorityBandEnum("priority_band").notNull(),
+    priorityReasons: jsonb("priority_reasons")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    planScope: opportunityPlanScopeEnum("plan_scope").notNull(),
+    ownerUserId: text("owner_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    immediateAttention: boolean("immediate_attention").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("opportunities_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("opportunities_workspace_client_id_unique").on(
+      table.workspaceId,
+      table.clientId,
+      table.id,
+    ),
+    uniqueIndex("opportunities_open_equivalent_unique")
+      .on(
+        table.workspaceId,
+        table.websiteId,
+        table.sourceCheckKey,
+        table.normalizedRemediationFamily,
+      )
+      .where(
+        sql`${table.status} in ('DRAFT', 'READY', 'BLOCKED', 'IN_PROGRESS')`,
+      ),
+    index("opportunities_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    index("opportunities_workspace_priority_idx").on(
+      table.workspaceId,
+      table.priorityBand,
+      table.finalPriority,
+    ),
+    index("opportunities_workspace_client_idx").on(
+      table.workspaceId,
+      table.clientId,
+    ),
+    index("opportunities_workspace_website_idx").on(
+      table.workspaceId,
+      table.websiteId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "opportunities_client_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "opportunities_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.sourceAuditId],
+      foreignColumns: [audits.workspaceId, audits.id],
+      name: "opportunities_audit_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.workspaceId,
+        table.sourceAuditRunId,
+        table.sourceAuditId,
+      ],
+      foreignColumns: [
+        auditRuns.workspaceId,
+        auditRuns.id,
+        auditRuns.auditId,
+      ],
+      name: "opportunities_audit_run_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.workspaceId,
+        table.sourceFindingId,
+        table.sourceAuditRunId,
+        table.sourceAuditId,
+        table.sourceCheckKey,
+      ],
+      foreignColumns: [
+        auditFindings.workspaceId,
+        auditFindings.id,
+        auditFindings.auditRunId,
+        auditFindings.auditId,
+        auditFindings.checkKey,
+      ],
+      name: "opportunities_finding_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.workspaceId,
+        table.sourceCheckResultId,
+        table.sourceAuditRunId,
+        table.sourceAuditId,
+      ],
+      foreignColumns: [
+        auditCheckResults.workspaceId,
+        auditCheckResults.id,
+        auditCheckResults.auditRunId,
+        auditCheckResults.auditId,
+      ],
+      name: "opportunities_check_result_workspace_fk",
+    }).onDelete("restrict"),
+    check("opportunities_impact_check", sql`${table.impact} BETWEEN 0 AND 5`),
+    check(
+      "opportunities_confidence_check",
+      sql`${table.confidence} BETWEEN 0 AND 5`,
+    ),
+    check("opportunities_urgency_check", sql`${table.urgency} BETWEEN 0 AND 5`),
+    check(
+      "opportunities_strategic_fit_check",
+      sql`${table.strategicFit} BETWEEN 0 AND 5`,
+    ),
+    check("opportunities_plan_fit_check", sql`${table.planFit} BETWEEN 0 AND 5`),
+    check(
+      "opportunities_staleness_check",
+      sql`${table.staleness} BETWEEN 0 AND 5`,
+    ),
+    check("opportunities_effort_check", sql`${table.effort} BETWEEN 1 AND 5`),
+    check(
+      "opportunities_base_priority_check",
+      sql`${table.basePriority} BETWEEN 0 AND 100`,
+    ),
+    check(
+      "opportunities_final_priority_check",
+      sql`${table.finalPriority} BETWEEN 0 AND 100`,
+    ),
+  ],
+);
+
+export const workPlanCycles = pgTable(
+  "work_plan_cycles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    title: text("title").notNull(),
+    status: workPlanStatusEnum("status").notNull().default("OPEN"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("work_plan_cycles_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("work_plan_cycles_workspace_client_id_unique").on(
+      table.workspaceId,
+      table.clientId,
+      table.id,
+    ),
+    uniqueIndex("work_plan_cycles_open_client_unique")
+      .on(table.workspaceId, table.clientId)
+      .where(sql`${table.status} = 'OPEN'`),
+    index("work_plan_cycles_workspace_client_idx").on(
+      table.workspaceId,
+      table.clientId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "work_plan_cycles_client_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const workPlanItems = pgTable(
+  "work_plan_items",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    workPlanCycleId: uuid("work_plan_cycle_id").notNull(),
+    opportunityId: uuid("opportunity_id").notNull(),
+    selectedByUserId: text("selected_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    selectedAt: timestamp("selected_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    notes: text("notes"),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.workPlanCycleId, table.opportunityId],
+      name: "work_plan_items_pk",
+    }),
+    index("work_plan_items_workspace_opportunity_idx").on(
+      table.workspaceId,
+      table.opportunityId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.workPlanCycleId],
+      foreignColumns: [
+        workPlanCycles.workspaceId,
+        workPlanCycles.clientId,
+        workPlanCycles.id,
+      ],
+      name: "work_plan_items_cycle_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.opportunityId],
+      foreignColumns: [
+        opportunities.workspaceId,
+        opportunities.clientId,
+        opportunities.id,
+      ],
+      name: "work_plan_items_opportunity_workspace_fk",
+    }).onDelete("cascade"),
   ],
 );
 

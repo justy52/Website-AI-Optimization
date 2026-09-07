@@ -16,6 +16,9 @@ const tenantTables = [
   "audit_category_scores",
   "audit_findings",
   "audit_snapshots",
+  "opportunities",
+  "work_plan_cycles",
+  "work_plan_items",
   "reports",
   "approval_policies",
   "integration_connections",
@@ -41,6 +44,7 @@ describe("phase 0 migrations", () => {
     const migration = [
       readMigration("0001_phase0_rls_policies.sql"),
       readMigration("0003_phase1_revenue_loop.sql"),
+      readMigration("0007_phase2_opportunities.sql"),
     ].join("\n");
 
     for (const table of tenantTables) {
@@ -101,6 +105,7 @@ describe("phase 0 migrations", () => {
     const migration = [
       readMigration("0000_phase0_foundation.sql"),
       readMigration("0003_phase1_revenue_loop.sql"),
+      readMigration("0007_phase2_opportunities.sql"),
     ].join("\n");
 
     expect(migration).toContain(
@@ -133,11 +138,39 @@ describe("phase 0 migrations", () => {
     expect(migration).toContain(
       'CONSTRAINT "reports_run_workspace_fk" FOREIGN KEY ("workspace_id","audit_run_id","audit_id")',
     );
+    expect(migration).toContain(
+      'CONSTRAINT "opportunities_client_workspace_fk" FOREIGN KEY ("workspace_id","client_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "opportunities_website_workspace_fk" FOREIGN KEY ("workspace_id","client_id","website_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "opportunities_audit_workspace_fk" FOREIGN KEY ("workspace_id","source_audit_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "opportunities_audit_run_workspace_fk" FOREIGN KEY ("workspace_id","source_audit_run_id","source_audit_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "opportunities_finding_workspace_fk" FOREIGN KEY ("workspace_id","source_finding_id","source_audit_run_id","source_audit_id","source_check_key")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "opportunities_check_result_workspace_fk" FOREIGN KEY ("workspace_id","source_check_result_id","source_audit_run_id","source_audit_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "work_plan_cycles_client_workspace_fk" FOREIGN KEY ("workspace_id","client_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "work_plan_items_cycle_workspace_fk" FOREIGN KEY ("workspace_id","client_id","work_plan_cycle_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "work_plan_items_opportunity_workspace_fk" FOREIGN KEY ("workspace_id","client_id","opportunity_id")',
+    );
   });
 
   it("creates composite unique indexes before foreign keys that depend on them", () => {
     const phase0 = readMigration("0000_phase0_foundation.sql");
     const phase1 = readMigration("0003_phase1_revenue_loop.sql");
+    const phase2 = readMigration("0007_phase2_opportunities.sql");
 
     expectBefore(
       phase0,
@@ -169,6 +202,45 @@ describe("phase 0 migrations", () => {
       'CREATE UNIQUE INDEX "audit_snapshots_workspace_id_id_unique"',
       'CONSTRAINT "reports_snapshot_workspace_fk"',
     );
+    expectBefore(
+      phase2,
+      'CREATE UNIQUE INDEX "websites_workspace_client_id_unique"',
+      'CONSTRAINT "opportunities_website_workspace_fk"',
+    );
+    expectBefore(
+      phase2,
+      'CREATE UNIQUE INDEX "audit_check_results_workspace_full_unique"',
+      'CONSTRAINT "opportunities_check_result_workspace_fk"',
+    );
+    expectBefore(
+      phase2,
+      'CREATE UNIQUE INDEX "audit_findings_workspace_full_unique"',
+      'CONSTRAINT "opportunities_finding_workspace_fk"',
+    );
+    expectBefore(
+      phase2,
+      'CREATE UNIQUE INDEX "opportunities_workspace_client_id_unique"',
+      'CONSTRAINT "work_plan_items_opportunity_workspace_fk"',
+    );
+    expectBefore(
+      phase2,
+      'CREATE UNIQUE INDEX "work_plan_cycles_workspace_client_id_unique"',
+      'CONSTRAINT "work_plan_items_cycle_workspace_fk"',
+    );
+  });
+
+  it("deduplicates open materially equivalent opportunities at the database layer", () => {
+    const migration = readMigration("0007_phase2_opportunities.sql");
+
+    expect(migration).toContain(
+      'CREATE UNIQUE INDEX "opportunities_open_equivalent_unique"',
+    );
+    expect(migration).toContain(
+      '"workspace_id","website_id","source_check_key","normalized_remediation_family"',
+    );
+    expect(migration).toContain(
+      "WHERE \"opportunities\".\"status\" in ('DRAFT', 'READY', 'BLOCKED', 'IN_PROGRESS')",
+    );
   });
 
   it("prevents duplicate client conversion from the same source lead", () => {
@@ -198,6 +270,7 @@ describe("phase 0 migrations", () => {
       readMigration("0004_phase1_conversion_constraints.sql"),
       readMigration("0005_phase1_report_constraints.sql"),
       readMigration("0006_phase1_security_hardening.sql"),
+      readMigration("0007_phase2_opportunities.sql"),
     ].join("\n");
 
     expect(migration).not.toMatch(/\bDROP\s+(TABLE|TYPE|SCHEMA|DATABASE)\b/i);

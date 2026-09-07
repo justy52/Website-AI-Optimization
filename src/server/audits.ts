@@ -26,6 +26,8 @@ import {
 } from "@/domain/audits/report";
 import type { WorkspaceContext } from "@/domain/tenancy/context";
 
+import { generateOpportunitiesForAuditRun } from "./opportunities";
+
 type AuditDatabase = typeof db;
 type AuditTransaction = Parameters<Parameters<AuditDatabase["transaction"]>[0]>[0];
 
@@ -99,6 +101,8 @@ async function persistAuditResult(
   context: WorkspaceContext,
   auditId: string,
   runId: string,
+  clientId: string,
+  websiteId: string,
   result: Phase1AuditResult,
 ) {
   const runStatus = result.checkResults.some((check) => check.status === "ERROR")
@@ -133,6 +137,7 @@ async function persistAuditResult(
         category: check.category,
         status: check.status,
         severity: check.severity,
+        evidenceConfidence: check.evidenceConfidence,
         maxPenaltyWeight: check.maxPenaltyWeight,
         reason: check.reason,
         evidenceRefs: check.evidenceRefs,
@@ -185,6 +190,13 @@ async function persistAuditResult(
   if (findingRows.length > 0) {
     await tx.insert(auditFindings).values(findingRows);
   }
+
+  await generateOpportunitiesForAuditRun(tx, context, {
+    auditId,
+    auditRunId: runId,
+    clientId,
+    websiteId,
+  });
 
   await tx
     .update(auditRuns)
@@ -258,7 +270,15 @@ export async function startAuditForWebsite(
   const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl);
 
   await withTenantContext(database, context, async (tx) => {
-    await persistAuditResult(tx, context, prepared.audit.id, prepared.run.id, result);
+    await persistAuditResult(
+      tx,
+      context,
+      prepared.audit.id,
+      prepared.run.id,
+      prepared.website.clientId,
+      prepared.website.id,
+      result,
+    );
     await recordActivity(tx, context, "audit.completed", "audit", prepared.audit.id, {
       runId: prepared.run.id,
       overallScore: result.overall.score,
@@ -418,6 +438,7 @@ export async function finalizeAudit(
         category: check.category,
         status: check.status,
         severity: check.severity,
+        evidenceConfidence: check.evidenceConfidence,
         reason: check.reason,
         evidenceRefs: check.evidenceRefs,
       })),

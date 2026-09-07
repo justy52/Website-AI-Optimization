@@ -1,10 +1,12 @@
 import type { CheckStatus, ScoreCategoryKey } from "./scoring";
+import type { EvidenceConfidence } from "@/domain/opportunities/generation";
 
 export type SnapshotCheckResult = {
   checkKey: string;
   category: ScoreCategoryKey;
   status: CheckStatus;
   severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | null;
+  evidenceConfidence?: EvidenceConfidence;
   reason: string;
   evidenceRefs: string[];
 };

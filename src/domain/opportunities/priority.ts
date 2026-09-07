@@ -20,6 +20,8 @@ export type PriorityInputs = {
 
 export type PriorityResult = {
   definitionVersion: typeof PRIORITY_DEFINITION_VERSION;
+  baseScore: number;
+  modifierTotal: number;
   score: number;
   band: PriorityBand;
   reasons: string[];
@@ -111,6 +113,8 @@ export function calculateOpportunityPriority(
   if (inputs.isConfirmedDuplicate) {
     return {
       definitionVersion: PRIORITY_DEFINITION_VERSION,
+      baseScore: 0,
+      modifierTotal: 0,
       score: 0,
       band: "Low",
       reasons: ["Confirmed duplicate or superseded opportunity."],
@@ -125,18 +129,24 @@ export function calculateOpportunityPriority(
     inputs.planFit * 20 * weightedFactors.planFit +
     inputs.staleness * 20 * weightedFactors.staleness;
 
-  reasons.push(`Base score ${Math.round(base)} from weighted V1 factors.`);
+  const roundedBase = Math.round(base);
+  reasons.push(`Base score ${roundedBase} from weighted V1 factors.`);
 
-  let score = base + effortModifiers[inputs.effort];
+  let modifierTotal = effortModifiers[inputs.effort];
+  let score = base + modifierTotal;
   reasons.push(`Effort ${inputs.effort} modifier ${effortModifiers[inputs.effort]}.`);
 
   if (inputs.hasUnresolvedHardDependency) {
-    score += getPriorityDefinition().modifiers.unresolvedHardDependency;
+    const modifier = getPriorityDefinition().modifiers.unresolvedHardDependency;
+    score += modifier;
+    modifierTotal += modifier;
     reasons.push("Unresolved hard dependency modifier -25.");
   }
 
   if (inputs.awaitingClientInput) {
-    score += getPriorityDefinition().modifiers.awaitingClientInput;
+    const modifier = getPriorityDefinition().modifiers.awaitingClientInput;
+    score += modifier;
+    modifierTotal += modifier;
     reasons.push("Awaiting required client input modifier -15.");
   }
 
@@ -152,6 +162,8 @@ export function calculateOpportunityPriority(
 
   return {
     definitionVersion: PRIORITY_DEFINITION_VERSION,
+    baseScore: roundedBase,
+    modifierTotal: Math.round(modifierTotal),
     score: finalScore,
     band: priorityBand(finalScore),
     reasons,

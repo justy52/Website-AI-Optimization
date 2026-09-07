@@ -31,7 +31,7 @@ export default async function SettingsPage() {
         >
           <div className="mx-safety-lock">
             <Lock aria-hidden size={18} />
-            <span>No external EXECUTE behavior is present in Phase 1.</span>
+            <span>No external EXECUTE behavior is present in Phase 2.</span>
           </div>
           <p className="mx-muted">
             The workspace feature flag foundation remains deny-by-default for

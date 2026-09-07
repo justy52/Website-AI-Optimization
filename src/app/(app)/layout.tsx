@@ -4,6 +4,7 @@ import {
   FileText,
   Globe2,
   LayoutDashboard,
+  ListChecks,
   Radar,
   Settings,
   Terminal,
@@ -21,6 +22,8 @@ const navItems = [
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/websites", label: "Websites", icon: Globe2 },
   { href: "/audits", label: "Audits", icon: Radar },
+  { href: "/opportunities", label: "Opportunities", icon: ListChecks },
+  { href: "/work-plan", label: "Work Plan", icon: ListChecks },
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
@@ -48,10 +51,10 @@ export default async function AppLayout({
               const Icon = item.icon;
 
               return (
-                <Link className="mx-nav-item" href={item.href} key={item.href}>
+                <a className="mx-nav-item" href={item.href} key={item.href}>
                   <Icon aria-hidden size={15} />
                   {item.label}
-                </Link>
+                </a>
               );
             })}
           </nav>
