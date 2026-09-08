@@ -157,7 +157,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
       { timeout: 180_000, intervals: [3_000, 5_000, 10_000] },
     )
     .toMatch(/SUCCEEDED|PARTIAL/);
-  await expect(page.getByText("Search Console")).toBeVisible();
+  await expect(page.getByText("Search Console", { exact: true }).first()).toBeVisible();
   await expect(page.locator("main")).toContainText(
     /Google OAuth variables are not configured|Connect Google|Connected/,
   );
