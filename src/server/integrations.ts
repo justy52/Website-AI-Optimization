@@ -37,6 +37,7 @@ import {
   type WorkspaceContext,
 } from "@/domain/tenancy/context";
 import {
+  credentialKeyRingFromEnv,
   decryptCredentialSecret,
   encryptCredentialSecret,
   type EncryptedSecretPayload,
@@ -54,6 +55,14 @@ type StoredGoogleTokens = {
   expiresAt: string | null;
   scopes: string[];
   tokenType: string;
+};
+
+type StoredIntegrationSecretPayload = {
+  algorithm: string;
+  keyVersion: string;
+  nonce: string;
+  ciphertext: string;
+  authTag: string;
 };
 
 function now() {
@@ -94,6 +103,66 @@ function tokenPayload(token: GoogleOAuthTokenResponse): StoredGoogleTokens {
     expiresAt: token.expiresAt?.toISOString() ?? null,
     scopes: token.scope,
     tokenType: token.tokenType,
+  };
+}
+
+function credentialKeyRing() {
+  return credentialKeyRingFromEnv({
+    CREDENTIAL_ENCRYPTION_KEY: serverEnv.CREDENTIAL_ENCRYPTION_KEY,
+    CREDENTIAL_KEY_VERSION: serverEnv.CREDENTIAL_KEY_VERSION,
+    CREDENTIAL_ENCRYPTION_KEY_RING: serverEnv.CREDENTIAL_ENCRYPTION_KEY_RING,
+  });
+}
+
+export function encryptSearchConsoleTokenPayload(
+  token: GoogleOAuthTokenResponse,
+  keyRing = credentialKeyRing(),
+) {
+  return encryptCredentialSecret(JSON.stringify(tokenPayload(token)), keyRing);
+}
+
+export function decryptSearchConsoleTokenPayload(
+  encrypted: StoredIntegrationSecretPayload,
+  keyRing = credentialKeyRing(),
+) {
+  if (encrypted.algorithm !== "AES-256-GCM") {
+    throw new Error("Unsupported credential encryption algorithm.");
+  }
+
+  return JSON.parse(
+    decryptCredentialSecret(
+      {
+        algorithm: encrypted.algorithm,
+        keyVersion: encrypted.keyVersion,
+        nonce: encrypted.nonce,
+        ciphertext: encrypted.ciphertext,
+        authTag: encrypted.authTag,
+      },
+      keyRing,
+    ),
+  ) as StoredGoogleTokens;
+}
+
+export function encryptRefreshedSearchConsoleTokenPayload(input: {
+  refreshed: GoogleOAuthTokenResponse;
+  fallbackScopes: string[];
+  keyRing?: ReturnType<typeof credentialKeyRing>;
+}) {
+  const scopes =
+    input.refreshed.scope.length > 0
+      ? input.refreshed.scope
+      : input.fallbackScopes;
+
+  assertSearchConsoleReadonlyScopes(scopes);
+
+  const payload = tokenPayload({ ...input.refreshed, scope: scopes });
+
+  return {
+    payload,
+    encrypted: encryptCredentialSecret(
+      JSON.stringify(payload),
+      input.keyRing ?? credentialKeyRing(),
+    ),
   };
 }
 
@@ -415,10 +484,7 @@ export async function completeGoogleSearchConsoleOAuth(
   const sites = await provider.listSites(token.accessToken);
 
   return withTenantContext(database, context, async (tx) => {
-    const encrypted = encryptCredentialSecret(JSON.stringify(tokenPayload(token)), {
-      keyMaterial: serverEnv.CREDENTIAL_ENCRYPTION_KEY,
-      keyVersion: serverEnv.CREDENTIAL_KEY_VERSION,
-    });
+    const encrypted = encryptSearchConsoleTokenPayload(token);
     const [connection] = await tx
       .insert(integrationConnections)
       .values({
@@ -560,11 +626,7 @@ async function loadStoredTokens(
     ciphertext: secret.ciphertext,
     authTag: secret.authTag,
   };
-  const tokens = JSON.parse(
-    decryptCredentialSecret(encrypted, {
-      keyMaterial: serverEnv.CREDENTIAL_ENCRYPTION_KEY,
-    }),
-  ) as StoredGoogleTokens;
+  const tokens = decryptSearchConsoleTokenPayload(encrypted);
 
   return { connection: row.connection, tokens, secret };
 }
@@ -595,12 +657,9 @@ async function getSearchConsoleAccessToken(
     clientId: config.clientId,
     clientSecret: config.clientSecret,
   });
-  const scopes = refreshed.scope.length > 0 ? refreshed.scope : stored.connection.scopes;
-  assertSearchConsoleReadonlyScopes(scopes);
-  const payload = tokenPayload({ ...refreshed, scope: scopes });
-  const encrypted = encryptCredentialSecret(JSON.stringify(payload), {
-    keyMaterial: serverEnv.CREDENTIAL_ENCRYPTION_KEY,
-    keyVersion: serverEnv.CREDENTIAL_KEY_VERSION,
+  const { payload, encrypted } = encryptRefreshedSearchConsoleTokenPayload({
+    refreshed,
+    fallbackScopes: stored.connection.scopes,
   });
 
   await withTenantContext(database, context, async (tx) => {
@@ -626,7 +685,7 @@ async function getSearchConsoleAccessToken(
         tokenMetadata: {
           expiresAt: payload.expiresAt,
           tokenType: payload.tokenType,
-          scopes,
+          scopes: payload.scopes,
           refreshTokenStored: true,
         },
         updatedAt: now(),

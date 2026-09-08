@@ -123,4 +123,37 @@ describe("server environment validation", () => {
 
     expect(env.AGENT_PROVIDER).toBe("ai_gateway");
   });
+
+  it("accepts a previous credential key ring for rotation windows", () => {
+    const env = getServerEnv({
+      APP_ENV: "qa",
+      DATABASE_URL: "postgres://example.invalid/app",
+      DATABASE_URL_UNPOOLED: "postgres://example.invalid/app",
+      BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+      BETTER_AUTH_URL: "https://qa.example.invalid",
+      CREDENTIAL_KEY_VERSION: "v2",
+      CREDENTIAL_ENCRYPTION_KEY:
+        "qa-credential-key-v2-with-enough-length",
+      CREDENTIAL_ENCRYPTION_KEY_RING: JSON.stringify({
+        v1: "qa-credential-key-v1-with-enough-length",
+      }),
+    });
+
+    expect(env.CREDENTIAL_KEY_VERSION).toBe("v2");
+    expect(env.CREDENTIAL_ENCRYPTION_KEY_RING).toContain("v1");
+  });
+
+  it("rejects invalid credential key-ring JSON", () => {
+    expect(() =>
+      getServerEnv({
+        APP_ENV: "qa",
+        DATABASE_URL: "postgres://example.invalid/app",
+        DATABASE_URL_UNPOOLED: "postgres://example.invalid/app",
+        BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+        BETTER_AUTH_URL: "https://qa.example.invalid",
+        CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
+        CREDENTIAL_ENCRYPTION_KEY_RING: "{not-json",
+      }),
+    ).toThrow("CREDENTIAL_ENCRYPTION_KEY_RING must be valid JSON");
+  });
 });

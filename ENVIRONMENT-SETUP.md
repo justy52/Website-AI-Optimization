@@ -32,9 +32,12 @@ BETTER_AUTH_SECRET=
 BETTER_AUTH_URL=
 
 # --- Encryption for stored integration secrets (docs/25 section 7) ---
-# 32-byte key, authenticated encryption, rotate-able.
+# 32-byte current key, authenticated encryption, rotate-able.
 CREDENTIAL_ENCRYPTION_KEY=
 CREDENTIAL_KEY_VERSION=
+# Optional JSON object of previous version -> key material values.
+# Keep old versions here until all secrets using them are re-encrypted or revoked.
+CREDENTIAL_ENCRYPTION_KEY_RING=
 
 # --- AI (via Vercel AI Gateway) ---
 AI_GATEWAY_API_KEY=
@@ -55,6 +58,7 @@ APP_ENV=
 GOOGLE_OAUTH_CLIENT_ID=
 GOOGLE_OAUTH_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=
+CRON_SECRET=
 
 # Phase 4 - observed AI visibility surfaces (roll out in this order)
 PERPLEXITY_API_KEY=
@@ -66,4 +70,9 @@ GEMINI_API_KEY=
 - Secrets are server-side only. Never expose them to the browser or put them in `NEXT_PUBLIC_*`.
 - Never log access tokens, refresh tokens, API keys, or full authorization headers.
 - Store per-client integration tokens encrypted at rest (key version + nonce + ciphertext); the master key lives in environment/secret management, separate from the database.
+- Rotate integration-credential keys by keeping the previous key version in `CREDENTIAL_ENCRYPTION_KEY_RING`, setting a new `CREDENTIAL_KEY_VERSION`, and updating `CREDENTIAL_ENCRYPTION_KEY` to the new current key. Remove an old key only after every secret using that version has been re-encrypted or revoked.
 - Feature-flag every external EXECUTE action; deny-by-default in production.
+
+## Phase 4A Google OAuth launch notes
+
+QA may use a Google OAuth project in Testing mode with explicit test users while Search Console read-only is being validated. Before external production availability, review the Google Cloud OAuth consent-screen classification for `https://www.googleapis.com/auth/webmasters.readonly` and complete any required brand or data-access verification for the requested scope.

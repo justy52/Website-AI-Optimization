@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { credentialKeyRingFromEnv } from "@/security/credential-encryption";
+
 const localDatabaseUrl = [
   "postgresql://",
   "optiq",
@@ -33,6 +35,7 @@ const rawEnvSchema = z.object({
   BETTER_AUTH_URL: optionalNonEmpty,
   CREDENTIAL_ENCRYPTION_KEY: optionalNonEmpty,
   CREDENTIAL_KEY_VERSION: versionString,
+  CREDENTIAL_ENCRYPTION_KEY_RING: optionalNonEmpty,
   AI_GATEWAY_API_KEY: optionalNonEmpty,
   AI_GATEWAY_MODEL: optionalNonEmpty,
   VERCEL: optionalNonEmpty,
@@ -66,6 +69,7 @@ export type ServerEnv = Omit<z.infer<typeof rawEnvSchema>, "APP_ENV"> & {
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   CREDENTIAL_ENCRYPTION_KEY: string;
+  CREDENTIAL_ENCRYPTION_KEY_RING?: string;
 };
 
 export function resolveAppEnv(source: EnvSource = process.env): AppEnv {
@@ -129,6 +133,12 @@ function assertRequiredValues(
       "CREDENTIAL_ENCRYPTION_KEY must be at least 32 characters long.",
     );
   }
+
+  credentialKeyRingFromEnv({
+    CREDENTIAL_ENCRYPTION_KEY: env.CREDENTIAL_ENCRYPTION_KEY!,
+    CREDENTIAL_KEY_VERSION: env.CREDENTIAL_KEY_VERSION,
+    CREDENTIAL_ENCRYPTION_KEY_RING: env.CREDENTIAL_ENCRYPTION_KEY_RING,
+  });
 
   if (env.AGENT_PROVIDER === "ai_gateway") {
     if (!env.AI_GATEWAY_MODEL) {

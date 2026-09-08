@@ -59,6 +59,39 @@ function safeErrorSummary(error: unknown): string {
     : "Monitoring run failed.";
 }
 
+export function buildMonitoringScheduleCompletionUpdate(input: {
+  status: "SUCCEEDED" | "PARTIAL" | "FAILED";
+  completedAt: Date;
+  nextRunAt: Date | null;
+  errorSummary?: string;
+}) {
+  const update: {
+    lastRunAt: Date;
+    lastSuccessAt?: Date;
+    lastErrorAt?: Date | null;
+    lastErrorSummary?: string | null;
+    nextRunAt: Date | null;
+    updatedAt: Date;
+  } = {
+    lastRunAt: input.completedAt,
+    nextRunAt: input.nextRunAt,
+    updatedAt: input.completedAt,
+  };
+
+  if (input.status === "SUCCEEDED") {
+    update.lastSuccessAt = input.completedAt;
+    update.lastErrorAt = null;
+    update.lastErrorSummary = null;
+  }
+
+  if (input.status === "FAILED") {
+    update.lastErrorAt = input.completedAt;
+    update.lastErrorSummary = input.errorSummary ?? "Monitoring run failed.";
+  }
+
+  return update;
+}
+
 async function recordActivity(
   tx: MonitoringTransaction,
   context: WorkspaceContext,
@@ -316,6 +349,7 @@ async function completeRun(
   const nextRunAt = schedule
     ? nextRunAtForCadence(schedule.cadence as MonitoringCadence, now())
     : null;
+  const completedAt = now();
 
   await tx
     .update(monitoringRuns)
@@ -323,8 +357,8 @@ async function completeRun(
       status: input.status,
       observationsProduced: input.observationsProduced,
       errorSummary: input.errorSummary,
-      completedAt: now(),
-      updatedAt: now(),
+      completedAt,
+      updatedAt: completedAt,
     })
     .where(
       and(
@@ -336,14 +370,14 @@ async function completeRun(
   if (run.monitoringScheduleId) {
     await tx
       .update(monitoringSchedules)
-      .set({
-        lastRunAt: now(),
-        lastSuccessAt: input.status === "FAILED" ? null : now(),
-        lastErrorAt: input.status === "FAILED" ? now() : null,
-        lastErrorSummary: input.status === "FAILED" ? input.errorSummary : null,
-        nextRunAt,
-        updatedAt: now(),
-      })
+      .set(
+        buildMonitoringScheduleCompletionUpdate({
+          status: input.status,
+          completedAt,
+          nextRunAt,
+          errorSummary: input.errorSummary,
+        }),
+      )
       .where(
         and(
           eq(monitoringSchedules.workspaceId, context.workspaceId),
