@@ -6,6 +6,7 @@ const email = `optiq-phase3-${runId}@example.com`;
 const password = `OPTIQPhase3-${runId}!`;
 const workspaceName = `OPTIQ Phase 3 QA ${runId}`;
 const clientName = `Phase 3 QA Client ${runId}`;
+const competitorName = `IANA Competitor ${runId}`;
 const confidentialCanary = `CONFIDENTIAL_CANARY_${runId}`;
 const unverifiedCanary = `UNVERIFIED_CANARY_${runId}`;
 const expectedProvider = process.env.OPTIQ_E2E_EXPECT_PROVIDER ?? "deterministic";
@@ -130,6 +131,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await page.getByLabel("Service plan").selectOption("GROWTH");
   await page.getByRole("button", { name: "Save client" }).click();
   await expect(page.getByLabel("Service plan")).toHaveValue("GROWTH");
+  const clientDetailUrl = page.url();
 
   await page.getByLabel("Display name").fill("Example");
   await page.getByLabel("Canonical URL").fill("https://example.com");
@@ -140,7 +142,52 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await page.getByRole("button", { name: "Add website" }).click();
   await expect(page.getByRole("heading", { name: "Example" })).toBeVisible();
 
-  await page.goBack();
+  await expect(page.getByText("Recurring monitoring")).toBeVisible();
+  await page.getByRole("button", { name: "Sync plan schedules" }).click();
+  await expect(page.getByText("website_health")).toBeVisible();
+  await expect(page.getByText("search_console")).toBeVisible();
+  const healthSchedule = page.locator(".mx-row", { hasText: "website_health" }).first();
+  await healthSchedule.getByRole("button", { name: "Run" }).click();
+  await expect
+    .poll(
+      async () => {
+        await page.reload({ waitUntil: "networkidle" });
+        return (await page.locator("main").textContent()) ?? "";
+      },
+      { timeout: 180_000, intervals: [3_000, 5_000, 10_000] },
+    )
+    .toMatch(/SUCCEEDED|PARTIAL/);
+  await expect(page.getByText("Search Console")).toBeVisible();
+  await expect(page.locator("main")).toContainText(
+    /Google OAuth variables are not configured|Connect Google|Connected/,
+  );
+
+  const competitorForm = page.locator("form").filter({ hasText: "Domain or URL" });
+  await competitorForm.getByLabel("Name").fill(competitorName);
+  await competitorForm.getByLabel("Domain or URL").fill("https://www.iana.org");
+  await competitorForm.getByLabel("Relationship").fill("REFERENCE_PUBLIC_SITE");
+  await competitorForm.getByLabel("Notes").fill("Disposable Phase 4A E2E target.");
+  await competitorForm.getByRole("button", { name: "Add competitor" }).click();
+  await expect(page.getByText(competitorName)).toBeVisible();
+  const competitorRow = page.locator(".mx-row", { hasText: competitorName }).first();
+  await competitorRow.getByRole("button", { name: "Observe" }).click();
+  await expect
+    .poll(
+      async () => {
+        await page.reload({ waitUntil: "networkidle" });
+        return (await page.locator("main").textContent()) ?? "";
+      },
+      { timeout: 120_000, intervals: [2_000, 5_000, 10_000] },
+    )
+    .toMatch(/Initial public homepage metadata observation recorded|Competitor public-page observation failed/);
+
+  await page.getByRole("link", { name: "Monitoring", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Monitoring" })).toBeVisible();
+  await page.getByRole("link", { name: "Integrations", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Integrations" })).toBeVisible();
+  await expect(page.getByText("Google Search Console")).toBeVisible();
+
+  await page.goto(clientDetailUrl, { waitUntil: "networkidle" });
   await addBusinessFact(page, {
     factType: "service",
     verification: "VERIFIED",

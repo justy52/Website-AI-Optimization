@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -298,6 +299,42 @@ export const riskLevelEnum = pgEnum("risk_level", [
 export const operationalNotificationStatusEnum = pgEnum(
   "operational_notification_status",
   ["UNREAD", "READ", "ARCHIVED"],
+);
+
+export const integrationOAuthStateStatusEnum = pgEnum(
+  "integration_oauth_state_status",
+  ["PENDING", "CONSUMED", "EXPIRED", "FAILED"],
+);
+
+export const integrationSecretTypeEnum = pgEnum("integration_secret_type", [
+  "OAUTH_TOKEN",
+]);
+
+export const searchConsolePropertyTypeEnum = pgEnum(
+  "search_console_property_type",
+  ["URL_PREFIX", "DOMAIN", "UNKNOWN"],
+);
+
+export const monitoringRunStatusEnum = pgEnum("monitoring_run_status", [
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "PARTIAL",
+  "FAILED",
+  "CANCELED",
+  "TIMED_OUT",
+  "BUDGET_LIMITED",
+]);
+
+export const monitoringTriggerTypeEnum = pgEnum("monitoring_trigger_type", [
+  "SCHEDULE",
+  "MANUAL",
+  "SYSTEM",
+]);
+
+export const monitoringObservationStatusEnum = pgEnum(
+  "monitoring_observation_status",
+  ["PASS", "WARNING", "FAIL", "ERROR", "UNAVAILABLE", "NOT_APPLICABLE"],
 );
 
 function createdAt() {
@@ -1866,6 +1903,509 @@ export const integrationConnections = pgTable(
       columns: [table.workspaceId, table.websiteId],
       foreignColumns: [websites.workspaceId, websites.id],
       name: "integration_connections_website_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const integrationOAuthStates = pgTable(
+  "integration_oauth_states",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    provider: text("provider").notNull(),
+    stateHash: text("state_hash").notNull(),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+    redirectPath: text("redirect_path"),
+    status: integrationOAuthStateStatusEnum("status")
+      .notNull()
+      .default("PENDING"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("integration_oauth_states_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("integration_oauth_states_state_hash_unique").on(
+      table.stateHash,
+    ),
+    index("integration_oauth_states_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+      table.expiresAt,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "integration_oauth_states_website_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const integrationSecrets = pgTable(
+  "integration_secrets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    integrationConnectionId: uuid("integration_connection_id").notNull(),
+    secretType: integrationSecretTypeEnum("secret_type").notNull(),
+    algorithm: text("algorithm").notNull(),
+    keyVersion: text("key_version").notNull(),
+    nonce: text("nonce").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    authTag: text("auth_tag").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: createdAt(),
+    rotatedAt: timestamp("rotated_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("integration_secrets_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("integration_secrets_connection_type_unique").on(
+      table.workspaceId,
+      table.integrationConnectionId,
+      table.secretType,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.integrationConnectionId],
+      foreignColumns: [integrationConnections.workspaceId, integrationConnections.id],
+      name: "integration_secrets_connection_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const searchConsoleProperties = pgTable(
+  "search_console_properties",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    integrationConnectionId: uuid("integration_connection_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    propertyUrl: text("property_url").notNull(),
+    propertyType: searchConsolePropertyTypeEnum("property_type")
+      .notNull()
+      .default("UNKNOWN"),
+    permissionLevel: text("permission_level"),
+    verifiedSiteMatch: boolean("verified_site_match").notNull().default(false),
+    selected: boolean("selected").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("search_console_properties_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("search_console_properties_connection_property_unique").on(
+      table.workspaceId,
+      table.integrationConnectionId,
+      table.propertyUrl,
+    ),
+    index("search_console_properties_workspace_website_idx").on(
+      table.workspaceId,
+      table.websiteId,
+      table.selected,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.integrationConnectionId],
+      foreignColumns: [integrationConnections.workspaceId, integrationConnections.id],
+      name: "search_console_properties_connection_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "search_console_properties_website_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const searchConsoleObservations = pgTable(
+  "search_console_observations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    integrationConnectionId: uuid("integration_connection_id").notNull(),
+    searchConsolePropertyId: uuid("search_console_property_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    windowStartDate: date("window_start_date").notNull(),
+    windowEndDate: date("window_end_date").notNull(),
+    propertyUrl: text("property_url").notNull(),
+    query: text("query"),
+    page: text("page"),
+    clicks: integer("clicks").notNull().default(0),
+    impressions: integer("impressions").notNull().default(0),
+    ctrBasisPoints: integer("ctr_basis_points").notNull().default(0),
+    averagePositionBasisPoints: integer("average_position_basis_points")
+      .notNull()
+      .default(0),
+    sourceProvider: text("source_provider")
+      .notNull()
+      .default("google_search_console"),
+    sourceTimezone: text("source_timezone").notNull().default("UTC"),
+    completeness: text("completeness").notNull().default("COMPLETE"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    observedAt: timestamp("observed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("search_console_observations_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("search_console_observations_workspace_property_idx").on(
+      table.workspaceId,
+      table.searchConsolePropertyId,
+      table.windowEndDate,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.integrationConnectionId],
+      foreignColumns: [integrationConnections.workspaceId, integrationConnections.id],
+      name: "search_console_observations_connection_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.searchConsolePropertyId],
+      foreignColumns: [searchConsoleProperties.workspaceId, searchConsoleProperties.id],
+      name: "search_console_observations_property_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "search_console_observations_website_workspace_fk",
+    }).onDelete("cascade"),
+    check("search_console_observations_clicks_check", sql`${table.clicks} >= 0`),
+    check(
+      "search_console_observations_impressions_check",
+      sql`${table.impressions} >= 0`,
+    ),
+    check(
+      "search_console_observations_ctr_check",
+      sql`${table.ctrBasisPoints} BETWEEN 0 AND 10000`,
+    ),
+    check(
+      "search_console_observations_position_check",
+      sql`${table.averagePositionBasisPoints} >= 0`,
+    ),
+  ],
+);
+
+export const monitoringSchedules = pgTable(
+  "monitoring_schedules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    monitorKey: text("monitor_key").notNull(),
+    monitorVersion: text("monitor_version").notNull(),
+    cadence: text("cadence").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    configuration: jsonb("configuration")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    lastErrorSummary: text("last_error_summary"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("monitoring_schedules_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("monitoring_schedules_active_target_unique").on(
+      table.workspaceId,
+      table.websiteId,
+      table.monitorKey,
+      table.monitorVersion,
+    ),
+    index("monitoring_schedules_due_idx").on(
+      table.enabled,
+      table.nextRunAt,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "monitoring_schedules_website_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const monitoringRuns = pgTable(
+  "monitoring_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    monitoringScheduleId: uuid("monitoring_schedule_id"),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    auditId: uuid("audit_id"),
+    auditRunId: uuid("audit_run_id"),
+    monitorKey: text("monitor_key").notNull(),
+    monitorVersion: text("monitor_version").notNull(),
+    triggerType: monitoringTriggerTypeEnum("trigger_type").notNull(),
+    status: monitoringRunStatusEnum("status").notNull().default("QUEUED"),
+    sourceProvider: text("source_provider").notNull().default("optiq"),
+    observationsProduced: integer("observations_produced").notNull().default(0),
+    errorCode: text("error_code"),
+    errorSummary: text("error_summary"),
+    retryCount: integer("retry_count").notNull().default(0),
+    idempotencyKey: text("idempotency_key").notNull(),
+    workflowRunId: text("workflow_run_id"),
+    costCents: integer("cost_cents").notNull().default(0),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("monitoring_runs_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("monitoring_runs_idempotency_unique").on(
+      table.workspaceId,
+      table.idempotencyKey,
+    ),
+    index("monitoring_runs_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.monitoringScheduleId],
+      foreignColumns: [monitoringSchedules.workspaceId, monitoringSchedules.id],
+      name: "monitoring_runs_schedule_workspace_fk",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "monitoring_runs_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.auditRunId, table.auditId],
+      foreignColumns: [
+        auditRuns.workspaceId,
+        auditRuns.id,
+        auditRuns.auditId,
+      ],
+      name: "monitoring_runs_audit_run_workspace_fk",
+    }).onDelete("set null"),
+  ],
+);
+
+export const monitoringObservations = pgTable(
+  "monitoring_observations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    monitoringRunId: uuid("monitoring_run_id").notNull(),
+    monitoringScheduleId: uuid("monitoring_schedule_id"),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    observationKey: text("observation_key").notNull(),
+    observationType: text("observation_type").notNull(),
+    sourceProvider: text("source_provider").notNull().default("optiq"),
+    sourceUrl: text("source_url"),
+    status: monitoringObservationStatusEnum("status").notNull(),
+    severity: riskLevelEnum("severity").notNull().default("LOW"),
+    evidenceConfidence: evidenceConfidenceEnum("evidence_confidence")
+      .notNull()
+      .default("LOW"),
+    contentHash: text("content_hash"),
+    summary: text("summary").notNull(),
+    evidence: jsonb("evidence")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    limitations: jsonb("limitations")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    observedAt: timestamp("observed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("monitoring_observations_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("monitoring_observations_workspace_run_idx").on(
+      table.workspaceId,
+      table.monitoringRunId,
+    ),
+    index("monitoring_observations_workspace_site_idx").on(
+      table.workspaceId,
+      table.websiteId,
+      table.observedAt,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.monitoringRunId],
+      foreignColumns: [monitoringRuns.workspaceId, monitoringRuns.id],
+      name: "monitoring_observations_run_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.monitoringScheduleId],
+      foreignColumns: [monitoringSchedules.workspaceId, monitoringSchedules.id],
+      name: "monitoring_observations_schedule_workspace_fk",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "monitoring_observations_website_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const competitorTargets = pgTable(
+  "competitor_targets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    name: text("name").notNull(),
+    domain: text("domain").notNull(),
+    canonicalUrl: text("canonical_url").notNull(),
+    relationship: text("relationship").notNull().default("DIRECT_COMPETITOR"),
+    active: boolean("active").notNull().default(true),
+    notes: text("notes"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("competitor_targets_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("competitor_targets_workspace_website_domain_unique").on(
+      table.workspaceId,
+      table.websiteId,
+      table.domain,
+    ),
+    index("competitor_targets_workspace_site_idx").on(
+      table.workspaceId,
+      table.websiteId,
+      table.active,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "competitor_targets_website_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const competitorObservations = pgTable(
+  "competitor_observations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    competitorTargetId: uuid("competitor_target_id").notNull(),
+    monitoringRunId: uuid("monitoring_run_id"),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    httpStatus: integer("http_status"),
+    observedTitle: text("observed_title"),
+    observedMetaDescription: text("observed_meta_description"),
+    contentHash: text("content_hash").notNull(),
+    changedSincePrevious: boolean("changed_since_previous")
+      .notNull()
+      .default(false),
+    changeSummary: text("change_summary").notNull(),
+    evidence: jsonb("evidence")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    limitations: jsonb("limitations")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    observedAt: timestamp("observed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("competitor_observations_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("competitor_observations_workspace_target_idx").on(
+      table.workspaceId,
+      table.competitorTargetId,
+      table.observedAt,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.competitorTargetId],
+      foreignColumns: [competitorTargets.workspaceId, competitorTargets.id],
+      name: "competitor_observations_target_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.monitoringRunId],
+      foreignColumns: [monitoringRuns.workspaceId, monitoringRuns.id],
+      name: "competitor_observations_run_workspace_fk",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "competitor_observations_website_workspace_fk",
     }).onDelete("cascade"),
   ],
 );

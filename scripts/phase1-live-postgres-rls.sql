@@ -17,6 +17,7 @@ DO $$
 DECLARE
   role_record record;
   unforced_tables text[];
+  owned_tables text[];
 BEGIN
   SELECT rolname, rolsuper, rolbypassrls
   INTO role_record
@@ -47,6 +48,15 @@ BEGIN
       ('reports'),
       ('approval_policies'),
       ('integration_connections'),
+      ('integration_oauth_states'),
+      ('integration_secrets'),
+      ('search_console_properties'),
+      ('search_console_observations'),
+      ('monitoring_schedules'),
+      ('monitoring_runs'),
+      ('monitoring_observations'),
+      ('competitor_targets'),
+      ('competitor_observations'),
       ('workspace_feature_flags'),
       ('activity_events')
   )
@@ -59,6 +69,49 @@ BEGIN
 
   IF unforced_tables IS NOT NULL THEN
     RAISE EXCEPTION 'Tenant tables are not forced under RLS: %', unforced_tables;
+  END IF;
+
+  WITH tenant_tables(name) AS (
+    VALUES
+      ('workspaces'),
+      ('workspace_memberships'),
+      ('leads'),
+      ('clients'),
+      ('websites'),
+      ('audits'),
+      ('audit_runs'),
+      ('audit_evidence'),
+      ('audit_check_results'),
+      ('audit_category_scores'),
+      ('audit_findings'),
+      ('audit_snapshots'),
+      ('reports'),
+      ('approval_policies'),
+      ('integration_connections'),
+      ('integration_oauth_states'),
+      ('integration_secrets'),
+      ('search_console_properties'),
+      ('search_console_observations'),
+      ('monitoring_schedules'),
+      ('monitoring_runs'),
+      ('monitoring_observations'),
+      ('competitor_targets'),
+      ('competitor_observations'),
+      ('workspace_feature_flags'),
+      ('activity_events')
+  )
+  SELECT array_agg(c.relname ORDER BY c.relname)
+  INTO owned_tables
+  FROM tenant_tables t
+  JOIN pg_class c ON c.relname = t.name
+  JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+  JOIN pg_roles r ON r.oid = c.relowner
+  WHERE r.rolname = current_user;
+
+  IF owned_tables IS NOT NULL THEN
+    RAISE EXCEPTION 'RLS proof role % owns tenant tables and is not a valid app-role proof: %',
+      current_user,
+      owned_tables;
   END IF;
 END $$;
 COMMIT;
@@ -107,6 +160,29 @@ INSERT INTO "audit_snapshots" ("id", "workspace_id", "audit_id", "audit_run_id",
 VALUES ('54000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', 'dv-score-v1.0', 'dv-score-v1.0', '{"fixture":true}'::jsonb, repeat('b', 64));
 INSERT INTO "reports" ("id", "workspace_id", "audit_id", "audit_run_id", "audit_snapshot_id", "status", "title", "executive_summary", "methodology_version", "report_data")
 VALUES ('60000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', '54000000-0000-4000-8000-0000000000b1', 'DRAFT', 'Report B', 'Summary B', 'phase1-deterministic-v1.0', '{}'::jsonb);
+INSERT INTO "integration_connections" ("id", "workspace_id", "client_id", "website_id", "provider", "connection_type", "scopes", "status")
+VALUES ('70000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'google_search_console', 'OAUTH', '["https://www.googleapis.com/auth/webmasters.readonly"]'::jsonb, 'CONNECTED');
+INSERT INTO "integration_oauth_states" ("id", "workspace_id", "client_id", "website_id", "provider", "state_hash", "scopes", "created_by_user_id", "expires_at")
+VALUES ('71000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'google_search_console', repeat('b', 64), '["https://www.googleapis.com/auth/webmasters.readonly"]'::jsonb, 'rls-user-a', now() + interval '10 minutes');
+INSERT INTO "integration_secrets" ("id", "workspace_id", "integration_connection_id", "secret_type", "algorithm", "key_version", "nonce", "ciphertext", "auth_tag")
+VALUES ('72000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '70000000-0000-4000-8000-0000000000b1', 'OAUTH_TOKEN', 'AES-256-GCM', 'test', 'nonce', 'ciphertext', 'tag');
+UPDATE "integration_connections"
+SET "secret_ref" = '72000000-0000-4000-8000-0000000000b1'
+WHERE "id" = '70000000-0000-4000-8000-0000000000b1';
+INSERT INTO "search_console_properties" ("id", "workspace_id", "integration_connection_id", "client_id", "website_id", "property_url", "property_type", "verified_site_match", "selected")
+VALUES ('73000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '70000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'sc-domain:example-b.test', 'DOMAIN', true, true);
+INSERT INTO "search_console_observations" ("id", "workspace_id", "integration_connection_id", "search_console_property_id", "client_id", "website_id", "window_start_date", "window_end_date", "property_url", "query", "page", "clicks", "impressions", "ctr_basis_points", "average_position_basis_points")
+VALUES ('74000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '70000000-0000-4000-8000-0000000000b1', '73000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '2026-08-31', '2026-09-06', 'sc-domain:example-b.test', 'blocked query', 'https://example-b.test/', 1, 10, 1000, 123);
+INSERT INTO "monitoring_schedules" ("id", "workspace_id", "client_id", "website_id", "monitor_key", "monitor_version", "cadence", "next_run_at")
+VALUES ('75000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'website_health', 'phase4a-monitor-v1.0', 'weekly', now());
+INSERT INTO "monitoring_runs" ("id", "workspace_id", "monitoring_schedule_id", "client_id", "website_id", "audit_id", "audit_run_id", "monitor_key", "monitor_version", "trigger_type", "status", "idempotency_key")
+VALUES ('76000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '75000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', 'website_health', 'phase4a-monitor-v1.0', 'MANUAL', 'SUCCEEDED', 'workspace-b-run');
+INSERT INTO "monitoring_observations" ("id", "workspace_id", "monitoring_run_id", "monitoring_schedule_id", "client_id", "website_id", "observation_key", "observation_type", "status", "summary")
+VALUES ('77000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '76000000-0000-4000-8000-0000000000b1', '75000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'seo.title', 'website_health_check', 'FAIL', 'Workspace B monitoring observation');
+INSERT INTO "competitor_targets" ("id", "workspace_id", "client_id", "website_id", "name", "domain", "canonical_url")
+VALUES ('78000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'Competitor B', 'competitor-b.test', 'https://competitor-b.test/');
+INSERT INTO "competitor_observations" ("id", "workspace_id", "competitor_target_id", "monitoring_run_id", "client_id", "website_id", "source_url", "content_hash", "change_summary")
+VALUES ('79000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '78000000-0000-4000-8000-0000000000b1', '76000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'https://competitor-b.test/', repeat('c', 64), 'Workspace B competitor observation');
 COMMIT;
 
 BEGIN;
@@ -244,6 +320,16 @@ DECLARE
   other_audit_findings integer;
   other_audit_snapshots integer;
   other_reports integer;
+  other_integration_connections integer;
+  other_integration_oauth_states integer;
+  other_integration_secrets integer;
+  other_search_console_properties integer;
+  other_search_console_observations integer;
+  other_monitoring_schedules integer;
+  other_monitoring_runs integer;
+  other_monitoring_observations integer;
+  other_competitor_targets integer;
+  other_competitor_observations integer;
 BEGIN
   SELECT count(*) INTO own_leads
   FROM "leads"
@@ -264,6 +350,27 @@ BEGIN
   IF changed_rows <> 1 THEN
     RAISE EXCEPTION 'Workspace A update should affect one row, affected %', changed_rows;
   END IF;
+
+  INSERT INTO "integration_connections" ("id", "workspace_id", "client_id", "website_id", "provider", "connection_type", "scopes", "status")
+  VALUES ('70000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'google_search_console', 'OAUTH', '["https://www.googleapis.com/auth/webmasters.readonly"]'::jsonb, 'CONNECTED');
+  INSERT INTO "integration_oauth_states" ("id", "workspace_id", "client_id", "website_id", "provider", "state_hash", "scopes", "created_by_user_id", "expires_at")
+  VALUES ('71000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'google_search_console', repeat('a', 64), '["https://www.googleapis.com/auth/webmasters.readonly"]'::jsonb, 'rls-user-a', now() + interval '10 minutes');
+  INSERT INTO "integration_secrets" ("id", "workspace_id", "integration_connection_id", "secret_type", "algorithm", "key_version", "nonce", "ciphertext", "auth_tag")
+  VALUES ('72000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '70000000-0000-4000-8000-0000000000a1', 'OAUTH_TOKEN', 'AES-256-GCM', 'test', 'nonce', 'ciphertext', 'tag');
+  INSERT INTO "search_console_properties" ("id", "workspace_id", "integration_connection_id", "client_id", "website_id", "property_url", "property_type", "verified_site_match", "selected")
+  VALUES ('73000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '70000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'sc-domain:example-a.test', 'DOMAIN', true, true);
+  INSERT INTO "search_console_observations" ("id", "workspace_id", "integration_connection_id", "search_console_property_id", "client_id", "website_id", "window_start_date", "window_end_date", "property_url", "query", "page", "clicks", "impressions", "ctr_basis_points", "average_position_basis_points")
+  VALUES ('74000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '70000000-0000-4000-8000-0000000000a1', '73000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', '2026-08-31', '2026-09-06', 'sc-domain:example-a.test', 'own query', 'https://example-a.test/', 2, 20, 1000, 123);
+  INSERT INTO "monitoring_schedules" ("id", "workspace_id", "client_id", "website_id", "monitor_key", "monitor_version", "cadence", "next_run_at")
+  VALUES ('75000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'website_health', 'phase4a-monitor-v1.0', 'weekly', now());
+  INSERT INTO "monitoring_runs" ("id", "workspace_id", "monitoring_schedule_id", "client_id", "website_id", "monitor_key", "monitor_version", "trigger_type", "status", "idempotency_key")
+  VALUES ('76000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '75000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'website_health', 'phase4a-monitor-v1.0', 'MANUAL', 'SUCCEEDED', 'workspace-a-run');
+  INSERT INTO "monitoring_observations" ("id", "workspace_id", "monitoring_run_id", "monitoring_schedule_id", "client_id", "website_id", "observation_key", "observation_type", "status", "summary")
+  VALUES ('77000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '76000000-0000-4000-8000-0000000000a1', '75000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'seo.title', 'website_health_check', 'PASS', 'Workspace A monitoring observation');
+  INSERT INTO "competitor_targets" ("id", "workspace_id", "client_id", "website_id", "name", "domain", "canonical_url")
+  VALUES ('78000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'Competitor A', 'competitor-a.test', 'https://competitor-a.test/');
+  INSERT INTO "competitor_observations" ("id", "workspace_id", "competitor_target_id", "monitoring_run_id", "client_id", "website_id", "source_url", "content_hash", "change_summary")
+  VALUES ('79000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '78000000-0000-4000-8000-0000000000a1', '76000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'https://competitor-a.test/', repeat('d', 64), 'Workspace A competitor observation');
 
   SELECT count(*) INTO other_leads
   FROM "leads"
@@ -402,6 +509,86 @@ BEGIN
     RAISE EXCEPTION 'Workspace A should not read Workspace B reports, saw %', other_reports;
   END IF;
 
+  SELECT count(*) INTO other_integration_connections
+  FROM "integration_connections"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_integration_connections <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B integration connections, saw %', other_integration_connections;
+  END IF;
+
+  SELECT count(*) INTO other_integration_oauth_states
+  FROM "integration_oauth_states"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_integration_oauth_states <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B OAuth states, saw %', other_integration_oauth_states;
+  END IF;
+
+  SELECT count(*) INTO other_integration_secrets
+  FROM "integration_secrets"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_integration_secrets <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B integration secrets, saw %', other_integration_secrets;
+  END IF;
+
+  SELECT count(*) INTO other_search_console_properties
+  FROM "search_console_properties"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_search_console_properties <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B Search Console properties, saw %', other_search_console_properties;
+  END IF;
+
+  SELECT count(*) INTO other_search_console_observations
+  FROM "search_console_observations"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_search_console_observations <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B Search Console observations, saw %', other_search_console_observations;
+  END IF;
+
+  SELECT count(*) INTO other_monitoring_schedules
+  FROM "monitoring_schedules"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_monitoring_schedules <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B monitoring schedules, saw %', other_monitoring_schedules;
+  END IF;
+
+  SELECT count(*) INTO other_monitoring_runs
+  FROM "monitoring_runs"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_monitoring_runs <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B monitoring runs, saw %', other_monitoring_runs;
+  END IF;
+
+  SELECT count(*) INTO other_monitoring_observations
+  FROM "monitoring_observations"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_monitoring_observations <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B monitoring observations, saw %', other_monitoring_observations;
+  END IF;
+
+  SELECT count(*) INTO other_competitor_targets
+  FROM "competitor_targets"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_competitor_targets <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B competitor targets, saw %', other_competitor_targets;
+  END IF;
+
+  SELECT count(*) INTO other_competitor_observations
+  FROM "competitor_observations"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_competitor_observations <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B competitor observations, saw %', other_competitor_observations;
+  END IF;
+
   UPDATE "reports"
   SET "title" = 'cross-workspace report mutation'
   WHERE "id" = '60000000-0000-4000-8000-0000000000b1';
@@ -409,6 +596,51 @@ BEGIN
 
   IF changed_rows <> 0 THEN
     RAISE EXCEPTION 'Workspace A mutated Workspace B reports.';
+  END IF;
+
+  UPDATE "integration_connections"
+  SET "last_error_summary" = 'cross-workspace integration mutation'
+  WHERE "id" = '70000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B integration connections.';
+  END IF;
+
+  UPDATE "integration_secrets"
+  SET "ciphertext" = 'cross-workspace secret mutation'
+  WHERE "id" = '72000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B integration secrets.';
+  END IF;
+
+  UPDATE "search_console_properties"
+  SET "selected" = false
+  WHERE "id" = '73000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B Search Console properties.';
+  END IF;
+
+  UPDATE "monitoring_runs"
+  SET "status" = 'FAILED'
+  WHERE "id" = '76000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B monitoring runs.';
+  END IF;
+
+  UPDATE "competitor_targets"
+  SET "notes" = 'cross-workspace competitor mutation'
+  WHERE "id" = '78000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B competitor targets.';
   END IF;
 END $$;
 COMMIT;
@@ -454,6 +686,78 @@ BEGIN
     INSERT INTO "reports" ("id", "workspace_id", "audit_id", "audit_run_id", "audit_snapshot_id", "status", "title", "executive_summary", "methodology_version", "report_data")
     VALUES ('60000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', '54000000-0000-4000-8000-0000000000b1', 'DRAFT', 'Blocked Report', 'Blocked', 'phase1-deterministic-v1.0', '{}'::jsonb);
     RAISE EXCEPTION 'Workspace A linked a report to Workspace B audit/run/snapshot.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "integration_connections" ("id", "workspace_id", "client_id", "website_id", "provider", "connection_type", "scopes", "status")
+    VALUES ('70000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'google_search_console', 'OAUTH', '[]'::jsonb, 'CONNECTED');
+    RAISE EXCEPTION 'Workspace A inserted a Workspace B integration connection.';
+  EXCEPTION
+    WHEN insufficient_privilege THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "integration_secrets" ("id", "workspace_id", "integration_connection_id", "secret_type", "algorithm", "key_version", "nonce", "ciphertext", "auth_tag")
+    VALUES ('72000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '70000000-0000-4000-8000-0000000000b1', 'OAUTH_TOKEN', 'AES-256-GCM', 'test', 'nonce', 'ciphertext', 'tag');
+    RAISE EXCEPTION 'Workspace A linked an integration secret to Workspace B connection.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "search_console_properties" ("id", "workspace_id", "integration_connection_id", "client_id", "website_id", "property_url", "property_type")
+    VALUES ('73000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '70000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'sc-domain:blocked.test', 'DOMAIN');
+    RAISE EXCEPTION 'Workspace A linked a Search Console property to Workspace B connection.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "search_console_observations" ("id", "workspace_id", "integration_connection_id", "search_console_property_id", "client_id", "website_id", "window_start_date", "window_end_date", "property_url")
+    VALUES ('74000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '70000000-0000-4000-8000-0000000000b1', '73000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', '2026-08-31', '2026-09-06', 'sc-domain:blocked.test');
+    RAISE EXCEPTION 'Workspace A linked a Search Console observation to Workspace B provider records.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "monitoring_schedules" ("id", "workspace_id", "client_id", "website_id", "monitor_key", "monitor_version", "cadence")
+    VALUES ('75000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'website_health', 'phase4a-monitor-v1.0', 'weekly');
+    RAISE EXCEPTION 'Workspace A linked a monitoring schedule to Workspace B website.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "monitoring_runs" ("id", "workspace_id", "monitoring_schedule_id", "client_id", "website_id", "monitor_key", "monitor_version", "trigger_type", "idempotency_key")
+    VALUES ('76000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '75000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'website_health', 'phase4a-monitor-v1.0', 'MANUAL', 'blocked-run');
+    RAISE EXCEPTION 'Workspace A linked a monitoring run to Workspace B schedule.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "monitoring_observations" ("id", "workspace_id", "monitoring_run_id", "client_id", "website_id", "observation_key", "observation_type", "status", "summary")
+    VALUES ('77000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '76000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'seo.title', 'website_health_check', 'FAIL', 'Blocked observation');
+    RAISE EXCEPTION 'Workspace A linked a monitoring observation to Workspace B run.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "competitor_targets" ("id", "workspace_id", "client_id", "website_id", "name", "domain", "canonical_url")
+    VALUES ('78000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'Blocked Competitor', 'blocked-competitor.test', 'https://blocked-competitor.test/');
+    RAISE EXCEPTION 'Workspace A linked a competitor target to Workspace B website.';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "competitor_observations" ("id", "workspace_id", "competitor_target_id", "client_id", "website_id", "source_url", "content_hash", "change_summary")
+    VALUES ('79000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '78000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000a1', '30000000-0000-4000-8000-0000000000a1', 'https://blocked-competitor.test/', repeat('e', 64), 'Blocked observation');
+    RAISE EXCEPTION 'Workspace A linked a competitor observation to Workspace B target.';
   EXCEPTION
     WHEN foreign_key_violation THEN NULL;
   END;

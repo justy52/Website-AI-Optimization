@@ -1,11 +1,13 @@
 import Link from "next/link";
 
 import {
+  Activity,
   Bot,
   FileText,
   Globe2,
   LayoutDashboard,
   ListChecks,
+  Plug,
   Radar,
   Settings,
   ShieldCheck,
@@ -26,6 +28,8 @@ const navItems = [
   { href: "/audits", label: "Audits", icon: Radar },
   { href: "/opportunities", label: "Opportunities", icon: ListChecks },
   { href: "/work-plan", label: "Work Plan", icon: ListChecks },
+  { href: "/monitoring", label: "Monitoring", icon: Activity },
+  { href: "/settings/integrations", label: "Integrations", icon: Plug },
   { href: "/runs", label: "Runs", icon: Bot },
   { href: "/approvals", label: "Approvals", icon: ShieldCheck },
   { href: "/reports", label: "Reports", icon: FileText },

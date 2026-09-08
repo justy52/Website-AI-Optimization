@@ -45,6 +45,7 @@ const rawEnvSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: optionalNonEmpty,
   GOOGLE_OAUTH_CLIENT_SECRET: optionalNonEmpty,
   GOOGLE_OAUTH_REDIRECT_URI: optionalNonEmpty,
+  CRON_SECRET: optionalNonEmpty,
   PERPLEXITY_API_KEY: optionalNonEmpty,
   GEMINI_API_KEY: optionalNonEmpty,
 });

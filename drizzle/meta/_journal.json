@@ -71,6 +71,13 @@
       "when": 1788754780558,
       "tag": "0009_phase3_ai_gateway_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788761216686,
+      "tag": "0010_phase4a_monitoring_search",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import {
+  Activity,
   AlertTriangle,
   Bot,
   FileText,
@@ -13,6 +14,8 @@ import {
 
 import { getWorkspaceShellContext } from "@/server/auth";
 import { getAgentDashboardSummary } from "@/server/agents";
+import { getCompetitorDashboardSummary } from "@/server/competitors";
+import { getMonitoringDashboardSummary } from "@/server/monitoring";
 import { getOpportunityDashboardSummary } from "@/server/opportunities";
 import { getDashboardSummary } from "@/server/revenue";
 
@@ -26,10 +29,12 @@ const statCards = [
 
 export default async function DashboardPage() {
   const shell = await getWorkspaceShellContext();
-  const [summary, opportunitySummary, agentSummary] = await Promise.all([
+  const [summary, opportunitySummary, agentSummary, monitoringSummary, competitorSummary] = await Promise.all([
     getDashboardSummary(shell.workspaceContext),
     getOpportunityDashboardSummary(shell.workspaceContext),
     getAgentDashboardSummary(shell.workspaceContext),
+    getMonitoringDashboardSummary(shell.workspaceContext),
+    getCompetitorDashboardSummary(shell.workspaceContext),
   ]);
 
   return (
@@ -41,7 +46,7 @@ export default async function DashboardPage() {
             Start audit
           </Link>
         }
-        eyebrow="Phase 3 governed PREPARE operations"
+        eyebrow="Governed PREPARE and recurring observation"
         title="Command Center"
       />
       <div className="mx-grid mx-grid-3">
@@ -136,6 +141,62 @@ export default async function DashboardPage() {
             <AlertTriangle aria-hidden size={14} />
           </span>
           <span className="mx-kpi-value">{agentSummary.failedRuns}</span>
+        </Link>
+      </div>
+      <div className="mx-spacer" />
+      <div className="mx-grid mx-grid-3">
+        <Link className="mx-panel mx-kpi" href={"/monitoring" as never}>
+          <span className="mx-kpi-label">
+            Websites due
+            <Activity aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">{monitoringSummary.websitesDue}</span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/monitoring" as never}>
+          <span className="mx-kpi-label">
+            Monitoring failures
+            <AlertTriangle aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monitoringSummary.monitoringFailures}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/settings/integrations" as never}>
+          <span className="mx-kpi-label">
+            Search Console disconnected
+            <Globe2 aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monitoringSummary.searchConsoleDisconnected}
+          </span>
+        </Link>
+      </div>
+      <div className="mx-spacer" />
+      <div className="mx-grid mx-grid-3">
+        <Link className="mx-panel mx-kpi" href={"/monitoring" as never}>
+          <span className="mx-kpi-label">
+            New monitoring problems
+            <AlertTriangle aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monitoringSummary.newMonitoringProblems}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/settings/integrations" as never}>
+          <span className="mx-kpi-label">
+            Search Console errors
+            <AlertTriangle aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monitoringSummary.searchConsoleSyncErrors}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/websites" as never}>
+          <span className="mx-kpi-label">
+            Competitor changes
+            <Radar aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">{competitorSummary.recentChanges}</span>
         </Link>
       </div>
       <div className="mx-spacer" />

@@ -27,6 +27,15 @@ const tenantTables = [
   "draft_artifacts",
   "approval_requests",
   "operational_notifications",
+  "integration_oauth_states",
+  "integration_secrets",
+  "search_console_properties",
+  "search_console_observations",
+  "monitoring_schedules",
+  "monitoring_runs",
+  "monitoring_observations",
+  "competitor_targets",
+  "competitor_observations",
   "reports",
   "approval_policies",
   "integration_connections",
@@ -54,6 +63,7 @@ describe("phase 0 migrations", () => {
       readMigration("0003_phase1_revenue_loop.sql"),
       readMigration("0007_phase2_opportunities.sql"),
       readMigration("0008_phase3_governed_prepare.sql"),
+      readMigration("0010_phase4a_monitoring_search.sql"),
     ].join("\n");
 
     for (const table of tenantTables) {
@@ -116,6 +126,7 @@ describe("phase 0 migrations", () => {
       readMigration("0003_phase1_revenue_loop.sql"),
       readMigration("0007_phase2_opportunities.sql"),
       readMigration("0008_phase3_governed_prepare.sql"),
+      readMigration("0010_phase4a_monitoring_search.sql"),
     ].join("\n");
 
     expect(migration).toContain(
@@ -202,6 +213,33 @@ describe("phase 0 migrations", () => {
     expect(migration).toContain(
       'CONSTRAINT "approval_requests_artifact_version_workspace_fk" FOREIGN KEY ("workspace_id","target_artifact_id","target_artifact_version")',
     );
+    expect(migration).toContain(
+      'CONSTRAINT "integration_oauth_states_website_workspace_fk" FOREIGN KEY ("workspace_id","client_id","website_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "integration_secrets_connection_workspace_fk" FOREIGN KEY ("workspace_id","integration_connection_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "search_console_properties_website_workspace_fk" FOREIGN KEY ("workspace_id","client_id","website_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "search_console_observations_property_workspace_fk" FOREIGN KEY ("workspace_id","search_console_property_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "monitoring_schedules_website_workspace_fk" FOREIGN KEY ("workspace_id","client_id","website_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "monitoring_runs_website_workspace_fk" FOREIGN KEY ("workspace_id","client_id","website_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "monitoring_observations_run_workspace_fk" FOREIGN KEY ("workspace_id","monitoring_run_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "competitor_targets_website_workspace_fk" FOREIGN KEY ("workspace_id","client_id","website_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "competitor_observations_target_workspace_fk" FOREIGN KEY ("workspace_id","competitor_target_id")',
+    );
   });
 
   it("creates composite unique indexes before foreign keys that depend on them", () => {
@@ -281,6 +319,24 @@ describe("phase 0 migrations", () => {
       phase3,
       'CREATE UNIQUE INDEX "draft_artifacts_workspace_version_unique"',
       'CONSTRAINT "approval_requests_artifact_version_workspace_fk"',
+    );
+
+    const phase4a = readMigration("0010_phase4a_monitoring_search.sql");
+
+    expectBefore(
+      phase4a,
+      'CREATE UNIQUE INDEX "search_console_properties_workspace_id_id_unique"',
+      'CONSTRAINT "search_console_observations_property_workspace_fk"',
+    );
+    expectBefore(
+      phase4a,
+      'CREATE UNIQUE INDEX "monitoring_runs_workspace_id_id_unique"',
+      'CONSTRAINT "monitoring_observations_run_workspace_fk"',
+    );
+    expectBefore(
+      phase4a,
+      'CREATE UNIQUE INDEX "competitor_targets_workspace_id_id_unique"',
+      'CONSTRAINT "competitor_observations_target_workspace_fk"',
     );
   });
 
@@ -363,6 +419,28 @@ describe("phase 0 migrations", () => {
     );
   });
 
+  it("adds Phase 4A read-only integration and monitoring foundations", () => {
+    const migration = readMigration("0010_phase4a_monitoring_search.sql");
+
+    expect(migration).toContain('CREATE TABLE "integration_oauth_states"');
+    expect(migration).toContain('CREATE TABLE "integration_secrets"');
+    expect(migration).toContain('CREATE TABLE "search_console_properties"');
+    expect(migration).toContain('CREATE TABLE "search_console_observations"');
+    expect(migration).toContain('CREATE TABLE "monitoring_schedules"');
+    expect(migration).toContain('CREATE TABLE "monitoring_runs"');
+    expect(migration).toContain('CREATE TABLE "monitoring_observations"');
+    expect(migration).toContain('CREATE TABLE "competitor_targets"');
+    expect(migration).toContain('CREATE TABLE "competitor_observations"');
+    expect(migration).toContain(
+      "CREATE OR REPLACE FUNCTION public.bootstrap_due_monitoring_schedules",
+    );
+    expect(migration).toContain("SECURITY DEFINER");
+    expect(migration).toContain("REVOKE ALL ON FUNCTION");
+    expect(migration).not.toContain(
+      "GRANT EXECUTE ON FUNCTION public.bootstrap_due_monitoring_schedules(integer) TO PUBLIC",
+    );
+  });
+
   it("does not include destructive table or type drops", () => {
     const migration = [
       readMigration("0000_phase0_foundation.sql"),
@@ -375,6 +453,7 @@ describe("phase 0 migrations", () => {
       readMigration("0007_phase2_opportunities.sql"),
       readMigration("0008_phase3_governed_prepare.sql"),
       readMigration("0009_phase3_ai_gateway_hardening.sql"),
+      readMigration("0010_phase4a_monitoring_search.sql"),
     ].join("\n");
 
     expect(migration).not.toMatch(/\bDROP\s+(TABLE|TYPE|SCHEMA|DATABASE)\b/i);
