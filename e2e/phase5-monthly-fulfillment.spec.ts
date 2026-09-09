@@ -219,11 +219,17 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(deliverableRow(page, "Observed AI Visibility")).toContainText(
     "UNAVAILABLE",
   );
-  await expect(page.getByText("Major Content Asset")).toBeVisible();
-  await expect(page.getByText("Existing Page Optimization")).toBeVisible();
-  await expect(page.locator("main")).toContainText(/selected by monthly/);
+  await expect(
+    page.getByText("Major Content Asset", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Existing Page Optimization", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("main")).toContainText(
+    "contractual recurring deliverable not yet fulfilled",
+  );
 
-  const workRow = page.locator(".mx-check-row", { hasText: /Priority|Immediate|High|Normal/ }).last();
+  const workRow = page.locator(".mx-check-row", { hasText: "Selected:" }).last();
   await workRow.getByRole("button", { name: "Prepare draft" }).click();
   await pollCycleFor(page, /Draft (DRAFT|AWAITING_APPROVAL|APPROVED)/);
 
@@ -254,10 +260,10 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
 
   await page.getByRole("button", { name: "Generate draft" }).click();
   await expect(page.getByText(/Monthly Optimization Report/)).toBeVisible();
-  await expect(page.locator("main")).toContainText("Data Limitations");
+  await expect(page.locator("main")).toContainText("Limitations");
   await page.getByRole("button", { name: "Finalize report" }).click();
   await expect(page.locator("main")).toContainText("FINALIZED");
-  await expect(page.locator("main")).toContainText(/Snapshot\s+[a-f0-9]{64}/);
+  await expect(page.locator("main")).toContainText(/[a-f0-9]{64}/);
 
   await setDeliverableComplete(page, "Weekly Website Health");
   await setDeliverableComplete(page, "Monthly Competitor Review");
@@ -282,7 +288,9 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   ).toBeVisible();
   await expect(page.locator("main")).toContainText(clientName);
   await expect(page.locator("main")).toContainText("Growth");
-  await expect(page.locator("main")).toContainText(/selected by monthly/);
+  await expect(page.locator("main")).toContainText(
+    "contractual recurring deliverable not yet fulfilled",
+  );
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");

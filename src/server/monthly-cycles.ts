@@ -2244,11 +2244,27 @@ export async function getMonthlyCycleDetail(
         summary: opportunity.summary,
       })),
     );
+    const prepareStateByOpportunity = await latestPrepareStateSelect(
+      tx,
+      context,
+      workRows.map((row) => row.item.opportunityId),
+    );
 
     return {
       ...header,
       deliverables,
-      workItems: workRows,
+      workItems: workRows.map((row) => {
+        const prepareState = prepareStateByOpportunity.get(row.item.opportunityId);
+
+        return {
+          ...row,
+          item: {
+            ...row.item,
+            draftState: prepareState?.draftState ?? row.item.draftState,
+            approvalState: prepareState?.approvalState ?? row.item.approvalState,
+          },
+        };
+      }),
       implementations: implementationRows,
       verifications: verificationRows,
       report: reportRows[0] ?? null,
