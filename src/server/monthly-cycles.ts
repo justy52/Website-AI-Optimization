@@ -330,6 +330,22 @@ async function updateCountedDeliverable(
 
   if (!deliverable) return;
 
+  if (deliverable.status === "COMPLETE") {
+    await tx
+      .update(monthlyCycleDeliverables)
+      .set({
+        completedCount: Math.max(deliverable.completedCount, input.completedCount),
+        updatedAt: now(),
+      })
+      .where(
+        and(
+          eq(monthlyCycleDeliverables.workspaceId, context.workspaceId),
+          eq(monthlyCycleDeliverables.id, deliverable.id),
+        ),
+      );
+    return;
+  }
+
   if (["WAIVED", "UNAVAILABLE", "BLOCKED", "NOT_APPLICABLE"].includes(deliverable.status)) {
     await tx
       .update(monthlyCycleDeliverables)
@@ -1889,15 +1905,15 @@ export async function updateMonthlyDeliverableStatus(
     assertCycleMutable(cycle.status);
 
     const completedAt = input.status === "COMPLETE" ? now() : null;
+    const completedCount =
+      input.status === "COMPLETE"
+        ? Math.max(input.completedCount ?? current.completedCount, current.targetCount)
+        : (input.completedCount ?? current.completedCount);
     const [deliverable] = await tx
       .update(monthlyCycleDeliverables)
       .set({
         status: input.status,
-        completedCount:
-          input.completedCount ??
-          (input.status === "COMPLETE"
-            ? Math.max(current.completedCount, current.targetCount)
-            : current.completedCount),
+        completedCount,
         completionEvidence: optionalString(input.completionEvidence)
           ? { summary: optionalString(input.completionEvidence) }
           : current.completionEvidence,

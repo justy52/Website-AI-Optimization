@@ -159,14 +159,18 @@ async function setDeliverableComplete(page: Page, title: string) {
   await row.getByLabel("Completed").fill("1");
   await row.getByLabel("Evidence").fill(`${title} verified by Phase 5 E2E.`);
   await row.getByRole("button", { name: "Update" }).click();
-  await expect(deliverableRow(page, title).getByText("COMPLETE")).toBeVisible();
+  await expect(deliverableRow(page, title).locator(".mx-chip").first()).toHaveText(
+    "COMPLETE",
+  );
 }
 
 async function waiveDeliverable(page: Page, title: string) {
   const row = deliverableRow(page, title);
   await row.getByPlaceholder("Waiver reason").fill(`${title} waived by Phase 5 E2E.`);
   await row.getByRole("button", { name: "Waive" }).click();
-  await expect(deliverableRow(page, title).getByText("WAIVED")).toBeVisible();
+  await expect(deliverableRow(page, title).locator(".mx-chip").first()).toHaveText(
+    "WAIVED",
+  );
 }
 
 async function approveLatestPendingDraft(page: Page) {
@@ -254,7 +258,9 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
     .locator(".mx-check-row", { hasText: "IMPLEMENTED_UNVERIFIED" })
     .last();
   await implementedWork.getByLabel("Verification state").selectOption("VERIFIED");
-  await implementedWork.getByLabel("Evidence").fill("Human verified Phase 5 change.");
+  await implementedWork
+    .locator('input[name="evidence"]')
+    .fill("Human verified Phase 5 change.");
   await implementedWork.getByRole("button", { name: "Record verification" }).click();
   await expect(page.locator("main")).toContainText("VERIFIED");
 
