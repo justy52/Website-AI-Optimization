@@ -8,6 +8,12 @@ const workspaceName = `OPTIQ Phase 5 QA ${runId}`;
 const clientName = `Phase 5 QA Client ${runId}`;
 const competitorName = `IANA Phase 5 ${runId}`;
 
+function monthlyCyclesNavLink(page: Page) {
+  return page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "Monthly Cycles", exact: true });
+}
+
 async function signUp(page: Page) {
   await page.goto("/login");
   await page.getByRole("button", { name: "Create account" }).click();
@@ -23,9 +29,7 @@ async function ensureWorkspace(page: Page) {
     await page.getByLabel("Workspace name").fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
   }
-  await expect(
-    page.getByRole("link", { name: "Monthly Cycles", exact: true }),
-  ).toBeVisible();
+  await expect(monthlyCyclesNavLink(page)).toBeVisible();
 }
 
 async function createGrowthClientWithWebsite(page: Page) {
@@ -205,7 +209,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await page.goto(websiteUrl, { waitUntil: "networkidle" });
   await createAuditOpportunity(page);
 
-  await page.getByRole("link", { name: "Monthly Cycles", exact: true }).click();
+  await monthlyCyclesNavLink(page).click();
   await expect(page.getByRole("heading", { name: "Monthly Cycles" })).toBeVisible();
   await page.getByLabel("Client").selectOption({ label: `${clientName} - GROWTH` });
   await page.getByRole("button", { name: "Create cycle" }).click();
@@ -281,7 +285,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(page.locator("main")).toContainText("CLOSED");
   await expect(page.locator("main")).toContainText("WAIVED");
 
-  await page.getByRole("link", { name: "Monthly Cycles", exact: true }).click();
+  await monthlyCyclesNavLink(page).click();
   const currentMonth = new Date().getUTCMonth() + 1;
   const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1;
   const nextYear = new Date().getUTCFullYear() + (currentMonth === 12 ? 1 : 0);
@@ -300,9 +304,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(
-    page.getByRole("link", { name: "Monthly Cycles", exact: true }),
-  ).toBeVisible();
+  await expect(monthlyCyclesNavLink(page)).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login/);
