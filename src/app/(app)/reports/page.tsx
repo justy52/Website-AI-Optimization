@@ -1,11 +1,15 @@
 import { listReports } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
+import { listMonthlyReports } from "@/server/monthly-cycles";
 
 import { EmptyState, formatDate, PageHeader, Panel, RowLink, StatusChip } from "../ui";
 
 export default async function ReportsPage() {
   const shell = await getWorkspaceShellContext();
-  const reports = await listReports(shell.workspaceContext);
+  const [reports, monthlyReports] = await Promise.all([
+    listReports(shell.workspaceContext),
+    listMonthlyReports(shell.workspaceContext),
+  ]);
 
   return (
     <>
@@ -25,6 +29,24 @@ export default async function ReportsPage() {
           </div>
         ) : (
           <EmptyState>No reports have been created yet.</EmptyState>
+        )}
+      </Panel>
+      <div className="mx-spacer" />
+      <Panel title="Monthly reports">
+        {monthlyReports.length > 0 ? (
+          <div className="mx-list">
+            {monthlyReports.map((report) => (
+              <RowLink
+                chips={<StatusChip tone="info">{report.status}</StatusChip>}
+                href={`/monthly-cycles/${report.monthlyCycleId}`}
+                key={report.id}
+                meta={`${report.clientName} - ${report.reportPeriodStartDate} to ${report.reportPeriodEndDate} - ${report.snapshotHash ?? "draft mutable"}`}
+                title={report.title}
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyState>No monthly reports have been generated yet.</EmptyState>
         )}
       </Panel>
     </>

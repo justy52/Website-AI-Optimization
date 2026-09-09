@@ -45,6 +45,17 @@ BEGIN
       ('audit_category_scores'),
       ('audit_findings'),
       ('audit_snapshots'),
+      ('opportunities'),
+      ('work_plan_cycles'),
+      ('work_plan_items'),
+      ('agent_runs'),
+      ('agent_tool_calls'),
+      ('client_knowledge_sources'),
+      ('business_facts'),
+      ('claim_policies'),
+      ('draft_artifacts'),
+      ('approval_requests'),
+      ('operational_notifications'),
       ('reports'),
       ('approval_policies'),
       ('integration_connections'),
@@ -57,6 +68,12 @@ BEGIN
       ('monitoring_observations'),
       ('competitor_targets'),
       ('competitor_observations'),
+      ('monthly_cycles'),
+      ('monthly_cycle_deliverables'),
+      ('monthly_cycle_work_items'),
+      ('manual_implementation_records'),
+      ('implementation_verification_records'),
+      ('monthly_reports'),
       ('workspace_feature_flags'),
       ('activity_events')
   )
@@ -85,6 +102,17 @@ BEGIN
       ('audit_category_scores'),
       ('audit_findings'),
       ('audit_snapshots'),
+      ('opportunities'),
+      ('work_plan_cycles'),
+      ('work_plan_items'),
+      ('agent_runs'),
+      ('agent_tool_calls'),
+      ('client_knowledge_sources'),
+      ('business_facts'),
+      ('claim_policies'),
+      ('draft_artifacts'),
+      ('approval_requests'),
+      ('operational_notifications'),
       ('reports'),
       ('approval_policies'),
       ('integration_connections'),
@@ -97,6 +125,12 @@ BEGIN
       ('monitoring_observations'),
       ('competitor_targets'),
       ('competitor_observations'),
+      ('monthly_cycles'),
+      ('monthly_cycle_deliverables'),
+      ('monthly_cycle_work_items'),
+      ('manual_implementation_records'),
+      ('implementation_verification_records'),
+      ('monthly_reports'),
       ('workspace_feature_flags'),
       ('activity_events')
   )
@@ -140,8 +174,8 @@ INSERT INTO "workspace_memberships" ("workspace_id", "user_id", "role", "status"
 VALUES ('00000000-0000-4000-8000-0000000000b1', 'rls-user-a', 'ADMIN', 'ACTIVE');
 INSERT INTO "leads" ("id", "workspace_id", "company_name", "status")
 VALUES ('10000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', 'Lead B', 'QUALIFIED');
-INSERT INTO "clients" ("id", "workspace_id", "source_lead_id", "name")
-VALUES ('20000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', 'Client B');
+INSERT INTO "clients" ("id", "workspace_id", "source_lead_id", "name", "service_plan")
+VALUES ('20000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', 'Client B', 'GROWTH');
 INSERT INTO "websites" ("id", "workspace_id", "client_id", "display_name", "canonical_url", "domain")
 VALUES ('30000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', 'Website B', 'https://example-b.test/', 'example-b.test');
 INSERT INTO "audits" ("id", "workspace_id", "website_id", "title", "status")
@@ -183,6 +217,20 @@ INSERT INTO "competitor_targets" ("id", "workspace_id", "client_id", "website_id
 VALUES ('78000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'Competitor B', 'competitor-b.test', 'https://competitor-b.test/');
 INSERT INTO "competitor_observations" ("id", "workspace_id", "competitor_target_id", "monitoring_run_id", "client_id", "website_id", "source_url", "content_hash", "change_summary")
 VALUES ('79000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '78000000-0000-4000-8000-0000000000b1', '76000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'https://competitor-b.test/', repeat('c', 64), 'Workspace B competitor observation');
+INSERT INTO "opportunities" ("id", "workspace_id", "client_id", "website_id", "source_audit_id", "source_audit_run_id", "source_finding_id", "source_check_result_id", "source_check_key", "source_check_version", "source_result_status", "source_severity", "source_evidence_refs", "evidence_confidence", "category", "normalized_remediation_family", "title", "summary", "recommended_action", "status", "impact", "confidence", "urgency", "strategic_fit", "plan_fit", "effort", "base_priority", "final_priority", "priority_band", "plan_scope")
+VALUES ('80000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '40000000-0000-4000-8000-0000000000b1', '50000000-0000-4000-8000-0000000000b1', '53000000-0000-4000-8000-0000000000b1', '52000000-0000-4000-8000-0000000000b1', 'seo.title', 'seo.title@dv-score-v1.0', 'FAIL', 'HIGH', '["homepage-html"]'::jsonb, 'HIGH', 'seo', 'on_page_metadata', 'Workspace B monthly page optimization', 'Workspace B monthly work item', 'Prepare a bounded metadata update.', 'READY', 5, 5, 4, 4, 4, 2, 70, 70, 'High', 'INCLUDED');
+INSERT INTO "monthly_cycles" ("id", "workspace_id", "client_id", "website_id", "service_plan", "service_plan_version", "cycle_year", "cycle_month", "period_start_date", "period_end_date", "timezone", "status", "creation_source", "due_at", "created_by_user_id", "entitlement_snapshot")
+VALUES ('81000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'GROWTH', 'service-plans-v1.0', 2026, 9, '2026-09-01', '2026-09-30', 'UTC', 'OPEN', 'MANUAL', '2026-10-05 23:59:59+00', 'rls-user-a', '{"servicePlan":"GROWTH","servicePlanDefinitionVersion":"service-plans-v1.0","limits":{"manualImplementationMinutes":240,"majorContentAssets":1,"existingPageOptimizations":1},"noRollover":true}'::jsonb);
+INSERT INTO "monthly_cycle_deliverables" ("id", "workspace_id", "monthly_cycle_id", "client_id", "website_id", "deliverable_key", "deliverable_type", "title", "status", "entitlement_source_rule", "service_plan_version", "target_count", "completed_count", "consumes_entitlement", "entitlement_type", "entitlement_units")
+VALUES ('82000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '81000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'existing_page_optimization', 'EXISTING_PAGE_OPTIMIZATION', 'Existing Page Optimization', 'IN_PROGRESS', 'Growth: 1 existing-page optimization per month', 'service-plans-v1.0', 1, 0, true, 'existing_page_optimizations_completed', 1);
+INSERT INTO "monthly_cycle_work_items" ("id", "workspace_id", "monthly_cycle_id", "client_id", "website_id", "opportunity_id", "deliverable_id", "selected_reason", "contractual_deliverable_reason", "scope_fit", "consumes_entitlement", "entitlement_type", "entitlement_units", "estimated_effort", "status")
+VALUES ('83000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '81000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '80000000-0000-4000-8000-0000000000b1', '82000000-0000-4000-8000-0000000000b1', 'contractual recurring deliverable not yet fulfilled', 'Candidate fits the recurring existing-page optimization entitlement.', 'INCLUDED', true, 'existing_page_optimizations_completed', 1, 2, 'SELECTED');
+INSERT INTO "manual_implementation_records" ("id", "workspace_id", "monthly_cycle_id", "cycle_work_item_id", "client_id", "website_id", "opportunity_id", "what_implemented", "implementation_date", "manual_minutes", "evidence_reference", "implemented_by_user_id", "created_by_user_id")
+VALUES ('84000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '81000000-0000-4000-8000-0000000000b1', '83000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '80000000-0000-4000-8000-0000000000b1', 'Workspace B implementation', '2026-09-15', 30, 'RLS fixture', 'rls-user-a', 'rls-user-a');
+INSERT INTO "implementation_verification_records" ("id", "workspace_id", "monthly_cycle_id", "cycle_work_item_id", "implementation_record_id", "client_id", "website_id", "opportunity_id", "status", "verification_method", "evidence", "verified_by_user_id")
+VALUES ('85000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '81000000-0000-4000-8000-0000000000b1', '83000000-0000-4000-8000-0000000000b1', '84000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '80000000-0000-4000-8000-0000000000b1', 'VERIFIED', 'human verification', '{"summary":"RLS fixture"}'::jsonb, 'rls-user-a');
+INSERT INTO "monthly_reports" ("id", "workspace_id", "monthly_cycle_id", "client_id", "status", "title", "executive_summary", "report_period_start_date", "report_period_end_date", "timezone", "service_plan", "service_plan_version", "plan_snapshot", "sections")
+VALUES ('86000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', '81000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', 'DRAFT', 'Workspace B monthly report', 'Workspace B monthly summary', '2026-09-01', '2026-09-30', 'UTC', 'GROWTH', 'service-plans-v1.0', '{"servicePlan":"GROWTH"}'::jsonb, '{"fixture":true}'::jsonb);
 COMMIT;
 
 BEGIN;
@@ -330,6 +378,12 @@ DECLARE
   other_monitoring_observations integer;
   other_competitor_targets integer;
   other_competitor_observations integer;
+  other_monthly_cycles integer;
+  other_monthly_cycle_deliverables integer;
+  other_monthly_cycle_work_items integer;
+  other_manual_implementation_records integer;
+  other_implementation_verification_records integer;
+  other_monthly_reports integer;
 BEGIN
   SELECT count(*) INTO own_leads
   FROM "leads"
@@ -589,6 +643,54 @@ BEGIN
     RAISE EXCEPTION 'Workspace A should not read Workspace B competitor observations, saw %', other_competitor_observations;
   END IF;
 
+  SELECT count(*) INTO other_monthly_cycles
+  FROM "monthly_cycles"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_monthly_cycles <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B monthly cycles, saw %', other_monthly_cycles;
+  END IF;
+
+  SELECT count(*) INTO other_monthly_cycle_deliverables
+  FROM "monthly_cycle_deliverables"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_monthly_cycle_deliverables <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B monthly deliverables, saw %', other_monthly_cycle_deliverables;
+  END IF;
+
+  SELECT count(*) INTO other_monthly_cycle_work_items
+  FROM "monthly_cycle_work_items"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_monthly_cycle_work_items <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B monthly work items, saw %', other_monthly_cycle_work_items;
+  END IF;
+
+  SELECT count(*) INTO other_manual_implementation_records
+  FROM "manual_implementation_records"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_manual_implementation_records <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B implementation records, saw %', other_manual_implementation_records;
+  END IF;
+
+  SELECT count(*) INTO other_implementation_verification_records
+  FROM "implementation_verification_records"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_implementation_verification_records <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B verification records, saw %', other_implementation_verification_records;
+  END IF;
+
+  SELECT count(*) INTO other_monthly_reports
+  FROM "monthly_reports"
+  WHERE workspace_id = '00000000-0000-4000-8000-0000000000b1';
+
+  IF other_monthly_reports <> 0 THEN
+    RAISE EXCEPTION 'Workspace A should not read Workspace B monthly reports, saw %', other_monthly_reports;
+  END IF;
+
   UPDATE "reports"
   SET "title" = 'cross-workspace report mutation'
   WHERE "id" = '60000000-0000-4000-8000-0000000000b1';
@@ -641,6 +743,60 @@ BEGIN
 
   IF changed_rows <> 0 THEN
     RAISE EXCEPTION 'Workspace A mutated Workspace B competitor targets.';
+  END IF;
+
+  UPDATE "monthly_cycles"
+  SET "notes" = 'cross-workspace monthly cycle mutation'
+  WHERE "id" = '81000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B monthly cycles.';
+  END IF;
+
+  UPDATE "monthly_cycle_deliverables"
+  SET "title" = 'cross-workspace deliverable mutation'
+  WHERE "id" = '82000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B monthly deliverables.';
+  END IF;
+
+  UPDATE "monthly_cycle_work_items"
+  SET "selected_reason" = 'cross-workspace work mutation'
+  WHERE "id" = '83000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B monthly work items.';
+  END IF;
+
+  UPDATE "manual_implementation_records"
+  SET "what_implemented" = 'cross-workspace implementation mutation'
+  WHERE "id" = '84000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B manual implementation records.';
+  END IF;
+
+  UPDATE "implementation_verification_records"
+  SET "verification_method" = 'cross-workspace verification mutation'
+  WHERE "id" = '85000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B verification records.';
+  END IF;
+
+  UPDATE "monthly_reports"
+  SET "title" = 'cross-workspace monthly report mutation'
+  WHERE "id" = '86000000-0000-4000-8000-0000000000b1';
+  GET DIAGNOSTICS changed_rows = ROW_COUNT;
+
+  IF changed_rows <> 0 THEN
+    RAISE EXCEPTION 'Workspace A mutated Workspace B monthly reports.';
   END IF;
 END $$;
 COMMIT;
@@ -760,6 +916,46 @@ BEGIN
     RAISE EXCEPTION 'Workspace A linked a competitor observation to Workspace B target.';
   EXCEPTION
     WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "monthly_cycles" ("id", "workspace_id", "client_id", "website_id", "service_plan", "service_plan_version", "cycle_year", "cycle_month", "period_start_date", "period_end_date", "timezone", "status", "creation_source", "due_at", "entitlement_snapshot")
+    VALUES ('81000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', 'GROWTH', 'service-plans-v1.0', 2026, 9, '2026-09-01', '2026-09-30', 'UTC', 'OPEN', 'MANUAL', '2026-10-05 23:59:59+00', '{"servicePlan":"GROWTH"}'::jsonb);
+    RAISE EXCEPTION 'Workspace A linked a monthly cycle to Workspace B client/website.';
+  EXCEPTION
+    WHEN foreign_key_violation OR insufficient_privilege THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "monthly_cycle_work_items" ("id", "workspace_id", "monthly_cycle_id", "client_id", "website_id", "opportunity_id", "selected_reason", "scope_fit", "estimated_effort")
+    VALUES ('83000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '81000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '80000000-0000-4000-8000-0000000000b1', 'blocked cross-workspace work item', 'INCLUDED', 2);
+    RAISE EXCEPTION 'Workspace A linked a monthly work item to Workspace B cycle/opportunity.';
+  EXCEPTION
+    WHEN foreign_key_violation OR insufficient_privilege THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "manual_implementation_records" ("id", "workspace_id", "monthly_cycle_id", "cycle_work_item_id", "client_id", "website_id", "opportunity_id", "what_implemented", "implementation_date", "manual_minutes")
+    VALUES ('84000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '81000000-0000-4000-8000-0000000000b1', '83000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '80000000-0000-4000-8000-0000000000b1', 'blocked implementation', '2026-09-16', 15);
+    RAISE EXCEPTION 'Workspace A linked manual implementation to Workspace B monthly work.';
+  EXCEPTION
+    WHEN foreign_key_violation OR insufficient_privilege THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "implementation_verification_records" ("id", "workspace_id", "monthly_cycle_id", "cycle_work_item_id", "implementation_record_id", "client_id", "website_id", "opportunity_id", "status", "verification_method")
+    VALUES ('85000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '81000000-0000-4000-8000-0000000000b1', '83000000-0000-4000-8000-0000000000b1', '84000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '30000000-0000-4000-8000-0000000000b1', '80000000-0000-4000-8000-0000000000b1', 'VERIFIED', 'blocked verification');
+    RAISE EXCEPTION 'Workspace A linked verification to Workspace B monthly work.';
+  EXCEPTION
+    WHEN foreign_key_violation OR insufficient_privilege THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "monthly_reports" ("id", "workspace_id", "monthly_cycle_id", "client_id", "status", "title", "executive_summary", "report_period_start_date", "report_period_end_date", "timezone", "service_plan", "service_plan_version", "plan_snapshot", "sections")
+    VALUES ('86000000-0000-4000-8000-0000000000bb', '00000000-0000-4000-8000-0000000000a1', '81000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', 'DRAFT', 'Blocked monthly report', 'Blocked', '2026-09-01', '2026-09-30', 'UTC', 'GROWTH', 'service-plans-v1.0', '{"servicePlan":"GROWTH"}'::jsonb, '{"blocked":true}'::jsonb);
+    RAISE EXCEPTION 'Workspace A linked a monthly report to Workspace B cycle.';
+  EXCEPTION
+    WHEN foreign_key_violation OR insufficient_privilege THEN NULL;
   END;
 END $$;
 COMMIT;

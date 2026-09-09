@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/monitoring",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-cycles",
+      "schedule": "15 10 * * *"
     }
   ]
 }

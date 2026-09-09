@@ -1,14 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { Archive, ArrowLeft, Globe2, Save } from "lucide-react";
+import {
+  Archive,
+  ArrowLeft,
+  CalendarDays,
+  FileText,
+  Globe2,
+  Save,
+} from "lucide-react";
 
+import type { MonthlyEntitlementSnapshot } from "@/domain/monthly-cycles/entitlements";
 import {
   getServicePlanDefinition,
   servicePlanKeys,
 } from "@/domain/service-plans";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { listClientFactualControls } from "@/server/agents";
+import { getClientMonthlyFulfillmentSummary } from "@/server/monthly-cycles";
 import {
   getClient,
   listWebsites,
@@ -45,14 +54,20 @@ export default async function ClientDetailPage({
     notFound();
   }
 
-  const websites = (await listWebsites(shell.workspaceContext)).filter(
+  const [workspaceWebsites, factualControls, monthlyFulfillment] =
+    await Promise.all([
+      listWebsites(shell.workspaceContext),
+      listClientFactualControls(shell.workspaceContext, client.id),
+      getClientMonthlyFulfillmentSummary(shell.workspaceContext, client.id),
+    ]);
+  const websites = workspaceWebsites.filter(
     (website) => website.clientId === client.id,
   );
-  const factualControls = await listClientFactualControls(
-    shell.workspaceContext,
-    client.id,
-  );
   const plan = getServicePlanDefinition(client.servicePlan);
+  const cycleSnapshot = monthlyFulfillment.cycle
+    ? (monthlyFulfillment.cycle
+        .entitlementSnapshot as unknown as MonthlyEntitlementSnapshot)
+    : null;
 
   return (
     <>
@@ -154,6 +169,110 @@ export default async function ClientDetailPage({
           </form>
         </Panel>
       </div>
+      <div className="mx-spacer" />
+      <Panel
+        right={
+          monthlyFulfillment.cycle ? (
+            <Link
+              className="mx-btn mx-btn-ghost"
+              href={`/monthly-cycles/${monthlyFulfillment.cycle.id}` as never}
+            >
+              <CalendarDays aria-hidden size={14} />
+              Open cycle
+            </Link>
+          ) : (
+            <Link className="mx-btn mx-btn-ghost" href={"/monthly-cycles" as never}>
+              <CalendarDays aria-hidden size={14} />
+              Monthly cycles
+            </Link>
+          )
+        }
+        title="Monthly fulfillment"
+      >
+        {monthlyFulfillment.cycle && cycleSnapshot ? (
+          <>
+            <div className="mx-grid mx-grid-3">
+              <div className="mx-mini-panel">
+                <span className="mx-eyebrow">Current plan</span>
+                <span className="mx-row-title">{cycleSnapshot.label}</span>
+                <span className="mx-row-meta">
+                  {cycleSnapshot.servicePlanDefinitionVersion}
+                </span>
+              </div>
+              <div className="mx-mini-panel">
+                <span className="mx-eyebrow">Cycle status</span>
+                <span className="mx-row-title">
+                  {monthlyFulfillment.cycle.cycleYear}-
+                  {String(monthlyFulfillment.cycle.cycleMonth).padStart(2, "0")}
+                </span>
+                <StatusChip tone="info">{monthlyFulfillment.cycle.status}</StatusChip>
+              </div>
+              <div className="mx-mini-panel">
+                <span className="mx-eyebrow">Latest report</span>
+                <span className="mx-row-title">
+                  {monthlyFulfillment.report?.status ?? "No draft"}
+                </span>
+                <span className="mx-row-meta">
+                  {monthlyFulfillment.report
+                    ? formatDate(monthlyFulfillment.report.createdAt)
+                    : "Generate from cycle"}
+                </span>
+              </div>
+            </div>
+            <div className="mx-spacer" />
+            <div className="mx-grid mx-grid-3">
+              <div className="mx-mini-panel">
+                <span className="mx-eyebrow">Manual minutes</span>
+                <span className="mx-kpi-value">
+                  {monthlyFulfillment.cycle.manualImplementationMinutes}/
+                  {cycleSnapshot.limits.manualImplementationMinutes}
+                </span>
+              </div>
+              <div className="mx-mini-panel">
+                <span className="mx-eyebrow">Page optimizations</span>
+                <span className="mx-kpi-value">
+                  {monthlyFulfillment.cycle.existingPageOptimizationsCompleted}/
+                  {cycleSnapshot.limits.existingPageOptimizations}
+                </span>
+              </div>
+              <div className="mx-mini-panel">
+                <span className="mx-eyebrow">Content assets</span>
+                <span className="mx-kpi-value">
+                  {monthlyFulfillment.cycle.majorContentAssetsCompleted}/
+                  {cycleSnapshot.limits.majorContentAssets}
+                </span>
+              </div>
+            </div>
+            <div className="mx-spacer" />
+            {monthlyFulfillment.blockedDeliverables.length > 0 ? (
+              <div className="mx-list">
+                {monthlyFulfillment.blockedDeliverables.map((deliverable) => (
+                  <div className="mx-row mx-row-static" key={deliverable.id}>
+                    <div className="mx-row-main">
+                      <span className="mx-row-title">{deliverable.title}</span>
+                      <span className="mx-row-meta">
+                        {deliverable.status} - {deliverable.entitlementSourceRule}
+                      </span>
+                    </div>
+                    <StatusChip tone="warn">{deliverable.status}</StatusChip>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mx-safety-lock">
+                <FileText aria-hidden size={16} />
+                <span>No blocked contractual deliverables on the current cycle.</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <EmptyState>
+            No open monthly cycle exists for this client. Recurring plans can be
+            opened from Monthly Cycles; None, Audit Only, and Launch are not
+            auto-converted into recurring service.
+          </EmptyState>
+        )}
+      </Panel>
       <div className="mx-spacer" />
       <Panel title="Websites">
         {websites.length > 0 ? (

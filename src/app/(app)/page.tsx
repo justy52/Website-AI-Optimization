@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   Bot,
+  CalendarDays,
   FileText,
   Globe2,
   ListChecks,
@@ -16,6 +17,7 @@ import { getWorkspaceShellContext } from "@/server/auth";
 import { getAgentDashboardSummary } from "@/server/agents";
 import { getCompetitorDashboardSummary } from "@/server/competitors";
 import { getMonitoringDashboardSummary } from "@/server/monitoring";
+import { getMonthlyCycleDashboardSummary } from "@/server/monthly-cycles";
 import { getOpportunityDashboardSummary } from "@/server/opportunities";
 import { getDashboardSummary } from "@/server/revenue";
 
@@ -29,12 +31,20 @@ const statCards = [
 
 export default async function DashboardPage() {
   const shell = await getWorkspaceShellContext();
-  const [summary, opportunitySummary, agentSummary, monitoringSummary, competitorSummary] = await Promise.all([
+  const [
+    summary,
+    opportunitySummary,
+    agentSummary,
+    monitoringSummary,
+    competitorSummary,
+    monthlyCycleSummary,
+  ] = await Promise.all([
     getDashboardSummary(shell.workspaceContext),
     getOpportunityDashboardSummary(shell.workspaceContext),
     getAgentDashboardSummary(shell.workspaceContext),
     getMonitoringDashboardSummary(shell.workspaceContext),
     getCompetitorDashboardSummary(shell.workspaceContext),
+    getMonthlyCycleDashboardSummary(shell.workspaceContext),
   ]);
 
   return (
@@ -141,6 +151,90 @@ export default async function DashboardPage() {
             <AlertTriangle aria-hidden size={14} />
           </span>
           <span className="mx-kpi-value">{agentSummary.failedRuns}</span>
+        </Link>
+      </div>
+      <div className="mx-spacer" />
+      <div className="mx-grid mx-grid-3">
+        <Link className="mx-panel mx-kpi" href={"/monthly-cycles" as never}>
+          <span className="mx-kpi-label">
+            Clients without cycle
+            <CalendarDays aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monthlyCycleSummary.clientsWithoutCurrentCycle}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/monthly-cycles" as never}>
+          <span className="mx-kpi-label">
+            Cycles needing attention
+            <AlertTriangle aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monthlyCycleSummary.cyclesNeedingAttention}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/monthly-cycles" as never}>
+          <span className="mx-kpi-label">
+            Blocked deliverables
+            <AlertTriangle aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monthlyCycleSummary.blockedContractualDeliverables}
+          </span>
+        </Link>
+      </div>
+      <div className="mx-spacer" />
+      <div className="mx-grid mx-grid-3">
+        <Link className="mx-panel mx-kpi" href={"/monthly-cycles" as never}>
+          <span className="mx-kpi-label">
+            Manual minutes
+            <ListChecks aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monthlyCycleSummary.manualMinutesUsed}/
+            {monthlyCycleSummary.manualMinutesIncluded}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/monthly-cycles" as never}>
+          <span className="mx-kpi-label">
+            Page deliverables
+            <ListChecks aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monthlyCycleSummary.pageOptimizationsUsed}/
+            {monthlyCycleSummary.pageOptimizationsIncluded}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/monthly-cycles" as never}>
+          <span className="mx-kpi-label">
+            Content deliverables
+            <FileText aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monthlyCycleSummary.contentAssetsUsed}/
+            {monthlyCycleSummary.contentAssetsIncluded}
+          </span>
+        </Link>
+      </div>
+      <div className="mx-spacer" />
+      <div className="mx-grid mx-grid-2">
+        <Link className="mx-panel mx-kpi" href={"/monthly-cycles" as never}>
+          <span className="mx-kpi-label">
+            Reports awaiting finalization
+            <ShieldCheck aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monthlyCycleSummary.reportsAwaitingFinalization}
+          </span>
+        </Link>
+        <Link className="mx-panel mx-kpi" href={"/opportunities" as never}>
+          <span className="mx-kpi-label">
+            Unresolved critical items
+            <AlertTriangle aria-hidden size={14} />
+          </span>
+          <span className="mx-kpi-value">
+            {monthlyCycleSummary.unresolvedCritical}
+          </span>
         </Link>
       </div>
       <div className="mx-spacer" />

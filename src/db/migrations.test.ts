@@ -36,6 +36,12 @@ const tenantTables = [
   "monitoring_observations",
   "competitor_targets",
   "competitor_observations",
+  "monthly_cycles",
+  "monthly_cycle_deliverables",
+  "monthly_cycle_work_items",
+  "manual_implementation_records",
+  "implementation_verification_records",
+  "monthly_reports",
   "reports",
   "approval_policies",
   "integration_connections",
@@ -64,6 +70,7 @@ describe("phase 0 migrations", () => {
       readMigration("0007_phase2_opportunities.sql"),
       readMigration("0008_phase3_governed_prepare.sql"),
       readMigration("0010_phase4a_monitoring_search.sql"),
+      readMigration("0011_phase5_monthly_fulfillment.sql"),
     ].join("\n");
 
     for (const table of tenantTables) {
@@ -127,6 +134,7 @@ describe("phase 0 migrations", () => {
       readMigration("0007_phase2_opportunities.sql"),
       readMigration("0008_phase3_governed_prepare.sql"),
       readMigration("0010_phase4a_monitoring_search.sql"),
+      readMigration("0011_phase5_monthly_fulfillment.sql"),
     ].join("\n");
 
     expect(migration).toContain(
@@ -240,6 +248,36 @@ describe("phase 0 migrations", () => {
     expect(migration).toContain(
       'CONSTRAINT "competitor_observations_target_workspace_fk" FOREIGN KEY ("workspace_id","competitor_target_id")',
     );
+    expect(migration).toContain(
+      'CONSTRAINT "monthly_cycles_client_workspace_fk" FOREIGN KEY ("workspace_id","client_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "monthly_cycles_website_workspace_fk" FOREIGN KEY ("workspace_id","client_id","website_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "monthly_cycle_deliverables_cycle_workspace_fk" FOREIGN KEY ("workspace_id","client_id","monthly_cycle_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "monthly_cycle_work_items_cycle_workspace_fk" FOREIGN KEY ("workspace_id","client_id","monthly_cycle_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "monthly_cycle_work_items_opportunity_workspace_fk" FOREIGN KEY ("workspace_id","client_id","opportunity_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "manual_implementation_records_work_item_workspace_fk" FOREIGN KEY ("workspace_id","cycle_work_item_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "manual_implementation_records_opportunity_workspace_fk" FOREIGN KEY ("workspace_id","client_id","opportunity_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "implementation_verification_records_work_item_workspace_fk" FOREIGN KEY ("workspace_id","cycle_work_item_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "implementation_verification_records_implementation_workspace_fk" FOREIGN KEY ("workspace_id","implementation_record_id")',
+    );
+    expect(migration).toContain(
+      'CONSTRAINT "monthly_reports_cycle_workspace_fk" FOREIGN KEY ("workspace_id","client_id","monthly_cycle_id")',
+    );
   });
 
   it("creates composite unique indexes before foreign keys that depend on them", () => {
@@ -337,6 +375,29 @@ describe("phase 0 migrations", () => {
       phase4a,
       'CREATE UNIQUE INDEX "competitor_targets_workspace_id_id_unique"',
       'CONSTRAINT "competitor_observations_target_workspace_fk"',
+    );
+
+    const phase5 = readMigration("0011_phase5_monthly_fulfillment.sql");
+
+    expectBefore(
+      phase5,
+      'CREATE UNIQUE INDEX IF NOT EXISTS "monthly_cycles_workspace_client_id_unique"',
+      'CONSTRAINT "monthly_cycle_deliverables_cycle_workspace_fk"',
+    );
+    expectBefore(
+      phase5,
+      'CREATE UNIQUE INDEX IF NOT EXISTS "monthly_cycle_deliverables_workspace_cycle_id_unique"',
+      'CONSTRAINT "monthly_cycle_work_items_deliverable_workspace_fk"',
+    );
+    expectBefore(
+      phase5,
+      'CREATE UNIQUE INDEX IF NOT EXISTS "monthly_cycle_work_items_workspace_id_id_unique"',
+      'CONSTRAINT "manual_implementation_records_work_item_workspace_fk"',
+    );
+    expectBefore(
+      phase5,
+      'CREATE UNIQUE INDEX IF NOT EXISTS "manual_implementation_records_workspace_id_id_unique"',
+      'CONSTRAINT "implementation_verification_records_implementation_workspace_fk"',
     );
   });
 
@@ -441,6 +502,31 @@ describe("phase 0 migrations", () => {
     );
   });
 
+  it("adds Phase 5 monthly fulfillment foundations without public execute", () => {
+    const migration = readMigration("0011_phase5_monthly_fulfillment.sql");
+
+    expect(migration).toContain('CREATE TABLE "monthly_cycles"');
+    expect(migration).toContain('CREATE TABLE "monthly_cycle_deliverables"');
+    expect(migration).toContain('CREATE TABLE "monthly_cycle_work_items"');
+    expect(migration).toContain('CREATE TABLE "manual_implementation_records"');
+    expect(migration).toContain(
+      'CREATE TABLE "implementation_verification_records"',
+    );
+    expect(migration).toContain('CREATE TABLE "monthly_reports"');
+    expect(migration).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "monthly_cycles_client_period_unique"',
+    );
+    expect(migration).toContain(
+      "CREATE OR REPLACE FUNCTION public.bootstrap_due_monthly_cycle_clients",
+    );
+    expect(migration).toContain("SECURITY DEFINER");
+    expect(migration).toContain("REVOKE ALL ON FUNCTION");
+    expect(migration).not.toContain(
+      "GRANT EXECUTE ON FUNCTION public.bootstrap_due_monthly_cycle_clients(integer) TO PUBLIC",
+    );
+    expect(migration).not.toMatch(/external_execute/i);
+  });
+
   it("does not include destructive table or type drops", () => {
     const migration = [
       readMigration("0000_phase0_foundation.sql"),
@@ -454,6 +540,7 @@ describe("phase 0 migrations", () => {
       readMigration("0008_phase3_governed_prepare.sql"),
       readMigration("0009_phase3_ai_gateway_hardening.sql"),
       readMigration("0010_phase4a_monitoring_search.sql"),
+      readMigration("0011_phase5_monthly_fulfillment.sql"),
     ].join("\n");
 
     expect(migration).not.toMatch(/\bDROP\s+(TABLE|TYPE|SCHEMA|DATABASE)\b/i);

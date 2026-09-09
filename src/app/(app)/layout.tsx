@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   Activity,
   Bot,
+  CalendarDays,
   FileText,
   Globe2,
   LayoutDashboard,
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/audits", label: "Audits", icon: Radar },
   { href: "/opportunities", label: "Opportunities", icon: ListChecks },
   { href: "/work-plan", label: "Work Plan", icon: ListChecks },
+  { href: "/monthly-cycles", label: "Monthly Cycles", icon: CalendarDays },
   { href: "/monitoring", label: "Monitoring", icon: Activity },
   { href: "/settings/integrations", label: "Integrations", icon: Plug },
   { href: "/runs", label: "Runs", icon: Bot },

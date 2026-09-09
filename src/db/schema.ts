@@ -337,6 +337,82 @@ export const monitoringObservationStatusEnum = pgEnum(
   ["PASS", "WARNING", "FAIL", "ERROR", "UNAVAILABLE", "NOT_APPLICABLE"],
 );
 
+export const monthlyCycleStatusEnum = pgEnum("monthly_cycle_status", [
+  "OPEN",
+  "IN_PROGRESS",
+  "REVIEW_REQUIRED",
+  "READY_TO_CLOSE",
+  "CLOSED",
+  "CANCELED",
+]);
+
+export const monthlyCycleCreationSourceEnum = pgEnum(
+  "monthly_cycle_creation_source",
+  ["MANUAL", "SYSTEM"],
+);
+
+export const monthlyDeliverableTypeEnum = pgEnum("monthly_deliverable_type", [
+  "WEBSITE_HEALTH",
+  "SEARCH_CONSOLE",
+  "COMPETITOR_REVIEW",
+  "AI_READINESS_RECHECK",
+  "OBSERVED_AI_VISIBILITY",
+  "MAJOR_CONTENT_ASSET",
+  "EXISTING_PAGE_OPTIMIZATION",
+  "MONTHLY_REPORT",
+  "QUARTERLY_STRATEGY",
+]);
+
+export const monthlyDeliverableStatusEnum = pgEnum(
+  "monthly_deliverable_status",
+  [
+    "NOT_STARTED",
+    "IN_PROGRESS",
+    "BLOCKED",
+    "READY_FOR_REVIEW",
+    "COMPLETE",
+    "UNAVAILABLE",
+    "NOT_APPLICABLE",
+    "WAIVED",
+  ],
+);
+
+export const monthlyWorkItemStatusEnum = pgEnum("monthly_work_item_status", [
+  "SELECTED",
+  "IN_PROGRESS",
+  "BLOCKED",
+  "REMOVED",
+  "COMPLETED",
+]);
+
+export const monthlyWorkCompletionStateEnum = pgEnum(
+  "monthly_work_completion_state",
+  [
+    "NOT_STARTED",
+    "DRAFT_PREPARED",
+    "APPROVED_FOR_MANUAL_IMPLEMENTATION",
+    "IMPLEMENTED_UNVERIFIED",
+    "VERIFIED",
+    "VERIFICATION_WARNING",
+    "VERIFICATION_FAILED",
+  ],
+);
+
+export const implementationVerificationStatusEnum = pgEnum(
+  "implementation_verification_status",
+  [
+    "IMPLEMENTED_UNVERIFIED",
+    "VERIFIED",
+    "VERIFICATION_WARNING",
+    "VERIFICATION_FAILED",
+  ],
+);
+
+export const monthlyReportStatusEnum = pgEnum("monthly_report_status", [
+  "DRAFT",
+  "FINALIZED",
+]);
+
 function createdAt() {
   return timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 }
@@ -2407,6 +2483,590 @@ export const competitorObservations = pgTable(
       foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
       name: "competitor_observations_website_workspace_fk",
     }).onDelete("cascade"),
+  ],
+);
+
+export const monthlyCycles = pgTable(
+  "monthly_cycles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id"),
+    servicePlan: servicePlanEnum("service_plan").notNull(),
+    servicePlanVersion: text("service_plan_version")
+      .notNull()
+      .default(SERVICE_PLAN_DEFINITION_VERSION),
+    cycleYear: integer("cycle_year").notNull(),
+    cycleMonth: integer("cycle_month").notNull(),
+    periodStartDate: date("period_start_date").notNull(),
+    periodEndDate: date("period_end_date").notNull(),
+    timezone: text("timezone").notNull().default("America/Denver"),
+    status: monthlyCycleStatusEnum("status").notNull().default("OPEN"),
+    creationSource: monthlyCycleCreationSourceEnum("creation_source")
+      .notNull()
+      .default("MANUAL"),
+    openedAt: timestamp("opened_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    entitlementSnapshot: jsonb("entitlement_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    internalSummary: text("internal_summary"),
+    notes: text("notes"),
+    agentWorkUnits: integer("agent_work_units").notNull().default(0),
+    manualImplementationMinutes: integer("manual_implementation_minutes")
+      .notNull()
+      .default(0),
+    majorContentAssetsCompleted: integer(
+      "major_content_assets_completed",
+    )
+      .notNull()
+      .default(0),
+    existingPageOptimizationsCompleted: integer(
+      "existing_page_optimizations_completed",
+    )
+      .notNull()
+      .default(0),
+    aiVisibilityObservationsUsed: integer(
+      "ai_visibility_observations_used",
+    )
+      .notNull()
+      .default(0),
+    competitorTargetsActive: integer("competitor_targets_active")
+      .notNull()
+      .default(0),
+    trackedKeywordsActive: integer("tracked_keywords_active")
+      .notNull()
+      .default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("monthly_cycles_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("monthly_cycles_workspace_client_id_unique").on(
+      table.workspaceId,
+      table.clientId,
+      table.id,
+    ),
+    uniqueIndex("monthly_cycles_client_period_unique").on(
+      table.workspaceId,
+      table.clientId,
+      table.cycleYear,
+      table.cycleMonth,
+    ),
+    index("monthly_cycles_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+      table.dueAt,
+    ),
+    index("monthly_cycles_workspace_client_idx").on(
+      table.workspaceId,
+      table.clientId,
+      table.status,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId],
+      foreignColumns: [clients.workspaceId, clients.id],
+      name: "monthly_cycles_client_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "monthly_cycles_website_workspace_fk",
+    }).onDelete("restrict"),
+    check("monthly_cycles_year_check", sql`${table.cycleYear} BETWEEN 2000 AND 2200`),
+    check("monthly_cycles_month_check", sql`${table.cycleMonth} BETWEEN 1 AND 12`),
+    check(
+      "monthly_cycles_period_check",
+      sql`${table.periodStartDate} <= ${table.periodEndDate}`,
+    ),
+    check("monthly_cycles_agent_work_units_check", sql`${table.agentWorkUnits} >= 0`),
+    check(
+      "monthly_cycles_manual_minutes_check",
+      sql`${table.manualImplementationMinutes} >= 0`,
+    ),
+    check(
+      "monthly_cycles_major_content_check",
+      sql`${table.majorContentAssetsCompleted} >= 0`,
+    ),
+    check(
+      "monthly_cycles_page_opt_check",
+      sql`${table.existingPageOptimizationsCompleted} >= 0`,
+    ),
+    check(
+      "monthly_cycles_ai_visibility_check",
+      sql`${table.aiVisibilityObservationsUsed} >= 0`,
+    ),
+    check(
+      "monthly_cycles_competitors_check",
+      sql`${table.competitorTargetsActive} >= 0`,
+    ),
+    check(
+      "monthly_cycles_keywords_check",
+      sql`${table.trackedKeywordsActive} >= 0`,
+    ),
+  ],
+);
+
+export const monthlyCycleDeliverables = pgTable(
+  "monthly_cycle_deliverables",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    monthlyCycleId: uuid("monthly_cycle_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id"),
+    deliverableKey: text("deliverable_key").notNull(),
+    deliverableType: monthlyDeliverableTypeEnum("deliverable_type").notNull(),
+    title: text("title").notNull(),
+    status: monthlyDeliverableStatusEnum("status")
+      .notNull()
+      .default("NOT_STARTED"),
+    entitlementSourceRule: text("entitlement_source_rule").notNull(),
+    servicePlanVersion: text("service_plan_version").notNull(),
+    targetCount: integer("target_count").notNull().default(1),
+    completedCount: integer("completed_count").notNull().default(0),
+    consumesEntitlement: boolean("consumes_entitlement")
+      .notNull()
+      .default(false),
+    entitlementType: text("entitlement_type"),
+    entitlementUnits: integer("entitlement_units").notNull().default(0),
+    supportingRefs: jsonb("supporting_refs")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    completionEvidence: jsonb("completion_evidence")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    limitations: jsonb("limitations")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    completedByUserId: text("completed_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    waivedAt: timestamp("waived_at", { withTimezone: true }),
+    waivedByUserId: text("waived_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    waiverReason: text("waiver_reason"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("monthly_cycle_deliverables_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("monthly_cycle_deliverables_workspace_cycle_id_unique").on(
+      table.workspaceId,
+      table.monthlyCycleId,
+      table.id,
+    ),
+    uniqueIndex("monthly_cycle_deliverables_cycle_key_unique").on(
+      table.workspaceId,
+      table.monthlyCycleId,
+      table.deliverableKey,
+    ),
+    index("monthly_cycle_deliverables_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.monthlyCycleId],
+      foreignColumns: [
+        monthlyCycles.workspaceId,
+        monthlyCycles.clientId,
+        monthlyCycles.id,
+      ],
+      name: "monthly_cycle_deliverables_cycle_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "monthly_cycle_deliverables_website_workspace_fk",
+    }).onDelete("restrict"),
+    check(
+      "monthly_cycle_deliverables_target_count_check",
+      sql`${table.targetCount} >= 0`,
+    ),
+    check(
+      "monthly_cycle_deliverables_completed_count_check",
+      sql`${table.completedCount} >= 0`,
+    ),
+    check(
+      "monthly_cycle_deliverables_entitlement_units_check",
+      sql`${table.entitlementUnits} >= 0`,
+    ),
+  ],
+);
+
+export const monthlyCycleWorkItems = pgTable(
+  "monthly_cycle_work_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    monthlyCycleId: uuid("monthly_cycle_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    opportunityId: uuid("opportunity_id").notNull(),
+    deliverableId: uuid("deliverable_id"),
+    selectedReason: text("selected_reason").notNull(),
+    contractualDeliverableReason: text("contractual_deliverable_reason"),
+    scopeFit: opportunityPlanScopeEnum("scope_fit").notNull(),
+    consumesEntitlement: boolean("consumes_entitlement")
+      .notNull()
+      .default(false),
+    entitlementType: text("entitlement_type"),
+    entitlementUnits: integer("entitlement_units").notNull().default(0),
+    estimatedEffort: integer("estimated_effort").notNull(),
+    status: monthlyWorkItemStatusEnum("status").notNull().default("SELECTED"),
+    draftState: text("draft_state").notNull().default("NOT_REQUESTED"),
+    approvalState: text("approval_state").notNull().default("NOT_REQUESTED"),
+    completionState: monthlyWorkCompletionStateEnum("completion_state")
+      .notNull()
+      .default("NOT_STARTED"),
+    manualImplementationMinutes: integer("manual_implementation_minutes")
+      .notNull()
+      .default(0),
+    selectedByUserId: text("selected_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    selectedAt: timestamp("selected_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    manualOverrideReason: text("manual_override_reason"),
+    removedByUserId: text("removed_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    removalReason: text("removal_reason"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("monthly_cycle_work_items_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("monthly_cycle_work_items_cycle_opportunity_unique").on(
+      table.workspaceId,
+      table.monthlyCycleId,
+      table.opportunityId,
+    ),
+    index("monthly_cycle_work_items_workspace_cycle_idx").on(
+      table.workspaceId,
+      table.monthlyCycleId,
+      table.status,
+    ),
+    index("monthly_cycle_work_items_workspace_opportunity_idx").on(
+      table.workspaceId,
+      table.opportunityId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.monthlyCycleId],
+      foreignColumns: [
+        monthlyCycles.workspaceId,
+        monthlyCycles.clientId,
+        monthlyCycles.id,
+      ],
+      name: "monthly_cycle_work_items_cycle_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.monthlyCycleId, table.deliverableId],
+      foreignColumns: [
+        monthlyCycleDeliverables.workspaceId,
+        monthlyCycleDeliverables.monthlyCycleId,
+        monthlyCycleDeliverables.id,
+      ],
+      name: "monthly_cycle_work_items_deliverable_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "monthly_cycle_work_items_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.opportunityId],
+      foreignColumns: [
+        opportunities.workspaceId,
+        opportunities.clientId,
+        opportunities.id,
+      ],
+      name: "monthly_cycle_work_items_opportunity_workspace_fk",
+    }).onDelete("cascade"),
+    check(
+      "monthly_cycle_work_items_entitlement_units_check",
+      sql`${table.entitlementUnits} >= 0`,
+    ),
+    check(
+      "monthly_cycle_work_items_effort_check",
+      sql`${table.estimatedEffort} BETWEEN 1 AND 5`,
+    ),
+    check(
+      "monthly_cycle_work_items_manual_minutes_check",
+      sql`${table.manualImplementationMinutes} >= 0`,
+    ),
+  ],
+);
+
+export const manualImplementationRecords = pgTable(
+  "manual_implementation_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    monthlyCycleId: uuid("monthly_cycle_id").notNull(),
+    cycleWorkItemId: uuid("cycle_work_item_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    opportunityId: uuid("opportunity_id").notNull(),
+    artifactId: uuid("artifact_id"),
+    artifactVersion: integer("artifact_version"),
+    whatImplemented: text("what_implemented").notNull(),
+    implementationDate: date("implementation_date").notNull(),
+    manualMinutes: integer("manual_minutes").notNull(),
+    implementationNotes: text("implementation_notes"),
+    evidenceReference: text("evidence_reference"),
+    qualifiesForPlan: boolean("qualifies_for_plan").notNull().default(true),
+    entitlementType: text("entitlement_type")
+      .notNull()
+      .default("manual_implementation_minutes"),
+    implementedByUserId: text("implemented_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("manual_implementation_records_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("manual_implementation_records_workspace_cycle_idx").on(
+      table.workspaceId,
+      table.monthlyCycleId,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.monthlyCycleId],
+      foreignColumns: [
+        monthlyCycles.workspaceId,
+        monthlyCycles.clientId,
+        monthlyCycles.id,
+      ],
+      name: "manual_implementation_records_cycle_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.cycleWorkItemId],
+      foreignColumns: [monthlyCycleWorkItems.workspaceId, monthlyCycleWorkItems.id],
+      name: "manual_implementation_records_work_item_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "manual_implementation_records_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.opportunityId],
+      foreignColumns: [
+        opportunities.workspaceId,
+        opportunities.clientId,
+        opportunities.id,
+      ],
+      name: "manual_implementation_records_opportunity_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.artifactId, table.artifactVersion],
+      foreignColumns: [
+        draftArtifacts.workspaceId,
+        draftArtifacts.id,
+        draftArtifacts.artifactVersion,
+      ],
+      name: "manual_implementation_records_artifact_workspace_fk",
+    }).onDelete("restrict"),
+    check(
+      "manual_implementation_records_minutes_check",
+      sql`${table.manualMinutes} >= 0`,
+    ),
+  ],
+);
+
+export const implementationVerificationRecords = pgTable(
+  "implementation_verification_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    monthlyCycleId: uuid("monthly_cycle_id").notNull(),
+    cycleWorkItemId: uuid("cycle_work_item_id").notNull(),
+    implementationRecordId: uuid("implementation_record_id"),
+    clientId: uuid("client_id").notNull(),
+    websiteId: uuid("website_id").notNull(),
+    opportunityId: uuid("opportunity_id").notNull(),
+    status: implementationVerificationStatusEnum("status").notNull(),
+    verificationMethod: text("verification_method").notNull(),
+    evidence: jsonb("evidence")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    limitations: jsonb("limitations")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    verifiedByUserId: text("verified_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    verifiedAt: timestamp("verified_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("implementation_verification_records_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("implementation_verification_records_workspace_cycle_idx").on(
+      table.workspaceId,
+      table.monthlyCycleId,
+      table.verifiedAt,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.monthlyCycleId],
+      foreignColumns: [
+        monthlyCycles.workspaceId,
+        monthlyCycles.clientId,
+        monthlyCycles.id,
+      ],
+      name: "implementation_verification_records_cycle_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.cycleWorkItemId],
+      foreignColumns: [monthlyCycleWorkItems.workspaceId, monthlyCycleWorkItems.id],
+      name: "implementation_verification_records_work_item_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.implementationRecordId],
+      foreignColumns: [
+        manualImplementationRecords.workspaceId,
+        manualImplementationRecords.id,
+      ],
+      name: "implementation_verification_records_implementation_workspace_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.websiteId],
+      foreignColumns: [websites.workspaceId, websites.clientId, websites.id],
+      name: "implementation_verification_records_website_workspace_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.opportunityId],
+      foreignColumns: [
+        opportunities.workspaceId,
+        opportunities.clientId,
+        opportunities.id,
+      ],
+      name: "implementation_verification_records_opportunity_workspace_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const monthlyReports = pgTable(
+  "monthly_reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    monthlyCycleId: uuid("monthly_cycle_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    status: monthlyReportStatusEnum("status").notNull().default("DRAFT"),
+    title: text("title").notNull(),
+    executiveSummary: text("executive_summary").notNull(),
+    methodologyVersion: text("methodology_version")
+      .notNull()
+      .default("monthly-report-deterministic-v1.0"),
+    reportPeriodStartDate: date("report_period_start_date").notNull(),
+    reportPeriodEndDate: date("report_period_end_date").notNull(),
+    timezone: text("timezone").notNull(),
+    servicePlan: servicePlanEnum("service_plan").notNull(),
+    servicePlanVersion: text("service_plan_version").notNull(),
+    planSnapshot: jsonb("plan_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    sourceWindows: jsonb("source_windows")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    sections: jsonb("sections")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    dataLimitations: jsonb("data_limitations")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    immutableSnapshot: jsonb("immutable_snapshot")
+      .$type<Record<string, unknown>>(),
+    snapshotHash: text("snapshot_hash"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    finalizedByUserId: text("finalized_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("monthly_reports_workspace_id_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("monthly_reports_cycle_unique").on(
+      table.workspaceId,
+      table.monthlyCycleId,
+    ),
+    index("monthly_reports_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.clientId, table.monthlyCycleId],
+      foreignColumns: [
+        monthlyCycles.workspaceId,
+        monthlyCycles.clientId,
+        monthlyCycles.id,
+      ],
+      name: "monthly_reports_cycle_workspace_fk",
+    }).onDelete("cascade"),
+    check(
+      "monthly_reports_period_check",
+      sql`${table.reportPeriodStartDate} <= ${table.reportPeriodEndDate}`,
+    ),
   ],
 );
 
