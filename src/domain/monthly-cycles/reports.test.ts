@@ -162,6 +162,8 @@ describe("monthly report work semantics", () => {
     });
     const completed = JSON.stringify(report.sections.workCompleted);
     expect(completed).toContain('"items":[{"title":"IMPLEMENTED_UNVERIFIED"');
+    expect(completed).not.toContain("APPROVED_FOR_MANUAL_IMPLEMENTATION");
+    expect(completed).not.toContain("VERIFICATION_FAILED");
     expect((report.sections.workCompleted as { items: { completionState: string }[] }).items.map(item => item.completionState)).toEqual(["IMPLEMENTED_UNVERIFIED", "VERIFIED"]);
     expect((report.sections.workPreparedApproved as { items: { completionState: string }[] }).items.map(item => item.completionState)).toEqual(["DRAFT_PREPARED", "APPROVED_FOR_MANUAL_IMPLEMENTATION"]);
     expect((report.sections.verificationAttention as { items: { completionState: string }[] }).items.map(item => item.completionState)).toEqual(["VERIFICATION_WARNING", "VERIFICATION_FAILED"]);

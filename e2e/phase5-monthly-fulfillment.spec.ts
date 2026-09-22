@@ -236,7 +236,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   const selectedWork = page.locator(".mx-check-row", { hasText: /Approval APPROVED/ }).last();
   await selectedWork.locator('input[name="evidence"]').fill("Approval alone must not count as implementation.");
   await selectedWork.getByRole("button", { name: "Record verification" }).click();
-  await expect(page.getByRole("alert")).toContainText("Record an implementation");
+  await expect(page.locator("main").getByRole("alert")).toContainText("Record an implementation");
   await page.getByRole("button", { name: "Generate draft" }).click();
   const completedSection = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Completed", exact: true }) }).last();
   const approvedSection = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Prepared / Approved", exact: true }) }).last();
@@ -284,7 +284,10 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(deliverableRow(page, "Weekly Website Health")).toContainText("4/4");
   await expect(completedSection).toContainText("VERIFIED");
   await expect(deliverableRow(page, "Observed AI Visibility")).toContainText("PROVIDER_NOT_ACTIVE");
-  const unresolvedIds = await page.locator('.mx-check-row').filter({ hasText: "Selected:" }).filter({ hasNot: page.locator('.mx-chip', { hasText: /^VERIFIED$/ }) }).locator('input[name="opportunityId"]').evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value));
+  const selectedUnresolvedIds = await page.locator('.mx-check-row').filter({ hasText: "Selected:" }).filter({ hasNot: page.locator('.mx-chip', { hasText: /^VERIFIED$/ }) }).locator('input[name="opportunityId"]').evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value));
+  const unselectedIds = await page.locator('select[name="opportunityId"] option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value));
+  const unresolvedIds = [...new Set([...selectedUnresolvedIds, ...unselectedIds])];
+  expect(unresolvedIds.length).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Close cycle" }).click();
   await expect(page.locator("main")).toContainText("CLOSED");
   await expect(page.locator("main")).toContainText("WAIVED");
@@ -306,7 +309,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
     "contractual recurring deliverable not yet fulfilled",
   );
 
-  if (unresolvedIds.length > 0) {
+  {
     const carryForward = page.locator('input[name="opportunityId"], select[name="opportunityId"] option');
     const carriedIds = await carryForward.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value));
     expect(carriedIds).toEqual(expect.arrayContaining([...new Set(unresolvedIds)]));

@@ -85,6 +85,18 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     expect((await row("monthly_cycles")).existing_page_optimizations_completed).toBe(0);
     expect((await row("monthly_cycles")).manual_implementation_minutes).toBe(45);
   });
+  it("new implementation requires fresh verification before the Opportunity is completed again", async () => {
+    await clearImplementation();
+    await recordManualImplementation(context, workId, manual, database);
+    await recordImplementationVerification(context, workId, verification, database);
+    await recordManualImplementation(context, workId, { ...manual, whatImplemented: "Follow-up implementation", manualMinutes: 15 }, database);
+    expect((await row("opportunities")).status).toBe("IN_PROGRESS");
+    expect((await row("monthly_cycle_work_items")).completion_state).toBe("IMPLEMENTED_UNVERIFIED");
+    expect((await row("monthly_cycles")).manual_implementation_minutes).toBe(60);
+    await recordImplementationVerification(context, workId, verification, database);
+    expect((await row("opportunities")).status).toBe("COMPLETED");
+    expect((await row("monthly_cycles")).existing_page_optimizations_completed).toBe(1);
+  });
   it("a failed recheck reopens previously verified work without consuming successful fulfillment", async () => {
     await clearImplementation();
     await recordManualImplementation(context, workId, manual, database);
@@ -144,6 +156,11 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     expect(first.created).toBe(true);
     expect(second.monthlyCycleId).toBe(first.monthlyCycleId);
     expect(second.created).toBe(false);
+  });
+  it.each(["website_health", "search_console", "observed_ai_visibility"])("preserves WAIVED for %s while removing false performed counts", async key => {
+    await client.query("update monthly_cycle_deliverables set deliverable_key=$1, status='WAIVED', completed_count=4, waived_at=now(), waived_by_user_id='rls-user-b', waiver_reason='Client deferred obligation'", [key]);
+    await closeMonthlyCycle(context, cycleId, database);
+    expect(await row("monthly_cycle_deliverables")).toMatchObject({ status: "WAIVED", completed_count: 0, waiver_reason: "Client deferred obligation" });
   });
   it("refuses undocumented waiver and not-applicable bypasses", async () => {
     for (const status of ["WAIVED", "NOT_APPLICABLE"]) {

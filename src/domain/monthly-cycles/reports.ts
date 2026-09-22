@@ -172,10 +172,12 @@ export function buildMonthlyReportDraft(
         periodEnd,
         servicePlan: input.cycle.servicePlan,
         servicePlanVersion: input.cycle.servicePlanVersion,
+        totalTrackedWork: input.workItems.length,
+        workCompletionCounts,
       },
       workCompleted: {
-        totalTracked: input.workItems.length,
-        completionCounts: workCompletionCounts,
+        totalTracked: completedWork.length,
+        completionCounts: completionCounts(completedWork),
         items: completedWork.map((item) => ({
           title: item.title,
           status: item.status,

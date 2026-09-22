@@ -382,8 +382,7 @@ async function updateCountedDeliverable(
 
   if (!deliverable) return;
 
-  if (deliverable.status === "WAIVED") return;
-  const status = countedDeliverableState(deliverable.targetCount, input.completedCount);
+  const status = deliverable.status === "WAIVED" ? "WAIVED" : countedDeliverableState(deliverable.targetCount, input.completedCount);
   const complete = status === "COMPLETE";
 
   await tx
@@ -571,7 +570,7 @@ async function syncOperationalDeliverablesForCycle(
     await tx
       .update(monthlyCycleDeliverables)
       .set({
-        status: "BLOCKED",
+        status: sql`case when ${monthlyCycleDeliverables.status} = 'WAIVED' then 'WAIVED'::public.monthly_deliverable_status else 'BLOCKED'::public.monthly_deliverable_status end`,
         completedAt: null,
         completedByUserId: null,
         completedCount: 0,
@@ -583,7 +582,6 @@ async function syncOperationalDeliverablesForCycle(
           eq(monthlyCycleDeliverables.workspaceId, context.workspaceId),
           eq(monthlyCycleDeliverables.monthlyCycleId, cycle.id),
           eq(monthlyCycleDeliverables.deliverableKey, "search_console"),
-          sql`${monthlyCycleDeliverables.status} <> 'WAIVED'`,
         ),
       );
   } else {
@@ -614,14 +612,13 @@ async function syncOperationalDeliverablesForCycle(
   });
 
   await tx.update(monthlyCycleDeliverables).set({
-    status: "UNAVAILABLE", completedCount: 0, completedAt: null,
+    status: sql`case when ${monthlyCycleDeliverables.status} = 'WAIVED' then 'WAIVED'::public.monthly_deliverable_status else 'UNAVAILABLE'::public.monthly_deliverable_status end`, completedCount: 0, completedAt: null,
     completedByUserId: null, completionEvidence: {},
     limitations: { code: "PROVIDER_NOT_ACTIVE" }, updatedAt: now(),
   }).where(and(
     eq(monthlyCycleDeliverables.workspaceId, context.workspaceId),
     eq(monthlyCycleDeliverables.monthlyCycleId, cycle.id),
     eq(monthlyCycleDeliverables.deliverableKey, "observed_ai_visibility"),
-    sql`${monthlyCycleDeliverables.status} <> 'WAIVED'`,
   ));
   const [finalized] = await tx.select({ id: monthlyReports.id }).from(monthlyReports)
     .where(and(eq(monthlyReports.workspaceId, context.workspaceId),
@@ -1364,6 +1361,7 @@ export async function recordManualImplementation(
         opportunityId: workItem.opportunityId,
         artifactId: artifact?.id,
         artifactVersion: artifact?.artifactVersion,
+        createdAt: now(),
         whatImplemented,
         implementationDate: input.implementationDate,
         manualMinutes: input.manualMinutes,
@@ -1392,6 +1390,15 @@ export async function recordManualImplementation(
           eq(monthlyCycleWorkItems.id, workItem.id),
         ),
       );
+
+    // Further implementation invalidates the previous verified completion.
+    await tx.update(opportunities).set({
+      status: "IN_PROGRESS", completedAt: null, closedAt: null, updatedAt: now(),
+    }).where(and(
+      eq(opportunities.workspaceId, context.workspaceId),
+      eq(opportunities.id, workItem.opportunityId),
+      eq(opportunities.status, "COMPLETED"),
+    ));
 
     await recordActivity(
       tx,
