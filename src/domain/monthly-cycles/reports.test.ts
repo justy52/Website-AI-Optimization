@@ -149,3 +149,22 @@ describe("monthly report draft", () => {
     );
   });
 });
+
+
+describe("monthly report work semantics", () => {
+  it("separates proposals, implemented-unverified, verified and unsuccessful verification", () => {
+    const report = buildMonthlyReportDraft({
+      cycle: { id: "cycle", clientName: "QA", servicePlan: "GROWTH", servicePlanVersion: "service-plans-v1.0", periodStartDate: "2026-09-01", periodEndDate: "2026-09-30", timezone: "UTC", entitlementSnapshot: buildMonthlyEntitlementSnapshot("GROWTH") },
+      deliverables: [],
+      workItems: ["DRAFT_PREPARED", "APPROVED_FOR_MANUAL_IMPLEMENTATION", "IMPLEMENTED_UNVERIFIED", "VERIFIED", "VERIFICATION_WARNING", "VERIFICATION_FAILED"].map(completionState => ({ title: completionState, completionState, status: "IN_PROGRESS", selectedReason: "Test" })),
+      monitoring: { websiteHealthRuns: 0, searchConsoleRuns: 0, searchConsoleUnavailable: true, failures: 0, newOpportunities: 0, criticalRegressions: 0 },
+      competitor: { activeTargets: 0, observations: 0, materialMetadataChanges: 0, limitations: [] }, unresolvedRisks: [],
+    });
+    const completed = JSON.stringify(report.sections.workCompleted);
+    expect(completed).toContain('"items":[{"title":"IMPLEMENTED_UNVERIFIED"');
+    expect((report.sections.workCompleted as { items: { completionState: string }[] }).items.map(item => item.completionState)).toEqual(["IMPLEMENTED_UNVERIFIED", "VERIFIED"]);
+    expect((report.sections.workPreparedApproved as { items: { completionState: string }[] }).items.map(item => item.completionState)).toEqual(["DRAFT_PREPARED", "APPROVED_FOR_MANUAL_IMPLEMENTATION"]);
+    expect((report.sections.verificationAttention as { items: { completionState: string }[] }).items.map(item => item.completionState)).toEqual(["VERIFICATION_WARNING", "VERIFICATION_FAILED"]);
+    expect(report.executiveSummary).toContain("2 work item(s) implemented; 1 verified");
+  });
+});

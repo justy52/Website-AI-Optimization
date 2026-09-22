@@ -1,5 +1,8 @@
 "use server";
 
+import { MonthlyCycleValidationError } from "@/domain/monthly-cycles/validation";
+import { AuthorizationError } from "@/domain/tenancy/context";
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { start } from "workflow/api";
@@ -32,15 +35,16 @@ function value(formData: FormData, key: string): string {
 function optionalNumber(input: string): number | undefined {
   const trimmed = input.trim();
   if (!trimmed) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  return Number.isInteger(parsed) ? parsed : undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed)) throw new MonthlyCycleValidationError("Enter a whole number.");
+  return parsed;
 }
 
 function cyclePath(cycleId: string) {
   return `/monthly-cycles/${cycleId}`;
 }
 
-export async function createMonthlyCycleAction(formData: FormData) {
+async function createMonthlyCycleActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycle = await createMonthlyCycle(shell.workspaceContext, {
     clientId: value(formData, "clientId"),
@@ -56,7 +60,7 @@ export async function createMonthlyCycleAction(formData: FormData) {
   redirect(cyclePath(cycle.id) as never);
 }
 
-export async function selectMonthlyCycleWorkAction(formData: FormData) {
+async function selectMonthlyCycleWorkActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
 
@@ -67,7 +71,7 @@ export async function selectMonthlyCycleWorkAction(formData: FormData) {
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function addOpportunityToMonthlyCycleAction(formData: FormData) {
+async function addOpportunityToMonthlyCycleActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
 
@@ -81,7 +85,7 @@ export async function addOpportunityToMonthlyCycleAction(formData: FormData) {
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function removeOpportunityFromMonthlyCycleAction(formData: FormData) {
+async function removeOpportunityFromMonthlyCycleActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
 
@@ -96,7 +100,7 @@ export async function removeOpportunityFromMonthlyCycleAction(formData: FormData
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function requestMonthlyPrepareDraftAction(formData: FormData) {
+async function requestMonthlyPrepareDraftActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
   const opportunityId = value(formData, "opportunityId");
@@ -124,7 +128,7 @@ export async function requestMonthlyPrepareDraftAction(formData: FormData) {
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function recordManualImplementationAction(formData: FormData) {
+async function recordManualImplementationActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
 
@@ -145,7 +149,7 @@ export async function recordManualImplementationAction(formData: FormData) {
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function recordImplementationVerificationAction(formData: FormData) {
+async function recordImplementationVerificationActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
   const status = value(formData, "status");
@@ -155,7 +159,7 @@ export async function recordImplementationVerificationAction(formData: FormData)
     status !== "VERIFICATION_WARNING" &&
     status !== "VERIFICATION_FAILED"
   ) {
-    throw new Error("Verification status is not valid.");
+    throw new MonthlyCycleValidationError("Verification status is not valid.");
   }
 
   await recordImplementationVerification(
@@ -174,7 +178,7 @@ export async function recordImplementationVerificationAction(formData: FormData)
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function generateMonthlyReportDraftAction(formData: FormData) {
+async function generateMonthlyReportDraftActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
 
@@ -186,7 +190,7 @@ export async function generateMonthlyReportDraftAction(formData: FormData) {
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function finalizeMonthlyReportAction(formData: FormData) {
+async function finalizeMonthlyReportActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
 
@@ -201,7 +205,7 @@ export async function finalizeMonthlyReportAction(formData: FormData) {
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function updateMonthlyDeliverableStatusAction(formData: FormData) {
+async function updateMonthlyDeliverableStatusActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
   const status = value(formData, "status");
@@ -215,7 +219,7 @@ export async function updateMonthlyDeliverableStatusAction(formData: FormData) {
     status !== "UNAVAILABLE" &&
     status !== "NOT_APPLICABLE"
   ) {
-    throw new Error("Deliverable status is not valid.");
+    throw new MonthlyCycleValidationError("Deliverable status is not valid.");
   }
 
   await updateMonthlyDeliverableStatus(
@@ -234,7 +238,7 @@ export async function updateMonthlyDeliverableStatusAction(formData: FormData) {
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function waiveMonthlyDeliverableAction(formData: FormData) {
+async function waiveMonthlyDeliverableActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
 
@@ -249,13 +253,77 @@ export async function waiveMonthlyDeliverableAction(formData: FormData) {
   redirect(cyclePath(cycleId) as never);
 }
 
-export async function closeMonthlyCycleAction(formData: FormData) {
+async function closeMonthlyCycleActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
 
-  await closeMonthlyCycle(shell.workspaceContext, cycleId);
+  const result = await closeMonthlyCycle(shell.workspaceContext, cycleId);
+  if ("error" in result) redirect(`${cyclePath(cycleId)}?validation=${encodeURIComponent(result.error!)}` as never);
   revalidatePath("/");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);
+}
+
+async function runMonthlyAction(operation: () => Promise<void>, formData: FormData) {
+  let message: string | undefined;
+  try {
+    await operation();
+  } catch (error) {
+    if (!(error instanceof MonthlyCycleValidationError) && !(error instanceof AuthorizationError)) throw error;
+    message = error.message;
+  }
+  if (message) {
+    const cycleId = value(formData, "monthlyCycleId");
+    const path = cycleId ? cyclePath(encodeURIComponent(cycleId)) : "/monthly-cycles";
+    redirect(`${path}?validation=${encodeURIComponent(message)}` as never);
+  }
+}
+
+export async function createMonthlyCycleAction(formData: FormData) {
+  await runMonthlyAction(() => createMonthlyCycleActionImpl(formData), formData);
+}
+
+export async function selectMonthlyCycleWorkAction(formData: FormData) {
+  await runMonthlyAction(() => selectMonthlyCycleWorkActionImpl(formData), formData);
+}
+
+export async function addOpportunityToMonthlyCycleAction(formData: FormData) {
+  await runMonthlyAction(() => addOpportunityToMonthlyCycleActionImpl(formData), formData);
+}
+
+export async function removeOpportunityFromMonthlyCycleAction(formData: FormData) {
+  await runMonthlyAction(() => removeOpportunityFromMonthlyCycleActionImpl(formData), formData);
+}
+
+export async function requestMonthlyPrepareDraftAction(formData: FormData) {
+  await runMonthlyAction(() => requestMonthlyPrepareDraftActionImpl(formData), formData);
+}
+
+export async function recordManualImplementationAction(formData: FormData) {
+  await runMonthlyAction(() => recordManualImplementationActionImpl(formData), formData);
+}
+
+export async function recordImplementationVerificationAction(formData: FormData) {
+  await runMonthlyAction(() => recordImplementationVerificationActionImpl(formData), formData);
+}
+
+export async function generateMonthlyReportDraftAction(formData: FormData) {
+  await runMonthlyAction(() => generateMonthlyReportDraftActionImpl(formData), formData);
+}
+
+export async function finalizeMonthlyReportAction(formData: FormData) {
+  await runMonthlyAction(() => finalizeMonthlyReportActionImpl(formData), formData);
+}
+
+export async function updateMonthlyDeliverableStatusAction(formData: FormData) {
+  await runMonthlyAction(() => updateMonthlyDeliverableStatusActionImpl(formData), formData);
+}
+
+export async function waiveMonthlyDeliverableAction(formData: FormData) {
+  await runMonthlyAction(() => waiveMonthlyDeliverableActionImpl(formData), formData);
+}
+
+export async function closeMonthlyCycleAction(formData: FormData) {
+  await runMonthlyAction(() => closeMonthlyCycleActionImpl(formData), formData);
 }

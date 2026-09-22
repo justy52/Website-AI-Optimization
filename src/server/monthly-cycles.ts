@@ -10,6 +10,8 @@ import {
   sql,
 } from "drizzle-orm";
 
+import { MonthlyCycleValidationError, countedDeliverableState, deliverableAllowsClose, isManualMonthlyDeliverable } from "@/domain/monthly-cycles/validation";
+
 import { db } from "@/db/client";
 import {
   activityEvents,
@@ -21,6 +23,7 @@ import {
   competitorTargets,
   draftArtifacts,
   implementationVerificationRecords,
+  integrationConnections,
   manualImplementationRecords,
   monthlyCycleDeliverables,
   monthlyCycleWorkItems,
@@ -148,6 +151,12 @@ async function hasConnectedSearchConsole(
   const [property] = await tx
     .select({ id: searchConsoleProperties.id })
     .from(searchConsoleProperties)
+    .innerJoin(integrationConnections, and(
+      eq(integrationConnections.workspaceId, searchConsoleProperties.workspaceId),
+      eq(integrationConnections.id, searchConsoleProperties.integrationConnectionId),
+      eq(integrationConnections.status, "CONNECTED"),
+      isNull(integrationConnections.revokedAt),
+    ))
     .where(
       and(
         eq(searchConsoleProperties.workspaceId, context.workspaceId),
@@ -175,10 +184,11 @@ async function loadCycle(
         eq(monthlyCycles.id, monthlyCycleId),
       ),
     )
-    .limit(1);
+    .limit(1)
+    .for("update");
 
   if (!cycle) {
-    throw new Error("Monthly cycle was not found.");
+    throw new MonthlyCycleValidationError("Monthly cycle was not found.");
   }
 
   return cycle;
@@ -186,7 +196,7 @@ async function loadCycle(
 
 function assertCycleMutable(status: string) {
   if (!mutableCycleStatuses.includes(status as (typeof mutableCycleStatuses)[number])) {
-    throw new Error("Only open monthly cycles can be changed.");
+    throw new MonthlyCycleValidationError("Only open monthly cycles can be changed.");
   }
 }
 
@@ -196,6 +206,28 @@ async function refreshMonthlyCycleAccounting(
   monthlyCycleId: string,
 ) {
   const cycle = await loadCycle(tx, context, monthlyCycleId);
+  // Rebuild cached work state from the latest implementation and its verification.
+  // A forged or legacy completion_state cannot manufacture fulfillment.
+  await tx.execute(sql`
+    update public.monthly_cycle_work_items w set
+      completion_state = coalesce((
+        select coalesce((select v.status::text
+          from public.implementation_verification_records v
+          where v.workspace_id = w.workspace_id and v.monthly_cycle_id = w.monthly_cycle_id
+            and v.cycle_work_item_id = w.id and v.implementation_record_id = i.id
+          order by v.verified_at desc, v.created_at desc, v.id desc limit 1), 'IMPLEMENTED_UNVERIFIED')
+        from public.manual_implementation_records i
+        where i.workspace_id = w.workspace_id and i.monthly_cycle_id = w.monthly_cycle_id
+          and i.cycle_work_item_id = w.id and i.opportunity_id = w.opportunity_id
+        order by i.created_at desc, i.id desc limit 1
+      ), case when w.approval_state = 'APPROVED' then 'APPROVED_FOR_MANUAL_IMPLEMENTATION'
+        when w.draft_state <> 'NOT_REQUESTED' then 'DRAFT_PREPARED' else 'NOT_STARTED' end)::public.monthly_work_completion_state,
+      manual_implementation_minutes = (select coalesce(sum(i.manual_minutes), 0)::int
+        from public.manual_implementation_records i
+        where i.workspace_id = w.workspace_id and i.monthly_cycle_id = w.monthly_cycle_id
+          and i.cycle_work_item_id = w.id)
+    where w.workspace_id = ${context.workspaceId} and w.monthly_cycle_id = ${monthlyCycleId}
+  `);
   const [manual] = await tx
     .select({
       minutes: sql<number>`coalesce(sum(${manualImplementationRecords.manualMinutes}), 0)::int`,
@@ -217,6 +249,14 @@ async function refreshMonthlyCycleAccounting(
       and(
         eq(monthlyCycleWorkItems.workspaceId, context.workspaceId),
         eq(monthlyCycleWorkItems.monthlyCycleId, monthlyCycleId),
+        sql`${monthlyCycleWorkItems.status} <> 'REMOVED'`,
+        eq(monthlyCycleWorkItems.scopeFit, "INCLUDED"),
+        sql`exists (select 1 from ${manualImplementationRecords}
+          where ${manualImplementationRecords.workspaceId} = ${monthlyCycleWorkItems.workspaceId}
+            and ${manualImplementationRecords.monthlyCycleId} = ${monthlyCycleWorkItems.monthlyCycleId}
+            and ${manualImplementationRecords.cycleWorkItemId} = ${monthlyCycleWorkItems.id}
+            and ${manualImplementationRecords.opportunityId} = ${monthlyCycleWorkItems.opportunityId}
+            and ${manualImplementationRecords.qualifiesForPlan} = true)`,
         eq(
           monthlyCycleWorkItems.entitlementType,
           "existing_page_optimizations_completed",
@@ -235,6 +275,14 @@ async function refreshMonthlyCycleAccounting(
       and(
         eq(monthlyCycleWorkItems.workspaceId, context.workspaceId),
         eq(monthlyCycleWorkItems.monthlyCycleId, monthlyCycleId),
+        sql`${monthlyCycleWorkItems.status} <> 'REMOVED'`,
+        eq(monthlyCycleWorkItems.scopeFit, "INCLUDED"),
+        sql`exists (select 1 from ${manualImplementationRecords}
+          where ${manualImplementationRecords.workspaceId} = ${monthlyCycleWorkItems.workspaceId}
+            and ${manualImplementationRecords.monthlyCycleId} = ${monthlyCycleWorkItems.monthlyCycleId}
+            and ${manualImplementationRecords.cycleWorkItemId} = ${monthlyCycleWorkItems.id}
+            and ${manualImplementationRecords.opportunityId} = ${monthlyCycleWorkItems.opportunityId}
+            and ${manualImplementationRecords.qualifiesForPlan} = true)`,
         eq(monthlyCycleWorkItems.entitlementType, "major_content_assets_completed"),
         inArray(monthlyCycleWorkItems.completionState, [
           ...entitlementCompletionStates,
@@ -259,7 +307,11 @@ async function refreshMonthlyCycleAccounting(
       and(
         eq(monthlyCycleWorkItems.workspaceId, context.workspaceId),
         eq(monthlyCycleWorkItems.monthlyCycleId, monthlyCycleId),
-        sql`${monthlyCycleWorkItems.draftState} <> 'NOT_REQUESTED'`,
+        sql`exists (select 1 from ${draftArtifacts}
+          where ${draftArtifacts.workspaceId} = ${monthlyCycleWorkItems.workspaceId}
+            and ${draftArtifacts.opportunityId} = ${monthlyCycleWorkItems.opportunityId}
+            and ${draftArtifacts.createdAt} >= ${dateStart(cycle.periodStartDate)}
+            and ${draftArtifacts.createdAt} < ${dayAfter(cycle.periodEndDate)})`,
       ),
     );
 
@@ -330,47 +382,17 @@ async function updateCountedDeliverable(
 
   if (!deliverable) return;
 
-  if (deliverable.status === "COMPLETE") {
-    await tx
-      .update(monthlyCycleDeliverables)
-      .set({
-        completedCount: Math.max(deliverable.completedCount, input.completedCount),
-        updatedAt: now(),
-      })
-      .where(
-        and(
-          eq(monthlyCycleDeliverables.workspaceId, context.workspaceId),
-          eq(monthlyCycleDeliverables.id, deliverable.id),
-        ),
-      );
-    return;
-  }
-
-  if (["WAIVED", "UNAVAILABLE", "BLOCKED", "NOT_APPLICABLE"].includes(deliverable.status)) {
-    await tx
-      .update(monthlyCycleDeliverables)
-      .set({ completedCount: input.completedCount, updatedAt: now() })
-      .where(
-        and(
-          eq(monthlyCycleDeliverables.workspaceId, context.workspaceId),
-          eq(monthlyCycleDeliverables.id, deliverable.id),
-        ),
-      );
-    return;
-  }
-
-  const complete =
-    deliverable.targetCount > 0 && input.completedCount >= deliverable.targetCount;
+  if (deliverable.status === "WAIVED") return;
+  const status = countedDeliverableState(deliverable.targetCount, input.completedCount);
+  const complete = status === "COMPLETE";
 
   await tx
     .update(monthlyCycleDeliverables)
     .set({
       completedCount: input.completedCount,
-      status: complete
-        ? "COMPLETE"
-        : input.completedCount > 0
-          ? "IN_PROGRESS"
-          : "NOT_STARTED",
+      status,
+      completedByUserId: null,
+      completionEvidence: { source: input.key, actualCount: input.completedCount },
       completedAt: complete ? (deliverable.completedAt ?? now()) : null,
       updatedAt: now(),
     })
@@ -410,7 +432,7 @@ async function monthlyCycleMonitoringSummary(
         eq(monitoringRuns.workspaceId, context.workspaceId),
         eq(monitoringRuns.clientId, cycle.clientId),
         eq(monitoringRuns.monitorKey, "search_console"),
-        inArray(monitoringRuns.status, ["SUCCEEDED", "PARTIAL"]),
+        eq(monitoringRuns.status, "SUCCEEDED"),
         gte(monitoringRuns.completedAt, periodStart),
         lt(monitoringRuns.completedAt, periodEndExclusive),
       ),
@@ -472,6 +494,8 @@ async function monthlyCycleMonitoringSummary(
       and(
         eq(competitorObservations.workspaceId, context.workspaceId),
         eq(competitorObservations.clientId, cycle.clientId),
+        gte(competitorObservations.httpStatus, 200),
+        lt(competitorObservations.httpStatus, 400),
         gte(competitorObservations.observedAt, periodStart),
         lt(competitorObservations.observedAt, periodEndExclusive),
       ),
@@ -483,6 +507,8 @@ async function monthlyCycleMonitoringSummary(
       and(
         eq(competitorObservations.workspaceId, context.workspaceId),
         eq(competitorObservations.clientId, cycle.clientId),
+        gte(competitorObservations.httpStatus, 200),
+        lt(competitorObservations.httpStatus, 400),
         eq(competitorObservations.changedSincePrevious, true),
         gte(competitorObservations.observedAt, periodStart),
         lt(competitorObservations.observedAt, periodEndExclusive),
@@ -546,6 +572,8 @@ async function syncOperationalDeliverablesForCycle(
       .update(monthlyCycleDeliverables)
       .set({
         status: "BLOCKED",
+        completedAt: null,
+        completedByUserId: null,
         completedCount: 0,
         limitations: { code: "SEARCH_CONSOLE_NOT_CONNECTED" },
         updatedAt: now(),
@@ -584,6 +612,24 @@ async function syncOperationalDeliverablesForCycle(
     key: "ai_readiness_recheck",
     completedCount: summary.aiReadinessRechecks > 0 ? 1 : 0,
   });
+
+  await tx.update(monthlyCycleDeliverables).set({
+    status: "UNAVAILABLE", completedCount: 0, completedAt: null,
+    completedByUserId: null, completionEvidence: {},
+    limitations: { code: "PROVIDER_NOT_ACTIVE" }, updatedAt: now(),
+  }).where(and(
+    eq(monthlyCycleDeliverables.workspaceId, context.workspaceId),
+    eq(monthlyCycleDeliverables.monthlyCycleId, cycle.id),
+    eq(monthlyCycleDeliverables.deliverableKey, "observed_ai_visibility"),
+    sql`${monthlyCycleDeliverables.status} <> 'WAIVED'`,
+  ));
+  const [finalized] = await tx.select({ id: monthlyReports.id }).from(monthlyReports)
+    .where(and(eq(monthlyReports.workspaceId, context.workspaceId),
+      eq(monthlyReports.monthlyCycleId, cycle.id), eq(monthlyReports.status, "FINALIZED"))).limit(1);
+  await updateCountedDeliverable(tx, context, cycle.id, {
+    key: "monthly_report", completedCount: finalized ? 1 : 0,
+  });
+  await refreshMonthlyCycleAccounting(tx, context, cycle.id);
 
   return { ...summary, searchConsoleConnected };
 }
@@ -659,11 +705,11 @@ export async function createMonthlyCycle(
       .limit(1);
 
     if (!client) {
-      throw new Error("Client was not found.");
+      throw new MonthlyCycleValidationError("Client was not found.");
     }
 
     if (!shouldCreateRecurringMonthlyCycle(client.servicePlan as ServicePlanKey)) {
-      throw new Error(
+      throw new MonthlyCycleValidationError(
         `${client.servicePlan} does not create recurring monthly fulfillment cycles.`,
       );
     }
@@ -1050,7 +1096,7 @@ export async function addOpportunityToMonthlyCycle(
   const reason = input.reason.trim();
 
   if (!reason) {
-    throw new Error("Manual selection reason is required.");
+    throw new MonthlyCycleValidationError("Manual selection reason is required.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -1071,7 +1117,7 @@ export async function addOpportunityToMonthlyCycle(
       .limit(1);
 
     if (!opportunity) {
-      throw new Error("Eligible Opportunity was not found for this cycle.");
+      throw new MonthlyCycleValidationError("Eligible Opportunity was not found for this cycle.");
     }
 
     const candidate = candidateFromOpportunity(opportunity);
@@ -1174,10 +1220,17 @@ export async function removeOpportunityFromMonthlyCycle(
   const reason = input.reason.trim();
 
   if (!reason) {
-    throw new Error("Removal reason is required.");
+    throw new MonthlyCycleValidationError("Removal reason is required.");
   }
 
   return withTenantContext(database, context, async (tx) => {
+    const [activeItem] = await tx.select().from(monthlyCycleWorkItems).where(and(
+      eq(monthlyCycleWorkItems.workspaceId, context.workspaceId),
+      eq(monthlyCycleWorkItems.id, cycleWorkItemId),
+    )).limit(1);
+    if (!activeItem) throw new MonthlyCycleValidationError("Cycle work item was not found.");
+    const lockedCycle = await loadCycle(tx, context, activeItem.monthlyCycleId);
+    assertCycleMutable(lockedCycle.status);
     const [workItem] = await tx
       .update(monthlyCycleWorkItems)
       .set({
@@ -1196,7 +1249,7 @@ export async function removeOpportunityFromMonthlyCycle(
       .returning();
 
     if (!workItem) {
-      throw new Error("Cycle work item was not found.");
+      throw new MonthlyCycleValidationError("Cycle work item was not found.");
     }
 
     const cycle = await loadCycle(tx, context, workItem.monthlyCycleId);
@@ -1233,15 +1286,25 @@ export async function recordManualImplementation(
   database = db,
 ) {
   assertWorkspaceRole(context, ["OWNER", "ADMIN"]);
+  if (context.actorType !== "USER" || !context.userId) {
+    throw new MonthlyCycleValidationError("An authorized human actor is required.");
+  }
+
 
   const whatImplemented = input.whatImplemented.trim();
 
   if (!whatImplemented) {
-    throw new Error("Implemented work summary is required.");
+    throw new MonthlyCycleValidationError("Implemented work summary is required.");
   }
 
   if (!Number.isInteger(input.manualMinutes) || input.manualMinutes < 0) {
-    throw new Error("Manual minutes must be a non-negative integer.");
+    throw new MonthlyCycleValidationError("Manual minutes must be a non-negative integer.");
+  }
+
+  const implementationDate = new Date(`${input.implementationDate}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.implementationDate) ||
+      !Number.isFinite(implementationDate.getTime()) || implementationDate.toISOString().slice(0, 10) !== input.implementationDate || implementationDate > now()) {
+    throw new MonthlyCycleValidationError("Implementation date must be a valid date no later than today.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -1257,11 +1320,15 @@ export async function recordManualImplementation(
       .limit(1);
 
     if (!workItem || workItem.status === "REMOVED") {
-      throw new Error("Active cycle work item was not found.");
+      throw new MonthlyCycleValidationError("Active cycle work item was not found.");
     }
 
     const cycle = await loadCycle(tx, context, workItem.monthlyCycleId);
     assertCycleMutable(cycle.status);
+    if (implementationDate < dateStart(cycle.periodStartDate) || implementationDate >= dayAfter(cycle.periodEndDate)) {
+      throw new MonthlyCycleValidationError("Implementation date must fall within this cycle period; usage does not roll over.");
+    }
+
 
     const [artifact] = await tx
       .select()
@@ -1275,6 +1342,17 @@ export async function recordManualImplementation(
       )
       .orderBy(desc(draftArtifacts.artifactVersion))
       .limit(1);
+    const [duplicate] = await tx.select().from(manualImplementationRecords).where(and(
+      eq(manualImplementationRecords.workspaceId, context.workspaceId),
+      eq(manualImplementationRecords.cycleWorkItemId, workItem.id),
+      eq(manualImplementationRecords.implementationDate, input.implementationDate),
+      eq(manualImplementationRecords.whatImplemented, whatImplemented),
+      eq(manualImplementationRecords.manualMinutes, input.manualMinutes),
+      sql`coalesce(${manualImplementationRecords.evidenceReference}, '') = ${optionalString(input.evidenceReference) ?? ""}`,
+      sql`coalesce(${manualImplementationRecords.implementationNotes}, '') = ${optionalString(input.implementationNotes) ?? ""}`,
+    )).limit(1);
+    if (duplicate) return duplicate;
+
     const [record] = await tx
       .insert(manualImplementationRecords)
       .values({
@@ -1346,11 +1424,14 @@ export async function recordImplementationVerification(
   database = db,
 ) {
   assertWorkspaceRole(context, ["OWNER", "ADMIN", "ANALYST"]);
+  if (!["VERIFIED", "VERIFICATION_WARNING", "VERIFICATION_FAILED"].includes(input.status)) {
+    throw new MonthlyCycleValidationError("Verification status is not valid.");
+  }
   const verificationMethod = input.verificationMethod.trim();
   const evidenceText = input.evidence.trim();
 
   if (!verificationMethod || !evidenceText) {
-    throw new Error("Verification method and evidence are required.");
+    throw new MonthlyCycleValidationError("Verification method and evidence are required.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -1366,7 +1447,7 @@ export async function recordImplementationVerification(
       .limit(1);
 
     if (!workItem || workItem.status === "REMOVED") {
-      throw new Error("Active cycle work item was not found.");
+      throw new MonthlyCycleValidationError("Active cycle work item was not found.");
     }
 
     const cycle = await loadCycle(tx, context, workItem.monthlyCycleId);
@@ -1379,18 +1460,23 @@ export async function recordImplementationVerification(
         and(
           eq(manualImplementationRecords.workspaceId, context.workspaceId),
           eq(manualImplementationRecords.cycleWorkItemId, workItem.id),
+          eq(manualImplementationRecords.monthlyCycleId, workItem.monthlyCycleId),
+          eq(manualImplementationRecords.opportunityId, workItem.opportunityId),
         ),
       )
       .orderBy(desc(manualImplementationRecords.createdAt))
       .limit(1);
 
+    if (!implementation) {
+      throw new MonthlyCycleValidationError("Record an implementation before verifying this work. An approved draft is not implementation.");
+    }
     const [record] = await tx
       .insert(implementationVerificationRecords)
       .values({
         workspaceId: context.workspaceId,
         monthlyCycleId: workItem.monthlyCycleId,
         cycleWorkItemId: workItem.id,
-        implementationRecordId: implementation?.id,
+        implementationRecordId: implementation.id,
         clientId: workItem.clientId,
         websiteId: workItem.websiteId,
         opportunityId: workItem.opportunityId,
@@ -1401,6 +1487,7 @@ export async function recordImplementationVerification(
           ? { summary: optionalString(input.limitations) }
           : {},
         verifiedByUserId: context.userId,
+        verifiedAt: now(),
       })
       .returning();
     const nextStatus =
@@ -1432,8 +1519,13 @@ export async function recordImplementationVerification(
           and(
             eq(opportunities.workspaceId, context.workspaceId),
             eq(opportunities.id, workItem.opportunityId),
+            sql`${opportunities.status} <> 'COMPLETED'`,
           ),
         );
+    } else {
+      await tx.update(opportunities).set({ status: "BLOCKED", completedAt: null, closedAt: null, updatedAt: now() }).where(and(
+        eq(opportunities.workspaceId, context.workspaceId), eq(opportunities.id, workItem.opportunityId), eq(opportunities.status, "COMPLETED"),
+      ));
     }
 
     await recordActivity(
@@ -1472,7 +1564,7 @@ async function reportDataForCycle(
     .limit(1);
 
   if (!client) {
-    throw new Error("Client was not found.");
+    throw new MonthlyCycleValidationError("Client was not found.");
   }
 
   const periodStart = dateStart(cycle.periodStartDate);
@@ -1528,7 +1620,7 @@ async function reportDataForCycle(
         eq(monitoringRuns.workspaceId, context.workspaceId),
         eq(monitoringRuns.clientId, cycle.clientId),
         eq(monitoringRuns.monitorKey, "search_console"),
-        inArray(monitoringRuns.status, ["SUCCEEDED", "PARTIAL"]),
+        eq(monitoringRuns.status, "SUCCEEDED"),
         gte(monitoringRuns.completedAt, periodStart),
         lt(monitoringRuns.completedAt, periodEndExclusive),
       ),
@@ -1563,6 +1655,8 @@ async function reportDataForCycle(
       and(
         eq(competitorObservations.workspaceId, context.workspaceId),
         eq(competitorObservations.clientId, cycle.clientId),
+        gte(competitorObservations.httpStatus, 200),
+        lt(competitorObservations.httpStatus, 400),
         gte(competitorObservations.observedAt, periodStart),
         lt(competitorObservations.observedAt, periodEndExclusive),
       ),
@@ -1574,6 +1668,8 @@ async function reportDataForCycle(
       and(
         eq(competitorObservations.workspaceId, context.workspaceId),
         eq(competitorObservations.clientId, cycle.clientId),
+        gte(competitorObservations.httpStatus, 200),
+        lt(competitorObservations.httpStatus, 400),
         eq(competitorObservations.changedSincePrevious, true),
         gte(competitorObservations.observedAt, periodStart),
         lt(competitorObservations.observedAt, periodEndExclusive),
@@ -1604,12 +1700,12 @@ async function reportDataForCycle(
         inArray(opportunities.status, openOpportunityStatuses),
       ),
     )
-    .orderBy(desc(opportunities.finalPriority))
-    .limit(10);
+    .orderBy(desc(opportunities.finalPriority));
   const searchConsoleDeliverable = deliverables.find(
     (deliverable) => deliverable.deliverableKey === "search_console",
   );
 
+  const prepareStates = await latestPrepareStateSelect(tx, context, workRows.map(row => row.item.opportunityId));
   return buildMonthlyReportDraft({
     cycle: {
       id: cycle.id,
@@ -1633,7 +1729,11 @@ async function reportDataForCycle(
     workItems: workRows.map((row) => ({
       title: row.opportunityTitle,
       status: row.item.status,
-      completionState: row.item.completionState,
+      completionState: ["NOT_STARTED", "DRAFT_PREPARED", "APPROVED_FOR_MANUAL_IMPLEMENTATION"].includes(row.item.completionState)
+        ? prepareStates.get(row.item.opportunityId)?.approvalState === "APPROVED"
+          ? "APPROVED_FOR_MANUAL_IMPLEMENTATION"
+          : prepareStates.has(row.item.opportunityId) ? "DRAFT_PREPARED" : row.item.completionState
+        : row.item.completionState,
       selectedReason: row.item.selectedReason,
       entitlementType: row.item.entitlementType,
       entitlementUnits: row.item.entitlementUnits,
@@ -1649,7 +1749,8 @@ async function reportDataForCycle(
       searchConsoleRuns: searchRuns?.count ?? 0,
       searchConsoleUnavailable:
         searchConsoleDeliverable?.status === "BLOCKED" ||
-        searchConsoleDeliverable?.status === "UNAVAILABLE",
+        searchConsoleDeliverable?.status === "UNAVAILABLE" ||
+        searchConsoleDeliverable?.limitations.code === "SEARCH_CONSOLE_NOT_CONNECTED",
       failures: failures?.count ?? 0,
       newOpportunities: newOpportunityCount?.count ?? 0,
       criticalRegressions: unresolvedRisks.filter(
@@ -1675,8 +1776,6 @@ export async function generateMonthlyReportDraft(
 
   return withTenantContext(database, context, async (tx) => {
     const cycle = await loadCycle(tx, context, monthlyCycleId);
-    await syncOperationalDeliverablesForCycle(tx, context, cycle);
-    const built = await reportDataForCycle(tx, context, cycle);
     const [existing] = await tx
       .select()
       .from(monthlyReports)
@@ -1692,6 +1791,9 @@ export async function generateMonthlyReportDraft(
       return existing;
     }
 
+    assertCycleMutable(cycle.status);
+    await syncOperationalDeliverablesForCycle(tx, context, cycle);
+    const built = await reportDataForCycle(tx, context, cycle);
     const values = {
       workspaceId: context.workspaceId,
       monthlyCycleId: cycle.id,
@@ -1755,9 +1857,13 @@ export async function finalizeMonthlyReport(
   database = db,
 ) {
   assertWorkspaceRole(context, ["OWNER", "ADMIN"]);
+  if (context.actorType !== "USER" || !context.userId) {
+    throw new MonthlyCycleValidationError("An authorized human actor is required.");
+  }
+
 
   return withTenantContext(database, context, async (tx) => {
-    const [current] = await tx
+    let [current] = await tx
       .select()
       .from(monthlyReports)
       .where(
@@ -1769,13 +1875,19 @@ export async function finalizeMonthlyReport(
       .limit(1);
 
     if (!current) {
-      throw new Error("Monthly report was not found.");
+      throw new MonthlyCycleValidationError("Monthly report was not found.");
     }
 
     if (current.status === "FINALIZED") {
       return current;
     }
 
+    const cycle = await loadCycle(tx, context, current.monthlyCycleId);
+    [current] = await tx.select().from(monthlyReports).where(and(
+      eq(monthlyReports.workspaceId, context.workspaceId), eq(monthlyReports.id, monthlyReportId),
+    )).limit(1);
+    if (current.status === "FINALIZED") return current;
+    assertCycleMutable(cycle.status);
     const finalizedAt = now();
     const immutableSnapshot = {
       id: current.id,
@@ -1829,6 +1941,7 @@ export async function finalizeMonthlyReport(
           eq(monthlyCycleDeliverables.workspaceId, context.workspaceId),
           eq(monthlyCycleDeliverables.monthlyCycleId, current.monthlyCycleId),
           eq(monthlyCycleDeliverables.deliverableKey, "monthly_report"),
+          sql`${monthlyCycleDeliverables.status} <> 'WAIVED'`,
         ),
       );
     await recordActivity(
@@ -1871,14 +1984,14 @@ export async function updateMonthlyDeliverableStatus(
   assertWorkspaceRole(context, ["OWNER", "ADMIN", "ANALYST"]);
 
   if (!deliverableUpdateStatuses.includes(input.status)) {
-    throw new Error("Deliverable status is not valid for this update.");
+    throw new MonthlyCycleValidationError("Deliverable status is not valid for this update.");
   }
 
   if (
     input.completedCount !== undefined &&
     (!Number.isInteger(input.completedCount) || input.completedCount < 0)
   ) {
-    throw new Error("Completed count must be a non-negative integer.");
+    throw new MonthlyCycleValidationError("Completed count must be a non-negative integer.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -1894,21 +2007,31 @@ export async function updateMonthlyDeliverableStatus(
       .limit(1);
 
     if (!current) {
-      throw new Error("Deliverable was not found.");
+      throw new MonthlyCycleValidationError("Deliverable was not found.");
     }
 
     if (current.status === "WAIVED") {
-      throw new Error("Waived deliverables require a new waiver decision.");
+      throw new MonthlyCycleValidationError("Waived deliverables require a new waiver decision.");
     }
 
     const cycle = await loadCycle(tx, context, current.monthlyCycleId);
     assertCycleMutable(cycle.status);
 
+    if (!isManualMonthlyDeliverable(current.deliverableKey)) {
+      throw new MonthlyCycleValidationError("This deliverable is synchronized from source evidence; its status and count cannot be edited manually.");
+    }
+    assertWorkspaceRole(context, ["OWNER", "ADMIN"]);
+    if (context.actorType !== "USER" || !context.userId) {
+      throw new MonthlyCycleValidationError("A human actor is required to record manual fulfillment.");
+    }
+    if (["UNAVAILABLE", "NOT_APPLICABLE"].includes(input.status)) {
+      throw new MonthlyCycleValidationError("Availability is determined by the plan; use a reasoned waiver for an unmet obligation.");
+    }
+    const completedCount = input.completedCount ?? current.completedCount;
+    if (input.status === "COMPLETE" && (current.targetCount < 1 || completedCount < current.targetCount || !optionalString(input.completionEvidence))) {
+      throw new MonthlyCycleValidationError("Manual completion requires the actual target count and explicit evidence or notes.");
+    }
     const completedAt = input.status === "COMPLETE" ? now() : null;
-    const completedCount =
-      input.status === "COMPLETE"
-        ? Math.max(input.completedCount ?? current.completedCount, current.targetCount)
-        : (input.completedCount ?? current.completedCount);
     const [deliverable] = await tx
       .update(monthlyCycleDeliverables)
       .set({
@@ -1958,10 +2081,13 @@ export async function waiveMonthlyDeliverable(
   database = db,
 ) {
   assertWorkspaceRole(context, ["OWNER", "ADMIN"]);
+  if (context.actorType !== "USER" || !context.userId) {
+    throw new MonthlyCycleValidationError("A human actor is required to waive an obligation.");
+  }
   const reason = input.reason.trim();
 
   if (!reason) {
-    throw new Error("Waiver reason is required.");
+    throw new MonthlyCycleValidationError("Waiver reason is required.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -1977,7 +2103,7 @@ export async function waiveMonthlyDeliverable(
       .limit(1);
 
     if (!currentDeliverable) {
-      throw new Error("Deliverable was not found.");
+      throw new MonthlyCycleValidationError("Deliverable was not found.");
     }
 
     const cycle = await loadCycle(tx, context, currentDeliverable.monthlyCycleId);
@@ -2001,7 +2127,7 @@ export async function waiveMonthlyDeliverable(
       .returning();
 
     if (!deliverable) {
-      throw new Error("Deliverable was not found.");
+      throw new MonthlyCycleValidationError("Deliverable was not found.");
     }
 
     await recordActivity(
@@ -2042,15 +2168,7 @@ export async function closeMonthlyCycle(
           eq(monthlyCycleDeliverables.monthlyCycleId, cycle.id),
         ),
       );
-    const blockingDeliverables = deliverables.filter(
-      (deliverable) =>
-        ![
-          "COMPLETE",
-          "UNAVAILABLE",
-          "NOT_APPLICABLE",
-          "WAIVED",
-        ].includes(deliverable.status),
-    );
+    const blockingDeliverables = deliverables.filter((item) => !deliverableAllowsClose(item));
     const [finalizedReport] = await tx
       .select()
       .from(monthlyReports)
@@ -2094,15 +2212,15 @@ export async function closeMonthlyCycle(
             eq(monthlyCycles.id, cycle.id),
           ),
         );
-      throw new Error("Cycle has unfinished or blocked deliverables.");
+      return { error: "Cycle has unfinished or blocked deliverables." };
     }
 
     if (!finalizedReport) {
-      throw new Error("Cycle requires a finalized monthly report before close.");
+      return { error: "Cycle requires a finalized monthly report before close." };
     }
 
     if ((hiddenCritical?.count ?? 0) > 0) {
-      throw new Error("Cycle cannot close while unresolved CRITICAL work is hidden.");
+      return { error: "Cycle cannot close while unresolved CRITICAL work is hidden." };
     }
 
     const closedAt = now();
@@ -2162,6 +2280,12 @@ export async function getMonthlyCycleDetail(
       .limit(1);
 
     if (!header) return null;
+    if (mutableCycleStatuses.includes(header.cycle.status as typeof mutableCycleStatuses[number])) {
+      const locked = await loadCycle(tx, context, monthlyCycleId);
+      assertCycleMutable(locked.status);
+      await syncOperationalDeliverablesForCycle(tx, context, locked);
+      header.cycle = await loadCycle(tx, context, monthlyCycleId);
+    }
 
     const monitoringSummary = await monthlyCycleMonitoringSummary(
       tx,
@@ -2576,19 +2700,11 @@ export async function listDueMonthlyCycleClientRefs(
 }
 
 export function monthlyCycleCloseReadiness(input: {
-  deliverables: { status: string }[];
+  deliverables: Parameters<typeof deliverableAllowsClose>[0][];
   hasFinalizedReport: boolean;
   hiddenCriticalCount: number;
 }) {
-  const unfinished = input.deliverables.filter(
-    (deliverable) =>
-      ![
-        "COMPLETE",
-        "UNAVAILABLE",
-        "NOT_APPLICABLE",
-        "WAIVED",
-      ].includes(deliverable.status),
-  ).length;
+  const unfinished = input.deliverables.filter(item => !deliverableAllowsClose(item)).length;
 
   return {
     ready:

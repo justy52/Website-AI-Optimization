@@ -30,7 +30,8 @@ function statusTone(status: string) {
   return "info";
 }
 
-export default async function MonthlyCyclesPage() {
+export default async function MonthlyCyclesPage({ searchParams }: { searchParams: Promise<{ validation?: string }> }) {
+  const { validation } = await searchParams;
   const shell = await getWorkspaceShellContext();
   const [cycles, clients] = await Promise.all([
     listMonthlyCycles(shell.workspaceContext),
@@ -43,6 +44,7 @@ export default async function MonthlyCyclesPage() {
 
   return (
     <>
+      {validation ? <p role="alert">{validation}</p> : null}
       <PageHeader
         action={
           <Link className="mx-btn mx-btn-ghost" href="/work-plan">

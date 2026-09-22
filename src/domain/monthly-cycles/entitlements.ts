@@ -1,3 +1,4 @@
+import { MonthlyCycleValidationError } from "./validation";
 import {
   getServicePlanDefinition,
   SERVICE_PLAN_DEFINITION_VERSION,
@@ -231,7 +232,7 @@ export function buildMonthlyDeliverableTemplates(input: {
   }
 
   if (hasCadence(snapshot.monitoring.observedAiVisibility)) {
-    const enabled = input.observedAiVisibilityEnabled === true;
+    const enabled = false; // No observation provider is active in Phase 5.
 
     templates.push(
       deliverable({
@@ -338,11 +339,11 @@ export function monthlyPeriodForDate(date: Date): CyclePeriod {
 
 export function monthlyPeriod(year: number, month: number): CyclePeriod {
   if (!Number.isInteger(year) || year < 2000 || year > 2200) {
-    throw new Error("Cycle year must be an integer from 2000 to 2200.");
+    throw new MonthlyCycleValidationError("Cycle year must be an integer from 2000 to 2200.");
   }
 
   if (!Number.isInteger(month) || month < 1 || month > 12) {
-    throw new Error("Cycle month must be an integer from 1 to 12.");
+    throw new MonthlyCycleValidationError("Cycle month must be an integer from 1 to 12.");
   }
 
   const start = new Date(Date.UTC(year, month - 1, 1));

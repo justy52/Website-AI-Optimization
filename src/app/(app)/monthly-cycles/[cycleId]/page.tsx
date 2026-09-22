@@ -1,3 +1,4 @@
+import { isManualMonthlyDeliverable } from "@/domain/monthly-cycles/validation";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -85,10 +86,13 @@ function limitationText(limitations: Record<string, unknown>) {
 
 export default async function MonthlyCycleDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ cycleId: string }>;
+  searchParams: Promise<{ validation?: string }>;
 }) {
   const { cycleId } = await params;
+  const { validation } = await searchParams;
   const shell = await getWorkspaceShellContext();
   const detail = await getMonthlyCycleDetail(shell.workspaceContext, cycleId);
 
@@ -112,6 +116,7 @@ export default async function MonthlyCycleDetailPage({
 
   return (
     <>
+      {validation ? <p role="alert">{validation}</p> : null}
       <PageHeader
         action={
           <div className="mx-top-actions">
@@ -254,7 +259,7 @@ export default async function MonthlyCycleDetailPage({
                   <StatusChip tone={tone(deliverable.status)}>
                     {deliverable.status}
                   </StatusChip>
-                  {deliverable.status !== "WAIVED" ? (
+                  {deliverable.status !== "WAIVED" && isManualMonthlyDeliverable(deliverable.deliverableKey) && shell.workspaceContext.role !== "ANALYST" ? (
                     <form
                       action={updateMonthlyDeliverableStatusAction}
                       className="mx-form"
@@ -279,8 +284,6 @@ export default async function MonthlyCycleDetailPage({
                             READY_FOR_REVIEW
                           </option>
                           <option value="COMPLETE">COMPLETE</option>
-                          <option value="UNAVAILABLE">UNAVAILABLE</option>
-                          <option value="NOT_APPLICABLE">NOT_APPLICABLE</option>
                         </select>
                       </label>
                       <label>
@@ -312,7 +315,7 @@ export default async function MonthlyCycleDetailPage({
                     </form>
                   ) : null}
                   {deliverable.status !== "COMPLETE" &&
-                  deliverable.status !== "WAIVED" ? (
+                  deliverable.status !== "WAIVED" && shell.workspaceContext.role !== "ANALYST" ? (
                     <form action={waiveMonthlyDeliverableAction} className="mx-form">
                       <input name="monthlyCycleId" type="hidden" value={cycle.id} />
                       <input name="deliverableId" type="hidden" value={deliverable.id} />
@@ -574,6 +577,16 @@ export default async function MonthlyCycleDetailPage({
                 </span>
                 <span className="mx-row-meta">{detail.report.executiveSummary}</span>
               </div>
+            </div>
+            <div className="mx-list">
+              {["workCompleted", "workPreparedApproved", "verificationAttention"].map(key => (
+                <div key={key}>
+                  <h3>{key === "workCompleted" ? "Work Completed" : key === "workPreparedApproved" ? "Work Prepared / Approved" : "Verification Attention"}</h3>
+                  {((reportSections?.[key] as { items?: { title: string; completionState: string }[] })?.items ?? []).map((item, index) => (
+                    <p key={index}>{item.title}: {item.completionState}</p>
+                  ))}
+                </div>
+              ))}
             </div>
             <div className="mx-grid mx-grid-3">
               <div className="mx-mini-panel">

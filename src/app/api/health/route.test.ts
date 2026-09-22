@@ -12,7 +12,8 @@ describe("/api/health", () => {
     expect(body).toEqual({
       status: "ok",
       app: "optiq",
-      phase: "3",
+      phase: "5",
+      commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     });
     expect(JSON.stringify(body)).not.toMatch(
       /DATABASE_URL|BETTER_AUTH_SECRET|CREDENTIAL_ENCRYPTION_KEY|postgres:\/\//,

@@ -93,16 +93,13 @@ async function runMonitoringAndCompetitorObservation(page: Page) {
   const healthSchedule = page
     .locator(".mx-row", { hasText: "website_health" })
     .first();
-  await healthSchedule.getByRole("button", { name: "Run" }).click();
-  await expect
-    .poll(
-      async () => {
-        await page.reload({ waitUntil: "networkidle" });
-        return (await page.locator("main").textContent()) ?? "";
-      },
-      { timeout: 180_000, intervals: [3_000, 5_000, 10_000] },
-    )
-    .toMatch(/SUCCEEDED|PARTIAL/);
+  for (let expectedRuns = 1; expectedRuns <= 4; expectedRuns += 1) {
+    await healthSchedule.getByRole("button", { name: "Run" }).click();
+    await expect.poll(async () => {
+      await page.reload({ waitUntil: "networkidle" });
+      return page.locator(".mx-row", { hasText: "website_health" }).filter({ has: page.locator(".mx-chip", { hasText: /^(SUCCEEDED|PARTIAL)$/ }) }).count();
+    }, { timeout: 180_000, intervals: [3_000, 5_000, 10_000] }).toBeGreaterThanOrEqual(expectedRuns);
+  }
 
   const competitorForm = page.locator("form").filter({ hasText: "Domain or URL" });
   await competitorForm.getByLabel("Name").fill(competitorName);
@@ -127,7 +124,7 @@ async function runMonitoringAndCompetitorObservation(page: Page) {
       { timeout: 120_000, intervals: [2_000, 5_000, 10_000] },
     )
     .toMatch(
-      /Initial public homepage metadata observation recorded|Competitor public-page observation failed/,
+      /Initial public homepage metadata observation recorded/,
     );
 }
 
@@ -157,17 +154,6 @@ function deliverableRow(page: Page, title: string): Locator {
   return page.locator(".mx-check-row", { hasText: title }).first();
 }
 
-async function setDeliverableComplete(page: Page, title: string) {
-  const row = deliverableRow(page, title);
-  await row.getByLabel("Status").selectOption("COMPLETE");
-  await row.getByLabel("Completed").fill("1");
-  await row.getByLabel("Evidence").fill(`${title} verified by Phase 5 E2E.`);
-  await row.getByRole("button", { name: "Update" }).click();
-  await expect(deliverableRow(page, title).locator(".mx-chip").first()).toHaveText(
-    "COMPLETE",
-  );
-}
-
 async function waiveDeliverable(page: Page, title: string) {
   const row = deliverableRow(page, title);
   await row.getByPlaceholder("Waiver reason").fill(`${title} waived by Phase 5 E2E.`);
@@ -191,7 +177,7 @@ async function approveLatestPendingDraft(page: Page) {
 test.describe.configure({ mode: "serial" });
 
 test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
-  test.setTimeout(540_000);
+  test.setTimeout(900_000);
 
   await signUp(page);
   await ensureWorkspace(page);
@@ -248,6 +234,15 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(page.locator("main")).toContainText("0 / 1");
 
   const selectedWork = page.locator(".mx-check-row", { hasText: /Approval APPROVED/ }).last();
+  await selectedWork.locator('input[name="evidence"]').fill("Approval alone must not count as implementation.");
+  await selectedWork.getByRole("button", { name: "Record verification" }).click();
+  await expect(page.getByRole("alert")).toContainText("Record an implementation");
+  await page.getByRole("button", { name: "Generate draft" }).click();
+  const completedSection = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Completed", exact: true }) }).last();
+  const approvedSection = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Prepared / Approved", exact: true }) }).last();
+  await expect(approvedSection).toContainText("APPROVED_FOR_MANUAL_IMPLEMENTATION");
+  await expect(completedSection).not.toContainText("APPROVED_FOR_MANUAL_IMPLEMENTATION");
+
   await selectedWork.getByLabel("Manual minutes").fill("45");
   await selectedWork.getByLabel("What changed").fill("Implemented approved metadata.");
   await selectedWork
@@ -257,6 +252,9 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(page.locator("main")).toContainText("IMPLEMENTED_UNVERIFIED");
   await expect(page.locator("main")).toContainText("45 min");
   await expect(page.locator("main")).toContainText("1 / 1");
+
+  await page.getByRole("button", { name: "Generate draft" }).click();
+  await expect(completedSection).toContainText("IMPLEMENTED_UNVERIFIED");
 
   const implementedWork = page
     .locator(".mx-check-row", { hasText: "IMPLEMENTED_UNVERIFIED" })
@@ -271,16 +269,22 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await page.getByRole("button", { name: "Generate draft" }).click();
   await expect(page.getByText(/Monthly Optimization Report/)).toBeVisible();
   await expect(page.locator("main")).toContainText("Limitations");
+  await waiveDeliverable(page, "Weekly Search Console");
+  await waiveDeliverable(page, "Major Content Asset");
+  await page.getByRole("button", { name: "Generate draft" }).click();
   await page.getByRole("button", { name: "Finalize report" }).click();
   await expect(page.locator("main")).toContainText("FINALIZED");
   await expect(page.locator("main")).toContainText(/[a-f0-9]{64}/);
 
-  await setDeliverableComplete(page, "Weekly Website Health");
-  await setDeliverableComplete(page, "Monthly Competitor Review");
-  await setDeliverableComplete(page, "Monthly AI-Readiness Recheck");
-  await waiveDeliverable(page, "Weekly Search Console");
-  await waiveDeliverable(page, "Major Content Asset");
-
+  for (const title of ["Weekly Website Health", "Monthly Competitor Review", "Monthly AI-Readiness Recheck", "Existing Page Optimization", "Monthly Report"]) {
+    const row = deliverableRow(page, title);
+    await expect(row.locator(".mx-chip").first()).toHaveText("COMPLETE");
+    await expect(row.getByLabel("Completed", { exact: true })).toHaveCount(0);
+  }
+  await expect(deliverableRow(page, "Weekly Website Health")).toContainText("4/4");
+  await expect(completedSection).toContainText("VERIFIED");
+  await expect(deliverableRow(page, "Observed AI Visibility")).toContainText("PROVIDER_NOT_ACTIVE");
+  const unresolvedIds = await page.locator('.mx-check-row').filter({ hasText: "Selected:" }).filter({ hasNot: page.locator('.mx-chip', { hasText: /^VERIFIED$/ }) }).locator('input[name="opportunityId"]').evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value));
   await page.getByRole("button", { name: "Close cycle" }).click();
   await expect(page.locator("main")).toContainText("CLOSED");
   await expect(page.locator("main")).toContainText("WAIVED");
@@ -302,6 +306,11 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
     "contractual recurring deliverable not yet fulfilled",
   );
 
+  if (unresolvedIds.length > 0) {
+    const carryForward = page.locator('input[name="opportunityId"], select[name="opportunityId"] option');
+    const carriedIds = await carryForward.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value));
+    expect(carriedIds).toEqual(expect.arrayContaining([...new Set(unresolvedIds)]));
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(monthlyCyclesNavLink(page)).toBeVisible();

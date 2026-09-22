@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { MonthlyEntitlementSnapshot } from "./entitlements";
 
 export const MONTHLY_REPORT_METHODOLOGY_VERSION =
-  "monthly-report-deterministic-v1.0";
+  "monthly-report-deterministic-v1.1";
 
 export type MonthlyReportCycleInput = {
   id: string;
@@ -127,8 +127,7 @@ export function buildMonthlyReportDraft(
   const completedWork = input.workItems.filter(
     (item) =>
       item.completionState === "VERIFIED" ||
-      item.completionState === "IMPLEMENTED_UNVERIFIED" ||
-      item.completionState === "APPROVED_FOR_MANUAL_IMPLEMENTATION",
+      item.completionState === "IMPLEMENTED_UNVERIFIED",
   );
   const deliverableCounts = statusCounts(input.deliverables);
   const workCompletionCounts = completionCounts(input.workItems);
@@ -154,7 +153,7 @@ export function buildMonthlyReportDraft(
     title: `${input.cycle.clientName} Monthly Optimization Report`,
     executiveSummary: [
       `${input.cycle.clientName} cycle ${periodStart} to ${periodEnd}.`,
-      `${completedWork.length} work item(s) are prepared, approved, implemented, or verified.`,
+      `${completedWork.length} work item(s) implemented; ${workCompletionCounts.VERIFIED ?? 0} verified. Prepared and approved proposals are reported separately.`,
       `${deliverableCounts.BLOCKED ?? 0} deliverable(s) are blocked and ${deliverableCounts.UNAVAILABLE ?? 0} are unavailable.`,
       unresolvedCritical > 0
         ? `${unresolvedCritical} unresolved CRITICAL item(s) remain visible for follow-up.`
@@ -184,6 +183,12 @@ export function buildMonthlyReportDraft(
           selectedReason: item.selectedReason,
           verificationStatus: item.verificationStatus ?? null,
         })),
+      },
+      workPreparedApproved: {
+        items: input.workItems.filter(item => ["DRAFT_PREPARED", "APPROVED_FOR_MANUAL_IMPLEMENTATION"].includes(item.completionState)),
+      },
+      verificationAttention: {
+        items: input.workItems.filter(item => ["VERIFICATION_WARNING", "VERIFICATION_FAILED"].includes(item.completionState)),
       },
       websiteHealth: {
         runsCompleted: input.monitoring.websiteHealthRuns,
