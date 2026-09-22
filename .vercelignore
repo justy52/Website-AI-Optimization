@@ -1,0 +1,25 @@
+# Local credentials, tooling, and diagnostics must never enter deployment sources.
+.env*
+!.env.example
+.vercel/
+.git/
+.agents/
+.codex/
+.claude/
+.mcp.json
+.vscode/
+scratch/
+tmp/
+test-results/
+playwright-report/
+coverage/
+.nyc_output/
+.swc/
+*.log
+*.err
+*.pem
+*.key
+*.tsbuildinfo
+node_modules/
+.next/
+.pnpm-store/
