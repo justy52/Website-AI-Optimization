@@ -1,5 +1,7 @@
 import { requestPrepareDraftForOpportunity, executePrepareDraftAgentRun, decideApprovalRequest, getDraftArtifact, createBusinessFact } from "./agents";
 import { nominateContentOpportunity } from "./content-opportunities";
+import { agentDefinitions as runtimeDefinitions } from "@/domain/agents/catalog";
+import { requirePersistedAgentDefinition } from "@/domain/agents/persisted-catalog";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
@@ -238,6 +240,12 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     await client.query("update monthly_cycle_work_items set entitlement_type='major_content_assets_completed' where id=$1", [workId]);
     await createBusinessFact(context, "20000000-0000-4000-8000-0000000000b1", { factType: "business_name", value: "Example Company", sourceReference: "QA human review", verificationStatus: "VERIFIED", sensitivity: "PUBLIC" }, database);
     const first = await requestPrepareDraftForOpportunity(context, opportunityId, database);
+    const linked = (await client.query("select r.agent_definition_id, r.agent_version, r.budget_snapshot, d.version, d.budget_limits from agent_runs r join agent_definitions d on d.id=r.agent_definition_id where r.id=$1", [first.agentRunId])).rows[0];
+    expect(linked.agent_definition_id).toBeTruthy();
+    expect(linked.agent_version).toBe(linked.version);
+    const { capturedAt: _capturedAt, ...limits } = linked.budget_snapshot;
+    expect(_capturedAt).toBeTruthy();
+    expect(limits).toEqual(linked.budget_limits);
     const repeated = await requestPrepareDraftForOpportunity(context, opportunityId, database);
     expect(repeated.agentRunId).toBe(first.agentRunId);
     const result = await executePrepareDraftAgentRun(context, first.agentRunId, database);
@@ -270,6 +278,23 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     await expect(nominateContentOpportunity(context, { websiteId: "30000000-0000-4000-8000-0000000000a1", title: "A topic", rationale: "Human requested an educational resource" }, database)).rejects.toThrow("Website was not found");
     await client.query("delete from business_facts where workspace_id=$1 and fact_type='service'", [b]);
     await expect(nominateContentOpportunity(context, { websiteId: "30000000-0000-4000-8000-0000000000b1", title: "A topic", rationale: "Human requested an educational resource" }, database)).rejects.toThrow("PUBLIC VERIFIED service fact");
+  });
+  it("every enabled runtime definition exactly matches the persisted catalog and historical versions remain", async () => {
+    const definitions = await drizzle({ client, schema }).select().from(schema.agentDefinitions);
+    for (const agent of runtimeDefinitions.filter(a => a.enabled)) {
+      expect(requirePersistedAgentDefinition(agent, definitions.find(d => d.key === agent.key && d.version === agent.version)).id).toBeTruthy();
+    }
+    expect(definitions.filter(d => d.enabled).map(d => `${d.key}@${d.version}`).sort()).toEqual(runtimeDefinitions.filter(d => d.enabled).map(d => `${d.key}@${d.version}`).sort());
+    for (const key of ["content-opportunity", "internal-linking", "schema"]) {
+      expect(definitions.find(d => d.key === key && d.version === `${key}-v1.0`)).toMatchObject({ enabled: false, outputSchemaVersion: "prepare-output-v1.0" });
+    }
+  });
+  it("missing persisted version fails closed before inserting a run", async () => {
+    await client.query("update opportunities set normalized_remediation_family='structured_data' where id='80000000-0000-4000-8000-0000000000b1'");
+    await client.query("update agent_definitions set version='schema-test-missing' where key='schema' and version='schema-v1.1'");
+    const before = (await client.query("select count(*)::int n from agent_runs")).rows[0].n;
+    await expect(requestPrepareDraftForOpportunity(context, "80000000-0000-4000-8000-0000000000b1", database)).rejects.toThrow("configuration mismatch");
+    expect((await client.query("select count(*)::int n from agent_runs")).rows[0].n).toBe(before);
   });
   it.each(["WARNING", "PASS"] as const)("schema nomination preserves real %s audit evidence and rejects passing checks", async status => {
     const pinned = drizzle({ client, schema });

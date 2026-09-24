@@ -85,6 +85,13 @@
       "when": 1788919826270,
       "tag": "0011_phase5_monthly_fulfillment",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790273330931,
+      "tag": "0012_phase6_agent_catalog",
+      "breakpoints": true
     }
   ]
 }

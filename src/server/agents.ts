@@ -49,6 +49,7 @@ import {
   type PrepareModelProvider,
 } from "@/domain/agents/page-optimization";
 import { routePrepareOpportunity } from "@/domain/agents/routing";
+import { requirePersistedAgentDefinition } from "@/domain/agents/persisted-catalog";
 import { assertDeliverablePolicy, createDeterministicDeliverableProvider } from "@/domain/agents/prepare-deliverables";
 import { assertToolAllowedForAgent } from "@/domain/agents/tool-registry";
 import { openOpportunityStatuses } from "@/domain/opportunities/generation";
@@ -302,7 +303,7 @@ export async function requestPrepareDraftForOpportunity(
       .limit(1);
     const nextVersion = (latestArtifact?.version ?? 0) + 1;
     const [definitionRecord] = await tx
-      .select({ id: agentDefinitionsTable.id })
+      .select()
       .from(agentDefinitionsTable)
       .where(
         and(
@@ -312,11 +313,12 @@ export async function requestPrepareDraftForOpportunity(
       )
       .limit(1);
 
+    const persistedDefinition = requirePersistedAgentDefinition(agent, definitionRecord);
     const [run] = await tx
       .insert(agentRuns)
       .values({
         workspaceId: context.workspaceId,
-        agentDefinitionId: definitionRecord?.id,
+        agentDefinitionId: persistedDefinition.id,
         clientId: opportunity.clientId,
         websiteId: opportunity.websiteId,
         auditId: opportunity.sourceAuditId,

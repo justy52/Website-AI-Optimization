@@ -54,7 +54,7 @@ DECLARE
 BEGIN
   SELECT count(*) INTO enabled_count
   FROM "agent_definitions"
-  WHERE enabled = true;
+  WHERE enabled = true AND version LIKE '%v1.0';
 
   IF enabled_count <> 1 THEN
     RAISE EXCEPTION 'Expected exactly one enabled Phase 3 agent, saw %', enabled_count;
