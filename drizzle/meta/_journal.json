@@ -92,6 +92,13 @@
       "when": 1790273330931,
       "tag": "0012_phase6_agent_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790275545507,
+      "tag": "0013_phase7_verification",
+      "breakpoints": true
     }
   ]
 }

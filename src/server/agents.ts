@@ -155,7 +155,7 @@ async function createNotification(
   });
 }
 
-async function recordToolCall(
+export async function recordToolCall(
   tx: AgentTransaction,
   context: WorkspaceContext,
   input: {

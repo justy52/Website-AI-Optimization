@@ -5,6 +5,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 
 import { getWorkspaceShellContext } from "@/server/auth";
 import { getDraftArtifact } from "@/server/agents";
+import { createImplementationPackageAction } from "../../implementation-packages/actions";
 
 import { formatDate, PageHeader, Panel, StatusChip } from "../../ui";
 
@@ -21,8 +22,10 @@ function json(value: unknown) {
 
 export default async function DraftArtifactPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ artifactId: string }>;
+  searchParams: Promise<{ validation?: string }>;
 }) {
   const { artifactId } = await params;
   const shell = await getWorkspaceShellContext();
@@ -34,6 +37,7 @@ export default async function DraftArtifactPage({
 
   return (
     <>
+      {(await searchParams).validation ? <p role="alert">{(await searchParams).validation}</p> : null}
       <PageHeader
         action={
           detail.approval ? (
@@ -86,6 +90,7 @@ export default async function DraftArtifactPage({
               external change.
             </span>
           </div>
+          {detail.artifact.status === "APPROVED" ? <form action={createImplementationPackageAction}><input type="hidden" name="artifactId" value={artifactId} /><button className="mx-btn" type="submit">Create implementation package</button></form> : null}
         </Panel>
         <Panel title="Factual basis references">
           {detail.artifact.factualBasisRefs.length > 0 ? (

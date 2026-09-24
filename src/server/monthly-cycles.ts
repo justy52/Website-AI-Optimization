@@ -16,6 +16,7 @@ import { MonthlyCycleValidationError, countedDeliverableState, deliverableAllows
 import { db } from "@/db/client";
 import {
   activityEvents,
+  agentRuns,
   approvalRequests,
   auditCheckResults,
   auditRuns,
@@ -24,6 +25,7 @@ import {
   competitorTargets,
   draftArtifacts,
   implementationVerificationRecords,
+  implementationPackages,
   integrationConnections,
   manualImplementationRecords,
   monthlyCycleDeliverables,
@@ -60,6 +62,7 @@ import {
 } from "@/domain/monthly-cycles/selection";
 import { openOpportunityStatuses } from "@/domain/opportunities/generation";
 import type { ServicePlanKey } from "@/domain/service-plans";
+import type { VerificationObservation } from "@/domain/verification/verification";
 import {
   assertWorkspaceRole,
   type WorkspaceContext,
@@ -1281,6 +1284,7 @@ export async function recordManualImplementation(
     manualMinutes: number;
     implementationNotes?: string | null;
     evidenceReference?: string | null;
+    implementationPackageId?: string | null;
   },
   database = db,
 ) {
@@ -1329,24 +1333,32 @@ export async function recordManualImplementation(
     }
 
 
-    const [artifact] = await tx
+    const [implementationPackage] = input.implementationPackageId ? await tx.select().from(implementationPackages).where(and(
+      eq(implementationPackages.workspaceId, context.workspaceId), eq(implementationPackages.id, input.implementationPackageId),
+      eq(implementationPackages.opportunityId, workItem.opportunityId), eq(implementationPackages.websiteId, workItem.websiteId), eq(implementationPackages.clientId, workItem.clientId),
+    )).limit(1) : [];
+    if (input.implementationPackageId && !implementationPackage) throw new MonthlyCycleValidationError("Approved implementation package was not found for this work item.");
+    const [artifact] = implementationPackage ? await tx
       .select()
       .from(draftArtifacts)
       .where(
         and(
           eq(draftArtifacts.workspaceId, context.workspaceId),
+          eq(draftArtifacts.id, implementationPackage.artifactId),
+          eq(draftArtifacts.artifactVersion, implementationPackage.artifactVersion),
           eq(draftArtifacts.opportunityId, workItem.opportunityId),
           eq(draftArtifacts.status, "APPROVED"),
         ),
       )
-      .orderBy(desc(draftArtifacts.artifactVersion))
-      .limit(1);
+      .limit(1) : [];
+    if (implementationPackage && !artifact) throw new MonthlyCycleValidationError("The exact package artifact version is not approved.");
     const [duplicate] = await tx.select().from(manualImplementationRecords).where(and(
       eq(manualImplementationRecords.workspaceId, context.workspaceId),
       eq(manualImplementationRecords.cycleWorkItemId, workItem.id),
       eq(manualImplementationRecords.implementationDate, input.implementationDate),
       eq(manualImplementationRecords.whatImplemented, whatImplemented),
       eq(manualImplementationRecords.manualMinutes, input.manualMinutes),
+      sql`${manualImplementationRecords.implementationPackageId} is not distinct from ${implementationPackage?.id ?? null}`,
       sql`coalesce(${manualImplementationRecords.evidenceReference}, '') = ${optionalString(input.evidenceReference) ?? ""}`,
       sql`coalesce(${manualImplementationRecords.implementationNotes}, '') = ${optionalString(input.implementationNotes) ?? ""}`,
     )).limit(1);
@@ -1363,6 +1375,7 @@ export async function recordManualImplementation(
         opportunityId: workItem.opportunityId,
         artifactId: artifact?.id,
         artifactVersion: artifact?.artifactVersion,
+        implementationPackageId: implementationPackage?.id,
         createdAt: now(),
         whatImplemented,
         implementationDate: input.implementationDate,
@@ -1425,15 +1438,18 @@ export async function recordImplementationVerification(
   context: WorkspaceContext,
   cycleWorkItemId: string,
   input: {
-    status: "VERIFIED" | "VERIFICATION_WARNING" | "VERIFICATION_FAILED";
+    status: "VERIFIED" | "VERIFICATION_WARNING" | "VERIFICATION_FAILED" | "UNAVAILABLE";
     verificationMethod: string;
     evidence: string;
     limitations?: string | null;
+    agentRunId?: string;
+    implementationRecordId?: string;
+    observation?: VerificationObservation;
   },
   database = db,
 ) {
   assertWorkspaceRole(context, ["OWNER", "ADMIN", "ANALYST"]);
-  if (!["VERIFIED", "VERIFICATION_WARNING", "VERIFICATION_FAILED"].includes(input.status)) {
+  if (!["VERIFIED", "VERIFICATION_WARNING", "VERIFICATION_FAILED", "UNAVAILABLE"].includes(input.status)) {
     throw new MonthlyCycleValidationError("Verification status is not valid.");
   }
   const verificationMethod = input.verificationMethod.trim();
@@ -1462,7 +1478,8 @@ export async function recordImplementationVerification(
     const cycle = await loadCycle(tx, context, workItem.monthlyCycleId);
     assertCycleMutable(cycle.status);
 
-    const [implementation] = await tx
+    const implementationScope = and(eq(manualImplementationRecords.workspaceId, context.workspaceId), eq(manualImplementationRecords.cycleWorkItemId, workItem.id), eq(manualImplementationRecords.monthlyCycleId, workItem.monthlyCycleId), eq(manualImplementationRecords.opportunityId, workItem.opportunityId));
+    const implementations = await tx
       .select()
       .from(manualImplementationRecords)
       .where(
@@ -1473,12 +1490,20 @@ export async function recordImplementationVerification(
           eq(manualImplementationRecords.opportunityId, workItem.opportunityId),
         ),
       )
-      .orderBy(desc(manualImplementationRecords.createdAt))
+      .orderBy(desc(manualImplementationRecords.createdAt), desc(manualImplementationRecords.id))
       .limit(1);
+    const implementation = input.implementationRecordId ? (await tx.select().from(manualImplementationRecords).where(and(implementationScope, eq(manualImplementationRecords.id, input.implementationRecordId))).limit(1))[0] : implementations[0];
 
     if (!implementation) {
       throw new MonthlyCycleValidationError("Record an implementation before verifying this work. An approved draft is not implementation.");
     }
+    if (input.agentRunId) {
+      const [run] = await tx.select().from(agentRuns).where(and(eq(agentRuns.workspaceId, context.workspaceId), eq(agentRuns.id, input.agentRunId), eq(agentRuns.agentKey, "verification"), eq(agentRuns.permissionLevel, "OBSERVE"))).limit(1);
+      if (!run || run.status !== "RUNNING" || run.agentVersion !== "verification-v1.1" || run.inputSummary.implementationPackageId !== implementation.implementationPackageId || run.inputSummary.implementationRecordId !== implementation.id || run.opportunityId !== workItem.opportunityId || input.observation?.result !== input.status) throw new MonthlyCycleValidationError("Verification run does not match the implementation and result.");
+      const [prior] = await tx.select().from(implementationVerificationRecords).where(and(eq(implementationVerificationRecords.workspaceId, context.workspaceId), eq(implementationVerificationRecords.agentRunId, input.agentRunId))).limit(1);
+      if (prior) return prior;
+    } else if (input.observation || input.implementationRecordId) throw new MonthlyCycleValidationError("Deterministic evidence requires a verification run.");
+    const appliesToCurrent = implementation.id === implementations[0]?.id;
     const [record] = await tx
       .insert(implementationVerificationRecords)
       .values({
@@ -1486,12 +1511,15 @@ export async function recordImplementationVerification(
         monthlyCycleId: workItem.monthlyCycleId,
         cycleWorkItemId: workItem.id,
         implementationRecordId: implementation.id,
+        agentRunId: input.agentRunId,
+        implementationPackageId: implementation.implementationPackageId,
+        methodKind: input.agentRunId ? "DETERMINISTIC" : "HUMAN",
         clientId: workItem.clientId,
         websiteId: workItem.websiteId,
         opportunityId: workItem.opportunityId,
         status: input.status,
         verificationMethod,
-        evidence: { summary: evidenceText },
+        evidence: { summary: evidenceText, ...(input.observation ? { observation: input.observation, appliesToCurrent } : {}) },
         limitations: optionalString(input.limitations)
           ? { summary: optionalString(input.limitations) }
           : {},
@@ -1499,6 +1527,8 @@ export async function recordImplementationVerification(
         verifiedAt: now(),
       })
       .returning();
+    // An old in-flight attempt remains history; it cannot close a newer implementation.
+    if (!appliesToCurrent) return record;
     const nextStatus =
       input.status === "VERIFIED"
         ? "COMPLETED"
@@ -1548,6 +1578,8 @@ export async function recordImplementationVerification(
         opportunityId: workItem.opportunityId,
         status: input.status,
         method: verificationMethod,
+        methodKind: record.methodKind,
+        agentRunId: input.agentRunId ?? null,
       },
     );
     await refreshMonthlyCycleAccounting(tx, context, workItem.monthlyCycleId);
@@ -2178,6 +2210,8 @@ export async function closeMonthlyCycle(
         ),
       );
     const blockingDeliverables = deliverables.filter((item) => !deliverableAllowsClose(item));
+    const [pendingVerification] = await tx.select({ id: agentRuns.id }).from(agentRuns).where(and(eq(agentRuns.workspaceId, context.workspaceId), eq(agentRuns.agentKey, "verification"), sql`${agentRuns.inputSummary}->>'monthlyCycleId' = ${cycle.id}`, inArray(agentRuns.status, ["QUEUED", "RUNNING"]))).limit(1);
+    if (pendingVerification) return { error: "Cycle has a queued or running implementation verification." };
     const [finalizedReport] = await tx
       .select()
       .from(monthlyReports)

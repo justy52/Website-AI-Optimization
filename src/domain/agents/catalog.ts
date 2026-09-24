@@ -1,6 +1,6 @@
 import type { AgentPermissionLevel } from "./permissions";
 
-export const AGENT_CATALOG_VERSION = "agent-catalog-v1.1";
+export const AGENT_CATALOG_VERSION = "agent-catalog-v1.2";
 export const EXISTING_PAGE_OPTIMIZATION_AGENT_KEY =
   "existing-page-optimization";
 export const EXISTING_PAGE_OPTIMIZATION_AGENT_VERSION = "epo-prepare-v1.0";
@@ -228,15 +228,15 @@ export const agentDefinitions: AgentDefinition[] = [
   },
   {
     key: "verification",
-    version: "verification-v1.0",
+    version: "verification-v1.1",
     name: "Verification Agent",
     capabilityType: "VERIFICATION",
     defaultPermissionLevel: "OBSERVE",
-    allowedToolKeys: observeTools,
+    allowedToolKeys: ["read.implementation_package.v1", "read.public_verification_target.v1", "compare.approved_implementation.v1"],
     defaultTimeoutSeconds: 45,
-    budgetLimits: observeBudget,
-    outputSchemaVersion: "observe-output-v1.0",
-    enabled: false,
+    budgetLimits: { maxToolCalls: 3, maxModelCalls: 0, maxEvidenceBytes: 262144, maxInputBytes: 24000, maxOutputBytes: 16000, maxOutputTokens: 0, maxCostCents: 0 },
+    outputSchemaVersion: "implementation-verification-v1.0",
+    enabled: true,
   },
   {
     key: "orchestrator",

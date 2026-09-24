@@ -17,6 +17,8 @@ import {
 import type { MonthlyEntitlementSnapshot } from "@/domain/monthly-cycles/entitlements";
 import { getMonthlyCycleDetail } from "@/server/monthly-cycles";
 import { getWorkspaceShellContext } from "@/server/auth";
+import { getCycleVerificationContext } from "@/server/verification";
+import { verifyImplementationAction } from "../../implementation-packages/actions";
 
 import {
   addOpportunityToMonthlyCycleAction,
@@ -101,6 +103,7 @@ export default async function MonthlyCycleDetailPage({
   }
 
   const { cycle } = detail;
+  const verificationContext = await getCycleVerificationContext(shell.workspaceContext, cycleId);
   const snapshot = cycle.entitlementSnapshot as MonthlyEntitlementSnapshot;
   const activeWorkIds = new Set(
     detail.workItems
@@ -431,6 +434,7 @@ export default async function MonthlyCycleDetailPage({
                       {row.prepareRoute ? <span className="mx-row-meta">Agent: {row.prepareRoute.agentKey}</span> : null}
                       {row.prepareArtifactId ? <Link className="mx-btn mx-btn-ghost" href={`/drafts/${row.prepareArtifactId}`}>Review draft</Link> : null}
                       <form action={recordManualImplementationAction} className="mx-form">
+                        <label className="mx-form-wide">Approved version implemented<select className="mx-input" name="implementationPackageId" defaultValue=""><option value="">Manual work without an artifact package</option>{verificationContext.packages.filter(pkg => pkg.opportunityId === row.item.opportunityId).map(pkg => <option key={pkg.id} value={pkg.id}>Approved v{pkg.artifactVersion} · {pkg.id.slice(0, 8)}</option>)}</select></label>
                         <input name="monthlyCycleId" type="hidden" value={cycle.id} />
                         <input
                           name="cycleWorkItemId"
@@ -483,6 +487,12 @@ export default async function MonthlyCycleDetailPage({
                           Record manual implementation
                         </button>
                       </form>
+                      {detail.implementations.filter(implementation => implementation.cycleWorkItemId === row.item.id).slice(0, 1).map(implementation => <div key={implementation.id} id={`implementation-${implementation.id}`}>
+                        <p>Implementation recorded · {implementation.artifactVersion ? `approved v${implementation.artifactVersion}` : "manual work; no artifact version selected"}</p>
+                        {implementation.implementationPackageId && Array.isArray(verificationContext.packages.find(pkg => pkg.id === implementation.implementationPackageId)?.snapshot.checks) && (verificationContext.packages.find(pkg => pkg.id === implementation.implementationPackageId)!.snapshot.checks as unknown[]).length > 0 ? <><Link href={`/implementation-packages/${implementation.implementationPackageId}` as never}>Implementation package</Link><form action={verifyImplementationAction}><input type="hidden" name="implementationId" value={implementation.id} /><input type="hidden" name="monthlyCycleId" value={cycle.id} /><button className="mx-btn" type="submit">Verify implementation</button></form></> : null}
+                        {verificationContext.runs.filter(run => run.inputSummary.implementationRecordId === implementation.id).slice(0, 1).map(run => <p key={run.id}>Verification {run.status} · <Link href={`/runs/${run.id}`}>Inspect verification run</Link></p>)}
+                      </div>)}
+                      <p className="mx-muted">Human verification records a human assessment; it does not claim independent automated observation.</p>
                       <form
                         action={recordImplementationVerificationAction}
                         className="mx-form"
@@ -563,9 +573,13 @@ export default async function MonthlyCycleDetailPage({
       </Panel>
       <div className="mx-spacer" />
       <Panel
-        right={
-          detail.report ? <StatusChip tone={tone(detail.report.status)}>{detail.report.status}</StatusChip> : null
-        }
+        title="Verification history"
+      >
+        {detail.verifications.length ? detail.verifications.map(record => <div className="mx-row mx-row-static" key={record.id}><div><Link href={`/verifications/${record.id}` as never}>Verification {record.status}</Link><p className="mx-row-meta">{record.methodKind} · {record.verificationMethod} · {record.verifiedAt.toISOString()} · implementation {record.implementationRecordId}</p></div><StatusChip tone={tone(record.status)}>{record.status}</StatusChip></div>) : <p>No verification attempts recorded.</p>}
+      </Panel>
+      <div className="mx-spacer" />
+      <Panel
+        right={detail.report ? <StatusChip tone={tone(detail.report.status)}>{detail.report.status}</StatusChip> : null}
         title="Monthly report"
       >
         {detail.report ? (

@@ -66,7 +66,8 @@ try {
   for (const table of ordered.filter(t => !["agent_definitions", "service_plan_definitions"].includes(t))) {
     for (const row of fixtures[table]) {
       await connection.query("select set_config('app.workspace_id',$1,false)", [row.workspace_id ?? row.id ?? tenants[0]]);
-      await connection.query(`insert into ${quote(table)} select * from json_populate_record(null::${quote(table)}, $1::json) on conflict do nothing`, [JSON.stringify(row)]);
+      const columns = Object.keys(row).map(quote).join(",");
+      await connection.query(`insert into ${quote(table)} (${columns}) select ${columns} from json_populate_record(null::${quote(table)}, $1::json) on conflict do nothing`, [JSON.stringify(row)]);
     }
   }
   // A rerun may not mutate any catalog version, including IDs and timestamps.

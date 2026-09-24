@@ -20,6 +20,7 @@ import { getMonitoringDashboardSummary } from "@/server/monitoring";
 import { getMonthlyCycleDashboardSummary } from "@/server/monthly-cycles";
 import { getOpportunityDashboardSummary } from "@/server/opportunities";
 import { getDashboardSummary } from "@/server/revenue";
+import { getVerificationDashboard } from "@/server/verification";
 
 import { EmptyState, PageHeader, Panel, RowLink, StatusChip } from "./ui";
 
@@ -38,6 +39,7 @@ export default async function DashboardPage() {
     monitoringSummary,
     competitorSummary,
     monthlyCycleSummary,
+    verificationSummary,
   ] = await Promise.all([
     getDashboardSummary(shell.workspaceContext),
     getOpportunityDashboardSummary(shell.workspaceContext),
@@ -45,6 +47,7 @@ export default async function DashboardPage() {
     getMonitoringDashboardSummary(shell.workspaceContext),
     getCompetitorDashboardSummary(shell.workspaceContext),
     getMonthlyCycleDashboardSummary(shell.workspaceContext),
+    getVerificationDashboard(shell.workspaceContext),
   ]);
 
   return (
@@ -59,6 +62,10 @@ export default async function DashboardPage() {
         eyebrow="Governed PREPARE and recurring observation"
         title="Command Center"
       />
+      <Panel title="Implementation verification — current cycles">
+        <div className="mx-grid mx-grid-3">{[["Awaiting verification", verificationSummary.awaiting], ["Verification failures", verificationSummary.failed], ["Verification warnings", verificationSummary.warnings], ["Verified this cycle", verificationSummary.verified]].map(([label, count]) => <Link className="mx-kpi" href="/monthly-cycles" key={label}><span className="mx-kpi-label">{label}</span><span className="mx-kpi-value">{count}</span></Link>)}</div>
+      </Panel>
+      <div className="mx-spacer" />
       <div className="mx-grid mx-grid-3">
         {statCards.map((card) => {
           const Icon = card.icon;

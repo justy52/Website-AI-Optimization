@@ -2,6 +2,7 @@ import { requestPrepareDraftForOpportunity, executePrepareDraftAgentRun, decideA
 import { nominateContentOpportunity } from "./content-opportunities";
 import { agentDefinitions as runtimeDefinitions } from "@/domain/agents/catalog";
 import { requirePersistedAgentDefinition } from "@/domain/agents/persisted-catalog";
+import { createImplementationPackage, getImplementationPackage, requestImplementationVerification, executeImplementationVerification, getVerificationDetail, getVerificationDashboard } from "./verification";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
@@ -311,6 +312,132 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     await expect(nominateContentOpportunity({ ...context, actorType: "SYSTEM", userId: undefined }, input, database)).rejects.toThrow("A human must nominate");
     await expect(nominateContentOpportunity(context, { ...input, websiteId: "30000000-0000-4000-8000-0000000000a1" }, database)).rejects.toThrow("Website was not found");
     await expect(nominateContentOpportunity(context, { ...input, kind: "EXECUTE" }, database)).rejects.toThrow("Unsupported nomination type");
+  });
+
+  async function approvedPackage(title = "Expected title", version = 20) {
+    const pinned = drizzle({ client, schema });
+    const [old] = await pinned.select().from(schema.draftArtifacts).limit(1);
+    const [artifact] = await pinned.insert(schema.draftArtifacts).values({ ...old, id: randomUUID(), artifactVersion: version, status: "APPROVED", artifactType: "EXISTING_PAGE_OPTIMIZATION_PROPOSAL", opportunityId: "80000000-0000-4000-8000-0000000000b1", clientId: "20000000-0000-4000-8000-0000000000b1", websiteId: "30000000-0000-4000-8000-0000000000b1", contentHash: `approved-${title}-${version}`, structuredProposal: { proposals: [{ field: "title", currentValue: "Captured old title", proposedValue: title, requiresHumanInput: false }] } }).returning();
+    const [oldApproval] = await pinned.select().from(schema.approvalRequests).limit(1);
+    await pinned.insert(schema.approvalRequests).values({ ...oldApproval, id: randomUUID(), targetArtifactId: artifact.id, targetArtifactVersion: artifact.artifactVersion, status: "APPROVED" });
+    const pkg = await createImplementationPackage(context, artifact.id, database);
+    return { artifact, pkg };
+  }
+  const publicResponse = (title: string) => ({ lookupHost: async () => ["93.184.216.34"], requestImpl: async () => ({ status: 200, headers: { "content-type": "text/html" }, bodyText: `<title>${title}</title>` }) });
+  it("Phase 7 binds implementation to the selected historical approved version, never latest", async () => {
+    await clearImplementation();
+    const old = await approvedPackage("Old approved", 20);
+    const newer = await approvedPackage("New approved", 21);
+    const implementation = await recordManualImplementation(context, workId, { ...manual, implementationPackageId: old.pkg.id }, database);
+    expect(implementation).toMatchObject({ artifactId: old.artifact.id, artifactVersion: 20, implementationPackageId: old.pkg.id });
+    expect(implementation.artifactId).not.toBe(newer.artifact.id);
+    expect((await getImplementationPackage(context, old.pkg.id, database))!.snapshot.artifactVersion).toBe(20);
+    const plain = await recordManualImplementation(context, workId, { ...manual, whatImplemented: "Manual work without a version selection" }, database);
+    expect(plain.artifactId).toBeNull();
+    await expect(requestImplementationVerification(context, plain.id, database)).rejects.toThrow("Select an approved implementation package");
+  });
+  it("Phase 7 requires exact approval and immutable package/history records", async () => {
+    const { artifact, pkg } = await approvedPackage();
+    expect((await createImplementationPackage(context, artifact.id, database)).id).toBe(pkg.id);
+    await client.query("update draft_artifacts set status='AWAITING_APPROVAL' where id=$1", [artifact.id]);
+    await expect(createImplementationPackage(context, artifact.id, database)).rejects.toThrow("approved artifact version");
+    await expect(recordManualImplementation(context, workId, { ...manual, implementationPackageId: pkg.id }, database)).rejects.toThrow("not approved");
+    await client.query("savepoint immutable_package");
+    await expect(client.query("update implementation_packages set snapshot='{}' where id=$1", [pkg.id])).rejects.toMatchObject({ code: "23514" });
+    await client.query("rollback to savepoint immutable_package");
+  });
+  it("Phase 7 failure, correction, retry, history and accounting remain consistent", async () => {
+    await clearImplementation();
+    const { pkg } = await approvedPackage();
+    const implementation = await recordManualImplementation(context, workId, { ...manual, implementationPackageId: pkg.id }, database);
+    const first = await requestImplementationVerification(context, implementation.id, database);
+    expect((await requestImplementationVerification(context, implementation.id, database)).agentRunId).toBe(first.agentRunId);
+    expect(await closeMonthlyCycle(context, cycleId, database)).toMatchObject({ error: "Cycle has a queued or running implementation verification." });
+    const failed = await executeImplementationVerification(context, first.agentRunId, database, publicResponse("Wrong title"));
+    expect(failed.structuredOutput?.result).toBe("VERIFICATION_FAILED");
+    expect((await row("opportunities")).status).not.toBe("COMPLETED");
+    expect((await row("monthly_cycles")).existing_page_optimizations_completed).toBe(0);
+    const second = await requestImplementationVerification(context, implementation.id, database);
+    const passed = await executeImplementationVerification(context, second.agentRunId, database, publicResponse("Expected title"));
+    expect(passed.structuredOutput?.result).toBe("VERIFIED");
+    expect(passed.agentDefinitionId).toBeTruthy(); expect(passed.permissionLevel).toBe("OBSERVE"); expect(passed.actualModelCalls).toBe(0);
+    expect((await row("opportunities")).status).toBe("COMPLETED");
+    const completedAt = (await row("opportunities")).completed_at;
+    await executeImplementationVerification(context, second.agentRunId, database, publicResponse("Expected title"));
+    expect((await row("opportunities")).completed_at).toEqual(completedAt);
+    expect((await row("monthly_cycles")).existing_page_optimizations_completed).toBe(1);
+    expect((await row("monthly_cycles")).manual_implementation_minutes).toBe(45);
+    const history = (await client.query("select status,method_kind from implementation_verification_records where implementation_record_id=$1 order by verified_at", [implementation.id])).rows;
+    expect(history.map(h => h.status)).toEqual(["VERIFICATION_FAILED", "VERIFIED"]);
+    expect(history.every(h => h.method_kind === "DETERMINISTIC")).toBe(true);
+    expect((await getVerificationDetail(context, String(passed.outputRef), database))!.evidence.observation).toBeTruthy();
+    expect((await getVerificationDashboard(context, database)).verified).toBeGreaterThan(0);
+    await client.query("savepoint immutable_attempt");
+    await expect(client.query("update implementation_verification_records set evidence='{}' where id=$1", [passed.outputRef])).rejects.toMatchObject({ code: "23514" });
+    await client.query("rollback to savepoint immutable_attempt");
+  });
+  it("Phase 7 unavailable is preserved and does not consume successful fulfillment", async () => {
+    await clearImplementation(); const { pkg } = await approvedPackage();
+    const implementation = await recordManualImplementation(context, workId, { ...manual, implementationPackageId: pkg.id }, database);
+    const run = await requestImplementationVerification(context, implementation.id, database);
+    const result = await executeImplementationVerification(context, run.agentRunId, database, { lookupHost: async () => ["127.0.0.1"] });
+    expect(result.structuredOutput?.result).toBe("UNAVAILABLE");
+    expect((await row("monthly_cycle_work_items")).completion_state).toBe("UNAVAILABLE");
+    expect((await row("monthly_cycles")).existing_page_optimizations_completed).toBe(0);
+    expect((await row("opportunities")).status).not.toBe("COMPLETED");
+  });
+  it("Phase 7 verification keeps sensitive roles and all run/evidence reads tenant-scoped", async () => {
+    await clearImplementation(); const { pkg } = await approvedPackage();
+    const implementation = await recordManualImplementation(context, workId, { ...manual, implementationPackageId: pkg.id }, database);
+    await expect(requestImplementationVerification({ ...context, role: "ANALYST" }, implementation.id, database)).rejects.toThrow();
+    const other = { ...context, workspaceId: a, userId: "rls-user-a" };
+    await expect(requestImplementationVerification(other, implementation.id, database)).rejects.toThrow("Select an approved implementation package");
+    const run = await requestImplementationVerification(context, implementation.id, database);
+    await expect(executeImplementationVerification(other, run.agentRunId, database, publicResponse("Expected title"))).rejects.toThrow("not found");
+    const result = await executeImplementationVerification(context, run.agentRunId, database, publicResponse("Expected title"));
+    expect(await getVerificationDetail(other, String(result.outputRef), database)).toBeNull();
+  });
+  it("Phase 7 warning retains the reviewed Phase 5 implementation credit rule without closing work", async () => {
+    await clearImplementation(); const { pkg } = await approvedPackage();
+    const implementation = await recordManualImplementation(context, workId, { ...manual, implementationPackageId: pkg.id }, database);
+    const run = await requestImplementationVerification(context, implementation.id, database);
+    const result = await executeImplementationVerification(context, run.agentRunId, database, publicResponse("Expected title</title><title>Other"));
+    expect(result.structuredOutput?.result).toBe("VERIFICATION_WARNING");
+    expect((await row("monthly_cycles")).existing_page_optimizations_completed).toBe(1);
+    expect((await row("opportunities")).status).not.toBe("COMPLETED");
+  });
+  it("Phase 7 a stale queued attempt remains history and cannot close a newer implementation", async () => {
+    await clearImplementation(); const old = await approvedPackage();
+    const implementation = await recordManualImplementation(context, workId, { ...manual, implementationPackageId: old.pkg.id }, database);
+    const run = await requestImplementationVerification(context, implementation.id, database);
+    const next = await approvedPackage("New expected title", 21);
+    await recordManualImplementation(context, workId, { ...manual, whatImplemented: "New version implementation", implementationPackageId: next.pkg.id }, database);
+    const result = await executeImplementationVerification(context, run.agentRunId, database, publicResponse("Expected title"));
+    expect((await getVerificationDetail(context, String(result.outputRef), database))!.evidence.appliesToCurrent).toBe(false);
+    expect((await row("monthly_cycle_work_items")).completion_state).toBe("IMPLEMENTED_UNVERIFIED");
+    expect((await row("opportunities")).status).not.toBe("COMPLETED");
+    await expect(requestImplementationVerification(context, implementation.id, database)).rejects.toThrow("current implementation");
+  });
+  it("Phase 7 package RLS blocks all cross-tenant operations and composite references", async () => {
+    const { artifact, pkg } = await approvedPackage();
+    const implementation = await recordManualImplementation(context, workId, { ...manual, implementationPackageId: pkg.id }, database);
+    const implementationRow = (await client.query("select * from manual_implementation_records where id=$1", [implementation.id])).rows[0];
+    const other = { ...context, workspaceId: a, userId: "rls-user-a" };
+    expect(await getImplementationPackage(other, pkg.id, database)).toBeNull();
+    await expect(createImplementationPackage(other, artifact.id, database)).rejects.toThrow("approved artifact version");
+    await client.query("select set_config('app.workspace_id',$1,true)", [a]);
+    expect((await client.query("select * from implementation_packages where id=$1", [pkg.id])).rowCount).toBe(0);
+    expect((await client.query("update implementation_packages set content_hash='forged' where id=$1", [pkg.id])).rowCount).toBe(0);
+    expect((await client.query("delete from implementation_packages where id=$1", [pkg.id])).rowCount).toBe(0);
+    await client.query("savepoint bad_package_insert");
+    await expect(client.query("insert into implementation_packages select * from json_populate_record(null::implementation_packages,$1::json)", [JSON.stringify({ id: randomUUID(), workspace_id: b, client_id: pkg.clientId, website_id: pkg.websiteId, opportunity_id: pkg.opportunityId, artifact_id: pkg.artifactId, artifact_version: pkg.artifactVersion, approval_id: pkg.approvalId, snapshot: pkg.snapshot, content_hash: pkg.contentHash, created_at: new Date() })])).rejects.toBeTruthy();
+    await client.query("rollback to savepoint bad_package_insert");
+    await client.query("savepoint bad_package_fk");
+    await expect(client.query("insert into manual_implementation_records select * from json_populate_record(null::manual_implementation_records,$1::json)", [JSON.stringify({ ...implementationRow, id: randomUUID(), workspace_id: a })])).rejects.toMatchObject({ code: "23503" });
+    await client.query("rollback to savepoint bad_package_fk");
+    expect((await client.query("select pg_get_constraintdef(oid) definition from pg_constraint where conname='manual_implementation_package_binding_fk'")).rows[0].definition).toContain("FOREIGN KEY (workspace_id, implementation_package_id, artifact_id, artifact_version)");
+    const security = (await client.query("select relrowsecurity,relforcerowsecurity from pg_class where oid='public.implementation_packages'::regclass")).rows[0];
+    expect(security).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
   });
 
 });

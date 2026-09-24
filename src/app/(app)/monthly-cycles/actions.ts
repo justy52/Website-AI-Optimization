@@ -143,6 +143,7 @@ async function recordManualImplementationActionImpl(formData: FormData) {
       manualMinutes: optionalNumber(value(formData, "manualMinutes")) ?? 0,
       implementationNotes: value(formData, "implementationNotes"),
       evidenceReference: value(formData, "evidenceReference"),
+      implementationPackageId: value(formData, "implementationPackageId"),
     },
   );
   revalidatePath("/");

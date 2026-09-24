@@ -3,7 +3,7 @@ export async function GET() {
     {
       status: "ok",
       app: "optiq",
-      phase: "6",
+      phase: "7",
       commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     },
     {

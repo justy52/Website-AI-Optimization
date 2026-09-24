@@ -190,7 +190,7 @@ export function buildMonthlyReportDraft(
         items: input.workItems.filter(item => ["DRAFT_PREPARED", "APPROVED_FOR_MANUAL_IMPLEMENTATION"].includes(item.completionState)),
       },
       verificationAttention: {
-        items: input.workItems.filter(item => ["VERIFICATION_WARNING", "VERIFICATION_FAILED"].includes(item.completionState)),
+        items: input.workItems.filter(item => ["VERIFICATION_WARNING", "VERIFICATION_FAILED", "UNAVAILABLE"].includes(item.completionState)),
       },
       websiteHealth: {
         runsCompleted: input.monitoring.websiteHealthRuns,

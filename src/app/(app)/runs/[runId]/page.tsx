@@ -83,6 +83,7 @@ export default async function RunDetailPage({
               Open draft artifact
             </Link>
           ) : null}
+          {detail.run.agentKey === "verification" && detail.run.outputRef ? <Link className="mx-btn" href={`/verifications/${detail.run.outputRef}` as never}>Open verification evidence</Link> : null}
         </Panel>
         <Panel title="Concise rationale">
           <p className="mx-muted">

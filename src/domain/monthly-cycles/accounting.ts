@@ -5,7 +5,8 @@ export type MonthlyWorkCompletionState =
   | "IMPLEMENTED_UNVERIFIED"
   | "VERIFIED"
   | "VERIFICATION_WARNING"
-  | "VERIFICATION_FAILED";
+  | "VERIFICATION_FAILED"
+  | "UNAVAILABLE";
 
 export const entitlementCompletionStates = [
   "IMPLEMENTED_UNVERIFIED",

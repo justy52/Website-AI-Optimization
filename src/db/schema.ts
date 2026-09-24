@@ -395,6 +395,7 @@ export const monthlyWorkCompletionStateEnum = pgEnum(
     "VERIFIED",
     "VERIFICATION_WARNING",
     "VERIFICATION_FAILED",
+    "UNAVAILABLE",
   ],
 );
 
@@ -405,6 +406,7 @@ export const implementationVerificationStatusEnum = pgEnum(
     "VERIFIED",
     "VERIFICATION_WARNING",
     "VERIFICATION_FAILED",
+    "UNAVAILABLE",
   ],
 );
 
@@ -2827,6 +2829,29 @@ export const monthlyCycleWorkItems = pgTable(
   ],
 );
 
+export const implementationPackages = pgTable("implementation_packages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull(),
+  websiteId: uuid("website_id").notNull(),
+  opportunityId: uuid("opportunity_id").notNull(),
+  artifactId: uuid("artifact_id").notNull(),
+  artifactVersion: integer("artifact_version").notNull(),
+  approvalId: uuid("approval_id").notNull(),
+  snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+  contentHash: text("content_hash").notNull(),
+  createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+}, table => [
+  uniqueIndex("implementation_packages_workspace_id_unique").on(table.workspaceId, table.id),
+  uniqueIndex("implementation_packages_artifact_unique").on(table.workspaceId, table.artifactId, table.artifactVersion),
+  uniqueIndex("implementation_packages_binding_unique").on(table.workspaceId, table.id, table.artifactId, table.artifactVersion),
+  foreignKey({ columns: [table.workspaceId, table.clientId, table.websiteId], foreignColumns: [websites.workspaceId, websites.clientId, websites.id], name: "implementation_packages_site_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.workspaceId, table.clientId, table.opportunityId], foreignColumns: [opportunities.workspaceId, opportunities.clientId, opportunities.id], name: "implementation_packages_opportunity_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.workspaceId, table.artifactId, table.artifactVersion], foreignColumns: [draftArtifacts.workspaceId, draftArtifacts.id, draftArtifacts.artifactVersion], name: "implementation_packages_artifact_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.workspaceId, table.approvalId], foreignColumns: [approvalRequests.workspaceId, approvalRequests.id], name: "implementation_packages_approval_fk" }).onDelete("restrict"),
+]).enableRLS();
+
 export const manualImplementationRecords = pgTable(
   "manual_implementation_records",
   {
@@ -2841,6 +2866,7 @@ export const manualImplementationRecords = pgTable(
     opportunityId: uuid("opportunity_id").notNull(),
     artifactId: uuid("artifact_id"),
     artifactVersion: integer("artifact_version"),
+    implementationPackageId: uuid("implementation_package_id"),
     whatImplemented: text("what_implemented").notNull(),
     implementationDate: date("implementation_date").notNull(),
     manualMinutes: integer("manual_minutes").notNull(),
@@ -2864,6 +2890,8 @@ export const manualImplementationRecords = pgTable(
       table.workspaceId,
       table.id,
     ),
+    foreignKey({ columns: [table.workspaceId, table.implementationPackageId, table.artifactId, table.artifactVersion], foreignColumns: [implementationPackages.workspaceId, implementationPackages.id, implementationPackages.artifactId, implementationPackages.artifactVersion], name: "manual_implementation_package_binding_fk" }).onDelete("restrict"),
+    check("manual_implementation_package_binding_check", sql`${table.implementationPackageId} is null or (${table.artifactId} is not null and ${table.artifactVersion} is not null)`),
     index("manual_implementation_records_workspace_cycle_idx").on(
       table.workspaceId,
       table.monthlyCycleId,
@@ -2923,6 +2951,9 @@ export const implementationVerificationRecords = pgTable(
     monthlyCycleId: uuid("monthly_cycle_id").notNull(),
     cycleWorkItemId: uuid("cycle_work_item_id").notNull(),
     implementationRecordId: uuid("implementation_record_id"),
+    agentRunId: uuid("agent_run_id"),
+    implementationPackageId: uuid("implementation_package_id"),
+    methodKind: text("method_kind").notNull().default("HUMAN"),
     clientId: uuid("client_id").notNull(),
     websiteId: uuid("website_id").notNull(),
     opportunityId: uuid("opportunity_id").notNull(),
@@ -2949,6 +2980,10 @@ export const implementationVerificationRecords = pgTable(
       table.workspaceId,
       table.id,
     ),
+    uniqueIndex("implementation_verification_run_unique").on(table.workspaceId, table.agentRunId),
+    foreignKey({ columns: [table.workspaceId, table.agentRunId], foreignColumns: [agentRuns.workspaceId, agentRuns.id], name: "implementation_verification_run_fk" }).onDelete("restrict"),
+    foreignKey({ columns: [table.workspaceId, table.implementationPackageId], foreignColumns: [implementationPackages.workspaceId, implementationPackages.id], name: "implementation_verification_package_fk" }).onDelete("restrict"),
+    check("implementation_verification_method_check", sql`${table.methodKind} in ('HUMAN', 'DETERMINISTIC')`),
     index("implementation_verification_records_workspace_cycle_idx").on(
       table.workspaceId,
       table.monthlyCycleId,

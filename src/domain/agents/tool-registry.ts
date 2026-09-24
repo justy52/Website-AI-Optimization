@@ -33,6 +33,12 @@ const summaryOutput = z.object({
 });
 
 export const agentToolRegistry: AgentToolDefinition[] = [
+  ...["read.implementation_package.v1", "read.public_verification_target.v1", "compare.approved_implementation.v1"].map(key => ({
+    key, version: "1.0", description: "Bounded read-only implementation verification; no external write.",
+    inputSchema: idInput, outputSchema: summaryOutput, requiredPermission: "OBSERVE" as const,
+    resourceScope: "workspace/implementation/public-target", timeoutMs: 10000,
+    costBehavior: "free" as const, readsUntrustedExternalContent: key === "read.public_verification_target.v1",
+  })),
   {
     key: "read.opportunity.v1",
     version: "1.0",
