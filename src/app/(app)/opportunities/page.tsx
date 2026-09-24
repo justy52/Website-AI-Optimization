@@ -66,13 +66,14 @@ export default async function OpportunitiesPage({
         title="Opportunities"
       />
       {one(query.validation) ? <p className="mx-error" role="alert">{one(query.validation)}</p> : null}
-      <Panel title="Nominate content work">
-        <p className="mx-muted">Record a human editorial recommendation after an audit and a PUBLIC VERIFIED service fact. This does not claim a measured content gap or search demand.</p>
+      <Panel title="Nominate PREPARE work">
+        <p className="mx-muted">Content work requires an audit and a PUBLIC VERIFIED service fact. Schema work requires an existing audit warning or failure. A human nomination does not claim measured search demand or completed implementation.</p>
         <form action={nominateContentOpportunityAction} className="mx-form">
+          <label>Work type<select className="mx-input" name="kind"><option value="CONTENT">Content brief</option><option value="SCHEMA">Schema review</option></select></label>
           <label>Content website<select className="mx-input" name="websiteId" required>{websites.map(site => <option key={site.id} value={site.id}>{site.displayName} — {site.domain}</option>)}</select></label>
           <label>Proposed topic<input className="mx-input" name="title" maxLength={160} required /></label>
           <label className="mx-form-wide">Editorial rationale<textarea className="mx-input" name="rationale" minLength={20} maxLength={1000} required /></label>
-          <button className="mx-btn" type="submit">Nominate content Opportunity</button>
+          <button className="mx-btn" type="submit">Nominate Opportunity</button>
         </form>
       </Panel>
       <div className="mx-spacer" />

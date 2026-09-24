@@ -271,5 +271,21 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     await client.query("delete from business_facts where workspace_id=$1 and fact_type='service'", [b]);
     await expect(nominateContentOpportunity(context, { websiteId: "30000000-0000-4000-8000-0000000000b1", title: "A topic", rationale: "Human requested an educational resource" }, database)).rejects.toThrow("PUBLIC VERIFIED service fact");
   });
+  it.each(["WARNING", "PASS"] as const)("schema nomination preserves real %s audit evidence and rejects passing checks", async status => {
+    const pinned = drizzle({ client, schema });
+    const [existingCheck] = await pinned.select().from(schema.auditCheckResults).limit(1);
+    await pinned.insert(schema.auditCheckResults).values({ ...existingCheck, id: randomUUID(), checkKey: "ai.structured_data", category: "aiReadiness", status, severity: "LOW" });
+    const input = { websiteId: "30000000-0000-4000-8000-0000000000b1", kind: "SCHEMA", title: "Review schema finding", rationale: "Human review of the existing audit schema finding" };
+    if (status === "PASS") {
+      await expect(nominateContentOpportunity(context, input, database)).rejects.toThrow("existing audit warning or failure");
+      return;
+    }
+    const created = await nominateContentOpportunity(context, input, database);
+    expect(created).toMatchObject({ sourceResultStatus: "WARNING", sourceSeverity: "LOW", normalizedRemediationFamily: "structured_data" });
+    expect((await nominateContentOpportunity(context, input, database)).id).toBe(created.id);
+    await expect(nominateContentOpportunity({ ...context, actorType: "SYSTEM", userId: undefined }, input, database)).rejects.toThrow("A human must nominate");
+    await expect(nominateContentOpportunity(context, { ...input, websiteId: "30000000-0000-4000-8000-0000000000a1" }, database)).rejects.toThrow("Website was not found");
+    await expect(nominateContentOpportunity(context, { ...input, kind: "EXECUTE" }, database)).rejects.toThrow("Unsupported nomination type");
+  });
 
 });

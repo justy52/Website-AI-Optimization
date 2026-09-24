@@ -60,7 +60,7 @@ export function createDeterministicDeliverable(input: Input): Output {
     const used = [service, location].filter((f): f is PrepareBusinessFact => !!f);
     const topic = service ? `Guide to ${service.value}` : "TBD: confirm topic with the client";
     proposals.push(proposal(input, "topic", { proposedTitle: topic, targetService: service?.value ?? "TBD", targetLocation: location?.value ?? "TBD" }, used, !service || !location));
-    proposals.push(proposal(input, "intent_audience", { intent: "Informational; proposed, not measured", audience: "Prospective readers evaluating this topic; confirm with client", purpose: "Answer the evidenced content gap with an educational resource" }));
+    proposals.push(proposal(input, "intent_audience", { intent: "Informational; proposed, not measured", audience: "Prospective readers evaluating this topic; confirm with client", purpose: "Explore the proposed topic with an educational resource; demand and any content gap require human validation" }));
     proposals.push(proposal(input, "outline", { H1: topic, H2: ["What the reader should understand", "Questions to ask", "How to evaluate the next step"] }, service ? [service] : [], !service));
     proposals.push(proposal(input, "questions", ["What should readers understand before deciding?", "What information should readers gather?", "Which next step fits the reader's needs?"]));
     const pages = capturedInternalPages(input);

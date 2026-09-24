@@ -224,7 +224,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
 
   await page.getByRole("link", { name: "Opportunities", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Opportunities" })).toBeVisible();
-  await page.locator("main a.mx-row").filter({ hasText: /seo.title|seo.meta_description|seo.heading_structure/ }).first().click();
+  await page.locator("main a.mx-row").filter({ hasText: /seo.title|seo.meta_description|seo.heading_structure|conv.primary_cta/ }).first().click();
   await expect(page.getByRole("heading")).toBeVisible();
   const opportunityUrl = page.url();
   await expect(page.getByText("Priority explanation")).toBeVisible();

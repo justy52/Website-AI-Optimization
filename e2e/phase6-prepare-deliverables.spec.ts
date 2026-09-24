@@ -62,7 +62,7 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await page.goto("/opportunities");
   await page.getByLabel("Proposed topic").fill("Guide to website optimization");
   await page.getByLabel("Editorial rationale").fill("Human editorial request for an educational overview based on the verified service; search demand is unknown.");
-  await page.getByRole("button", { name: "Nominate content Opportunity" }).click();
+  await page.getByRole("button", { name: "Nominate Opportunity" }).click();
   await expect(page.getByRole("button", { name: "Prepare Content Brief" })).toBeVisible();
   const contentOpportunity = page.url();
   await page.goto("/monthly-cycles");
@@ -107,7 +107,12 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await expect(page.locator("main")).toContainText("INTERNAL_LINK_PROPOSAL");
   await expect(page.locator("main")).toContainText("human input");
 
-  await openOpportunity(page, "ai.structured_data");
+  await page.goto("/opportunities");
+  await page.getByLabel("Work type").selectOption("SCHEMA");
+  await page.getByLabel("Proposed topic").fill("Review missing business structured data");
+  await page.getByLabel("Editorial rationale").fill("Human review of the actual audit schema warning; verified entity facts are still needed.");
+  await page.getByRole("button", { name: "Nominate Opportunity" }).click();
+  await expect(page.getByRole("button", { name: "Prepare Schema" })).toBeVisible();
   const schemaOpportunity = page.url();
   await page.getByRole("button", { name: "Prepare Schema" }).click();
   await prepared(page);

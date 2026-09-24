@@ -17,7 +17,7 @@ export async function nominateContentOpportunityAction(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   let id: string;
   try {
-    const result = await nominateContentOpportunity(shell.workspaceContext, { websiteId: value(formData, "websiteId"), title: value(formData, "title"), rationale: value(formData, "rationale") });
+    const result = await nominateContentOpportunity(shell.workspaceContext, { websiteId: value(formData, "websiteId"), title: value(formData, "title"), rationale: value(formData, "rationale"), kind: value(formData, "kind") });
     id = result.id;
   } catch (error) {
     if (error instanceof ContentOpportunityValidationError) redirect(`/opportunities?validation=${encodeURIComponent(error.message)}`);
