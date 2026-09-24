@@ -61,3 +61,12 @@ export function resolveWorkspaceContextFromMembership(
     correlationId: input.correlationId,
   };
 }
+
+// A browser preference is not an explicit authorization request. It can outlive
+// sign-out or membership revocation; select only a current authenticated scope.
+// Explicit switchWorkspaceAction continues to use the strict resolver above.
+export function resolveWorkspaceShellPreference(input: ResolveWorkspaceContextInput): WorkspaceContext {
+  const active = input.memberships.filter(m => m.userId === input.actor?.userId && m.status === "ACTIVE");
+  const requested = active.find(m => m.workspaceId === input.requestedWorkspaceId);
+  return resolveWorkspaceContextFromMembership({ ...input, requestedWorkspaceId: requested?.workspaceId ?? active[0]?.workspaceId });
+}

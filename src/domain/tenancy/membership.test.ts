@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AuthorizationError } from "./context";
 import {
   resolveWorkspaceContextFromMembership,
+  resolveWorkspaceShellPreference,
   type WorkspaceMembershipRecord,
 } from "./membership";
 
@@ -123,4 +124,17 @@ describe("workspace membership context resolution", () => {
       ).toThrow("A valid active workspace membership is required.");
     }
   });
+});
+
+describe("untrusted browser workspace preference",()=>{
+ it("ignores another account's stale cookie while resolving only an active membership",()=>{
+  expect(resolveWorkspaceShellPreference({actor:{userId:"user-1"},memberships,requestedWorkspaceId:"workspace-b"}).workspaceId).toBe("workspace-a");
+  expect(()=>resolveWorkspaceContextFromMembership({actor:{userId:"user-1"},memberships,requestedWorkspaceId:"workspace-b"})).toThrow(AuthorizationError);
+ });
+ it("preserves a valid preference and ignores revoked or malformed preferences",()=>{
+  for(const requestedWorkspaceId of ["workspace-a","workspace-c","not-a-workspace"]) expect(resolveWorkspaceShellPreference({actor:{userId:"user-1"},memberships,requestedWorkspaceId}).workspaceId).toBe("workspace-a");
+ });
+ it("cannot manufacture membership for an unauthenticated or unrelated account",()=>{
+  for(const userId of [undefined,"unrelated-user"])expect(()=>resolveWorkspaceShellPreference({actor:{userId},memberships,requestedWorkspaceId:"workspace-a"})).toThrow(AuthorizationError);
+ });
 });

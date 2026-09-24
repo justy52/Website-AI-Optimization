@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth/config";
 import type { WorkspaceContext } from "@/domain/tenancy/context";
 import { AuthorizationError } from "@/domain/tenancy/context";
-import { resolveWorkspaceContextFromMembership } from "@/domain/tenancy/membership";
+import { resolveWorkspaceShellPreference } from "@/domain/tenancy/membership";
 import { serverEnv } from "@/lib/env";
 
 import {
@@ -65,7 +65,7 @@ export const getWorkspaceShellContext = cache(async () => {
 
   const cookieStore = await cookies();
   const requestedWorkspaceId = cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value;
-  const workspaceContext = resolveWorkspaceContextFromMembership({
+  const workspaceContext = resolveWorkspaceShellPreference({
     actor: { userId: user.id },
     memberships,
     requestedWorkspaceId,
