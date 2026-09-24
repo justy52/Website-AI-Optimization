@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { activityEvents, opportunities } from "@/db/schema";
 import type { WorkspaceContext } from "@/domain/tenancy/context";
 
-import { generateOpportunitiesForAuditRun } from "./opportunities";
+import { listOpportunities, generateOpportunitiesForAuditRun } from "./opportunities";
 
 describe("generateOpportunitiesForAuditRun", () => {
   it("refreshes an existing open Opportunity for CRITICAL dedupe without creating a duplicate", async () => {
@@ -160,4 +160,10 @@ describe("generateOpportunitiesForAuditRun", () => {
       }),
     );
   });
+});
+
+it("malformed client/site URL filters return no matches without a database error",async()=>{
+ const context:WorkspaceContext={workspaceId:"00000000-0000-4000-8000-000000000001",actorType:"USER",role:"ANALYST",userId:"user-a"};
+ expect(await listOpportunities(context,{websiteId:"qa-execution"})).toEqual([]);
+ expect(await listOpportunities(context,{clientId:"not-a-uuid"})).toEqual([]);
 });

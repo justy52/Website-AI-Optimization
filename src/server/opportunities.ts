@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   and,
   asc,
@@ -462,6 +463,8 @@ export async function listOpportunities(
   filters: OpportunityFilters = {},
   database = db,
 ) {
+  // URL filters are untrusted input; malformed IDs represent no matches.
+  if ([filters.clientId, filters.websiteId].some(id => id && !z.string().uuid().safeParse(id).success)) return [];
   return withTenantContext(database, context, async (tx) => {
     const conditions: SQL[] = [eq(opportunities.workspaceId, context.workspaceId)];
 

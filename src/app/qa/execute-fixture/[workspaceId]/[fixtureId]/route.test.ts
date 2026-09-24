@@ -1,0 +1,10 @@
+import {afterEach,expect,it,vi} from "vitest";
+const env=vi.hoisted(()=>({APP_ENV:"qa",BETTER_AUTH_URL:"https://optiq-qa.vercel.app"}));
+const read=vi.hoisted(()=>vi.fn(async()=>({title:"Safe & title",description:'" escaped',faultMode:"NONE",lastOperation:"INITIAL"})));
+vi.mock("@/lib/env",()=>({serverEnv:env}));vi.mock("@/server/qa-execution",()=>({getPublicQaFixture:read}));
+import {GET} from "./route";
+const params=Promise.resolve({workspaceId:"11111111-1111-4111-8111-111111111111",fixtureId:"22222222-2222-4222-8222-222222222222"});
+afterEach(()=>{env.APP_ENV="qa";env.BETTER_AUTH_URL="https://optiq-qa.vercel.app";vi.clearAllMocks();});
+it.each(["production","local"])("public fixture is unavailable in %s",async mode=>{env.APP_ENV=mode;expect((await GET(new Request("https://example.test"),{params})).status).toBe(404);expect(read).not.toHaveBeenCalled();});
+it("rejects non-QA infrastructure and invalid fixture identifiers",async()=>{env.BETTER_AUTH_URL="https://customer.example";expect((await GET(new Request("https://example.test"),{params})).status).toBe(404);env.BETTER_AUTH_URL="https://optiq-qa.vercel.app";expect((await GET(new Request("https://example.test"),{params:Promise.resolve({workspaceId:"arbitrary",fixtureId:"bad"})})).status).toBe(404);expect(read).not.toHaveBeenCalled();});
+it("serves only escaped harmless HTML with scripts disabled and no caching",async()=>{const response=await GET(new Request("https://example.test"),{params});expect(response.status).toBe(200);expect(response.headers.get("Content-Security-Policy")).toContain("default-src 'none'");expect(response.headers.get("Cache-Control")).toBe("no-store");expect(await response.text()).toContain("Safe &amp; title");});
