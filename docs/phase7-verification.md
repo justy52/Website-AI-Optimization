@@ -40,7 +40,7 @@ guards, UNAVAILABLE states and the new immutable agent-definition version.
 
 `/api/qa/verification-fixture` is available only with `APP_ENV=qa`. It renders fixed,
 harmless HTML in bounded timestamp-selected windows: an initial audit finding,
-implemented title with mismatched headings, then corrected headings.
+implemented title with mismatched structured data, then corrected structured data.
 It has no database, mutation method, customer data, arbitrary HTML input or secret.
 The browser test records the initial real audit and independently re-fetches this
 public target using the normal verifier. No verifier special case or injected pass

@@ -18,9 +18,9 @@ async function ensureWork(page: Page, opportunityId: string) {
     await page.getByRole("button", { name: "Add to cycle" }).click();
   }
 }
-async function prepareAndPackage(page: Page, cycleUrl: string, opportunityId: string) {
+async function prepareAndPackage(page: Page, cycleUrl: string, opportunityId: string, action = "Prepare Page Optimization") {
   await page.goto(cycleUrl); await ensureWork(page, opportunityId);
-  await work(page, opportunityId).getByRole("button", { name: "Prepare Page Optimization" }).click();
+  await work(page, opportunityId).getByRole("button", { name: action }).click();
   await expect.poll(async () => { await page.reload({ waitUntil: "networkidle" }); return work(page, opportunityId).getByRole("link", { name: "Review draft" }).count(); }, { timeout: 120_000, intervals: [2000, 4000] }).toBe(1);
   await work(page, opportunityId).getByRole("link", { name: "Review draft" }).click();
   const artifactUrl = page.url();
@@ -70,31 +70,40 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   await page.getByRole("button", { name: "Start audit" }).click(); await expect(page.getByRole("heading", { name: /Audit/ })).toBeVisible(); await page.getByRole("button", { name: "Finalize audit snapshot" }).click();
   await page.goto("/opportunities");
   const titleId = (await page.locator("main a.mx-row").filter({ hasText: "seo.title" }).first().getAttribute("href"))!.split("/").pop()!;
-  const headingId = (await page.locator("main a.mx-row").filter({ hasText: "seo.heading_structure" }).first().getAttribute("href"))!.split("/").pop()!;
+  // Lesser audit warnings are intentionally not auto-created. Use the existing
+  // human schema nomination from real audit evidence for a distinct second item.
+  await page.getByLabel("Work type").selectOption("SCHEMA");
+  await page.getByLabel("Proposed topic").fill("Verify the QA fixture entity schema");
+  await page.getByLabel("Editorial rationale").fill("Human review of the captured missing structured-data audit finding on the harmless public QA fixture.");
+  await page.getByRole("button", { name: "Nominate Opportunity" }).click();
+  await expect(page.getByRole("button", { name: "Prepare Schema" })).toBeVisible();
+  const schemaId = new URL(page.url()).pathname.split("/").pop()!;
   await page.goto("/monthly-cycles"); await page.getByLabel("Client").selectOption({ label: `${client} - GROWTH` }); await page.getByRole("button", { name: "Create cycle" }).click();
   await expect(page.getByRole("heading", { name: "Monthly Fulfillment Cycle" })).toBeVisible(); const cycleUrl = page.url();
   const titlePackage = await prepareAndPackage(page, cycleUrl, titleId);
   await expect.poll(async () => (await (await request.get(target)).text()).includes("<title>Verification fixture | OPTIQ QA Fixture</title>"), { timeout: 120_000, intervals: [3000] }).toBe(true);
   await verify(page, titleId, "VERIFIED");
+  const titleCredit = await page.locator(".mx-method").filter({ hasText: "Page optimizations" }).innerText();
   await page.getByRole("link", { name: "Verification VERIFIED", exact: true }).first().click();
   await expect(page.locator("main")).toContainText("DETERMINISTIC"); await expect(page.locator("main")).toContainText("public-html-verifier-v1.0"); await expect(page.locator("main")).toContainText("observed");
-  await prepareAndPackage(page, cycleUrl, headingId);
+  await prepareAndPackage(page, cycleUrl, schemaId, "Prepare Schema");
   expect(Date.now(), "Mismatch must be observed before the scheduled fixture correction").toBeLessThan(correctAt);
-  await verify(page, headingId, "VERIFICATION_FAILED");
+  await verify(page, schemaId, "VERIFICATION_FAILED");
+  await expect(page.locator(".mx-method").filter({ hasText: "Page optimizations" })).toHaveText(titleCredit);
   await expect(work(page, titleId)).toContainText("VERIFIED");
   await page.getByRole("button", { name: "Generate draft" }).click();
   await expect(page.locator("main")).toContainText("Verification Attention"); await expect(page.locator("main")).toContainText("VERIFICATION_FAILED");
-  await expect.poll(async () => (await (await request.get(target)).text()).includes("<h1>Verification fixture</h1>"), { timeout: 480_000, intervals: [15_000] }).toBe(true);
-  await verify(page, headingId, "VERIFIED");
+  await expect.poll(async () => (await (await request.get(target)).text()).includes('"name":"OPTIQ QA Fixture"'), { timeout: 480_000, intervals: [15_000] }).toBe(true);
+  await verify(page, schemaId, "VERIFIED");
   await expect(page.getByRole("link", { name: "Verification VERIFIED", exact: true })).toHaveCount(2);
   await expect(page.getByRole("link", { name: "Verification VERIFICATION_FAILED", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "Generate draft" }).click();
   const completed = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Completed", exact: true }) }).last();
   await expect(completed).toContainText("VERIFIED"); await expect(completed).not.toContainText("VERIFICATION_FAILED");
-  await expect(page.locator("main")).toContainText("10 min");
+  await expect(page.locator(".mx-method").filter({ hasText: "Manual minutes" })).toContainText("10 /");
   await page.goto(`/implementation-packages/${titlePackage.packageId}`); await expect(page.locator("main")).toContainText("Approved artifact v1");
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto(cycleUrl); await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click(); await expect(page).toHaveURL(/login/); await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByLabel("Email").fill(email); await page.getByLabel("Password").fill(password); await page.getByRole("button", { name: "Enter" }).click();
-  await page.goto(cycleUrl); await expect(work(page, titleId)).toContainText("VERIFIED"); await expect(work(page, headingId)).toContainText("VERIFIED");
+  await page.goto(cycleUrl); await expect(work(page, titleId)).toContainText("VERIFIED"); await expect(work(page, schemaId)).toContainText("VERIFIED");
 });
