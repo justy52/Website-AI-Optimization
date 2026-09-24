@@ -1,3 +1,4 @@
+import { serverEnv } from "@/lib/env";
 import Link from "next/link";
 
 import {
@@ -67,6 +68,7 @@ export default async function AppLayout({
                 </a>
               );
             })}
+          {serverEnv.APP_ENV === "qa" ? <a className="mx-nav-item" href="/qa-execution">QA Execution</a> : null}
           </nav>
           <div className="mx-rail-foot">
             <span className="mx-led" aria-hidden />

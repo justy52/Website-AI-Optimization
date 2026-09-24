@@ -1,6 +1,6 @@
 import type { AgentPermissionLevel } from "./permissions";
 
-export const AGENT_CATALOG_VERSION = "agent-catalog-v1.2";
+export const AGENT_CATALOG_VERSION = "agent-catalog-v1.3";
 export const EXISTING_PAGE_OPTIMIZATION_AGENT_KEY =
   "existing-page-optimization";
 export const EXISTING_PAGE_OPTIMIZATION_AGENT_VERSION = "epo-prepare-v1.0";
@@ -21,6 +21,7 @@ export type AgentCapabilityType =
   | "REPORTING"
   | "CLIENT_COMMUNICATION"
   | "VERIFICATION"
+  | "QA_EXECUTION"
   | "ORCHESTRATOR";
 
 export type AgentBudgetLimits = {
@@ -82,6 +83,12 @@ const prepareTools = [
 ];
 
 export const agentDefinitions: AgentDefinition[] = [
+  {
+    key: "qa-metadata-execution", version: "qa-metadata-execution-v1.0", name: "QA Metadata Execution Agent",
+    capabilityType: "QA_EXECUTION", defaultPermissionLevel: "EXECUTE", allowedToolKeys: ["execute.qa_metadata.v1"],
+    defaultTimeoutSeconds: 60, budgetLimits: { maxToolCalls: 1, maxModelCalls: 0, maxEvidenceBytes: 0, maxInputBytes: 12000, maxOutputBytes: 4000, maxOutputTokens: 0, maxCostCents: 0 },
+    outputSchemaVersion: "qa-execution-v1.0", enabled: true,
+  },
   {
     key: "website-health",
     version: "website-health-v1.0",

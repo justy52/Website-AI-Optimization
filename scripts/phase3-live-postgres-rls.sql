@@ -54,7 +54,7 @@ DECLARE
 BEGIN
   SELECT count(*) INTO enabled_count
   FROM "agent_definitions"
-  WHERE enabled = true AND version LIKE '%v1.0';
+  WHERE enabled = true AND version LIKE '%v1.0' AND key <> 'qa-metadata-execution';
 
   IF enabled_count <> 1 THEN
     RAISE EXCEPTION 'Expected exactly one enabled Phase 3 agent, saw %', enabled_count;
@@ -63,7 +63,8 @@ BEGIN
   SELECT count(*) INTO execute_count
   FROM "agent_definitions"
   WHERE enabled = true
-    AND default_permission_level = 'EXECUTE';
+    AND default_permission_level = 'EXECUTE'
+    AND NOT (key='qa-metadata-execution' AND version='qa-metadata-execution-v1.0');
 
   IF execute_count <> 0 THEN
     RAISE EXCEPTION 'Enabled Phase 3 agent definitions may not use EXECUTE.';

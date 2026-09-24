@@ -20,6 +20,8 @@ import { SCORING_DEFINITION_VERSION } from "@/domain/audits/scoring";
 import { PRIORITY_DEFINITION_VERSION } from "@/domain/opportunities/priority";
 import { SERVICE_PLAN_DEFINITION_VERSION } from "@/domain/service-plans";
 
+export type ExecutionStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "ROLLED_BACK" | "ROLLBACK_FAILED" | "BLOCKED" | "VERIFYING" | "VERIFIED";
+
 export const workspaceRoleEnum = pgEnum("workspace_role", [
   "OWNER",
   "ADMIN",
@@ -3159,3 +3161,73 @@ export const activityEvents = pgTable(
     index("activity_events_correlation_idx").on(table.correlationId),
   ],
 );
+
+// QA-only execution domain. Public fixture reads expose metadata only; all
+// approvals and mutations remain authenticated, tenant scoped and governed.
+export const qaExecutionFixtures = pgTable("qa_execution_fixtures", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull(), websiteId: uuid("website_id").notNull(),
+  title: text("title").notNull().default("Home"), description: text("description").notNull().default(""),
+  revision: integer("revision").notNull().default(1),
+  faultMode: text("fault_mode").$type<"NONE" | "TITLE_MISMATCH">().notNull().default("NONE"),
+  lastOperation: text("last_operation").$type<"INITIAL" | "APPLY" | "ROLLBACK">().notNull().default("INITIAL"),
+  lastChangeId: text("last_change_id"), createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: "restrict" }),
+  createdAt: createdAt(), updatedAt: updatedAt(),
+}, t => [
+  uniqueIndex("qa_execution_fixtures_workspace_id_unique").on(t.workspaceId, t.id),
+  uniqueIndex("qa_execution_fixtures_binding_unique").on(t.workspaceId, t.clientId, t.websiteId, t.id),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.websiteId], foreignColumns: [websites.workspaceId, websites.clientId, websites.id], name: "qa_execution_fixture_site_fk" }).onDelete("restrict"),
+  check("qa_fixture_metadata_bounds", sql`length(${t.title}) between 1 and 160 and length(${t.description}) <= 320 and ${t.revision} > 0`),
+  check("qa_fixture_mode_check", sql`${t.faultMode} in ('NONE','TITLE_MISMATCH') and ${t.lastOperation} in ('INITIAL','APPLY','ROLLBACK')`),
+]).enableRLS();
+
+export const executionApprovals = pgTable("execution_approvals", {
+  id: uuid("id").primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull(), websiteId: uuid("website_id").notNull(), opportunityId: uuid("opportunity_id").notNull(),
+  fixtureId: uuid("fixture_id").notNull(), implementationPackageId: uuid("implementation_package_id").notNull(),
+  artifactId: uuid("artifact_id").notNull(), artifactVersion: integer("artifact_version").notNull(),
+  actionSummary: jsonb("action_summary").$type<Record<string, unknown>>().notNull(), actionHash: text("action_hash").notNull(),
+  status: text("status").$type<"PENDING" | "APPROVED" | "REJECTED">().notNull().default("PENDING"),
+  requestedByUserId: text("requested_by_user_id").notNull().references(() => user.id, { onDelete: "restrict" }),
+  decidedByUserId: text("decided_by_user_id").references(() => user.id, { onDelete: "restrict" }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }), createdAt: createdAt(),
+}, t => [
+  uniqueIndex("execution_approvals_workspace_id_unique").on(t.workspaceId, t.id),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.websiteId, t.fixtureId], foreignColumns: [qaExecutionFixtures.workspaceId, qaExecutionFixtures.clientId, qaExecutionFixtures.websiteId, qaExecutionFixtures.id], name: "execution_approval_fixture_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.implementationPackageId, t.artifactId, t.artifactVersion], foreignColumns: [implementationPackages.workspaceId, implementationPackages.id, implementationPackages.artifactId, implementationPackages.artifactVersion], name: "execution_approval_package_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.opportunityId], foreignColumns: [opportunities.workspaceId, opportunities.clientId, opportunities.id], name: "execution_approval_opportunity_fk" }).onDelete("restrict"),
+  check("execution_approval_status_check", sql`${t.status} in ('PENDING','APPROVED','REJECTED')`),
+]).enableRLS();
+
+export const executionRecords = pgTable("execution_records", {
+  id: uuid("id").primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull(), websiteId: uuid("website_id").notNull(), opportunityId: uuid("opportunity_id").notNull(),
+  fixtureId: uuid("fixture_id").notNull(), implementationPackageId: uuid("implementation_package_id").notNull(),
+  approvalId: uuid("approval_id").notNull(), agentRunId: uuid("agent_run_id").notNull(),
+  actionKey: text("action_key").notNull(), actionVersion: text("action_version").notNull(), target: text("target").notNull(),
+  kind: text("kind").$type<"APPLY" | "ROLLBACK">().notNull(), parentExecutionId: uuid("parent_execution_id"),
+  actionSummary: jsonb("action_summary").$type<Record<string, unknown>>().notNull(), actionHash: text("action_hash").notNull(),
+  preChangeSnapshot: jsonb("pre_change_snapshot").$type<Record<string, unknown>>().notNull(),
+  postChangeSnapshot: jsonb("post_change_snapshot").$type<Record<string, unknown>>(),
+  status: text("status").$type<ExecutionStatus>().notNull().default("QUEUED"),
+  idempotencyKey: text("idempotency_key").notNull(), changeId: text("change_id"),
+  verificationRunId: uuid("verification_run_id"), verificationStatus: text("verification_status"),
+  verificationSnapshot: jsonb("verification_snapshot").$type<Record<string, unknown>>(),
+  errorSummary: text("error_summary"), actorUserId: text("actor_user_id").notNull().references(() => user.id, { onDelete: "restrict" }),
+  trigger: text("trigger").$type<"USER" | "AUTOMATIC_ROLLBACK">().notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }), completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: createdAt(), updatedAt: updatedAt(),
+}, t => [
+  uniqueIndex("execution_records_workspace_id_unique").on(t.workspaceId, t.id),
+  uniqueIndex("execution_records_idempotency_unique").on(t.workspaceId, t.idempotencyKey),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.websiteId, t.fixtureId], foreignColumns: [qaExecutionFixtures.workspaceId, qaExecutionFixtures.clientId, qaExecutionFixtures.websiteId, qaExecutionFixtures.id], name: "execution_record_fixture_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.implementationPackageId], foreignColumns: [implementationPackages.workspaceId, implementationPackages.id], name: "execution_record_package_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.approvalId], foreignColumns: [executionApprovals.workspaceId, executionApprovals.id], name: "execution_record_approval_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.agentRunId], foreignColumns: [agentRuns.workspaceId, agentRuns.id], name: "execution_record_run_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.verificationRunId], foreignColumns: [agentRuns.workspaceId, agentRuns.id], name: "execution_record_verifier_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.parentExecutionId], foreignColumns: [t.workspaceId, t.id], name: "execution_record_parent_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.opportunityId], foreignColumns: [opportunities.workspaceId, opportunities.clientId, opportunities.id], name: "execution_record_opportunity_fk" }).onDelete("restrict"),
+  check("execution_record_status_check", sql`${t.status} in ('QUEUED','RUNNING','SUCCEEDED','FAILED','ROLLED_BACK','ROLLBACK_FAILED','BLOCKED','VERIFYING','VERIFIED')`),
+  check("execution_record_kind_check", sql`(${t.kind} = 'APPLY' and ${t.parentExecutionId} is null) or (${t.kind} = 'ROLLBACK' and ${t.parentExecutionId} is not null)`),
+]).enableRLS();

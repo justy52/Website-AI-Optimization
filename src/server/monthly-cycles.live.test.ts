@@ -1,3 +1,5 @@
+import { setQaExecutionFlag, requestQaExecutionApproval, decideQaExecutionApproval, requestQaExecution, applyQaExecution, processQaExecution, requestQaRollback, getQaExecutionDetail } from "./qa-execution";
+import { fixtureUrl, renderQaFixture, QA_WORKSPACE_FLAG, QA_ACTION_FLAG } from "@/domain/execution/qa-execution";
 import { requestPrepareDraftForOpportunity, executePrepareDraftAgentRun, decideApprovalRequest, getDraftArtifact, createBusinessFact } from "./agents";
 import { nominateContentOpportunity } from "./content-opportunities";
 import { agentDefinitions as runtimeDefinitions } from "@/domain/agents/catalog";
@@ -461,6 +463,120 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     expect((await client.query("select count(*)::int n from implementation_verification_records where agent_run_id=$1", [expired.agentRunId])).rows[0].n).toBe(0);
     const result = await executeImplementationVerification(context, retry.agentRunId, database, publicResponse("Expected title"));
     expect(result.structuredOutput?.result).toBe("VERIFIED");
+  });
+
+  const qaEnv = { APP_ENV: "qa", BETTER_AUTH_URL: "https://optiq-qa.vercel.app", QA_EXECUTE_ENABLED: true };
+  async function qaSetup(faultMode = "NONE") {
+    const fixtureId = randomUUID();
+    await client.query("update websites set canonical_url=$1 where id=$2", [fixtureUrl(b, fixtureId), "30000000-0000-4000-8000-0000000000b1"]);
+    await client.query("insert into workspace_memberships(workspace_id,user_id,role,status) values($1,$2,'OWNER','ACTIVE') on conflict(workspace_id,user_id) do update set role='OWNER',status='ACTIVE'", [b,context.userId]);
+    await client.query("insert into qa_execution_fixtures(id,workspace_id,client_id,website_id,fault_mode,created_by_user_id) values($1,$2,$3,$4,$5,$6)",[fixtureId,b,"20000000-0000-4000-8000-0000000000b1","30000000-0000-4000-8000-0000000000b1",faultMode,context.userId]);
+    await setQaExecutionFlag(context,QA_WORKSPACE_FLAG,true,database,qaEnv); await setQaExecutionFlag(context,QA_ACTION_FLAG,true,database,qaEnv);
+    const {pkg,artifact}=await approvedPackage("Approved QA title");
+    const approval=await requestQaExecutionApproval(context,pkg.id,database,qaEnv);
+    const fetchOptions={lookupHost:async()=>["93.184.216.34"],requestImpl:async()=>{
+      const f=(await client.query("select title,description,fault_mode,last_operation from qa_execution_fixtures where id=$1",[fixtureId])).rows[0];
+      return {status:200,headers:{"content-type":"text/html"},bodyText:renderQaFixture({...f,faultMode:f.fault_mode,lastOperation:f.last_operation})};
+    }};
+    return {pkg,artifact,fixtureId,approval,fetchOptions};
+  }
+  async function queuedQa(faultMode="NONE") {
+    const setup=await qaSetup(faultMode); await decideQaExecutionApproval(context,setup.approval.id,"APPROVED",database,qaEnv);
+    const record=await requestQaExecution(context,setup.approval.id,database,qaEnv); return {...setup,record};
+  }
+  it("Phase 8 separate approval is mandatory; analyst and cross-tenant requests fail",async()=>{
+    const q=await qaSetup();
+    await expect(requestQaExecution(context,q.approval.id,database,qaEnv)).rejects.toThrow("Separate approved execution approval");
+    await expect(decideQaExecutionApproval({...context,role:"ANALYST"},q.approval.id,"APPROVED",database,qaEnv)).rejects.toThrow("not allowed");
+    await expect(requestQaExecution({...context,role:"ANALYST"},q.approval.id,database,qaEnv)).rejects.toThrow("not allowed");
+    await expect(requestQaExecutionApproval({...context,workspaceId:a,userId:"rls-user-a"},q.pkg.id,database,qaEnv)).rejects.toThrow("not found");
+    expect((await requestQaExecutionApproval(context,q.pkg.id,database,qaEnv)).id).toBe(q.approval.id);
+  });
+  it("Phase 8 exact action applies once, independently verifies and preserves terminal history",async()=>{
+    const q=await queuedQa(); const result=await processQaExecution(context,q.record.id,database,qaEnv,q.fetchOptions);
+    expect(result.status).toBe("VERIFIED"); expect(result.verificationStatus).toBe("VERIFIED");
+    expect((await requestQaExecution(context,q.approval.id,database,qaEnv)).id).toBe(q.record.id);
+    expect((await processQaExecution(context,q.record.id,database,qaEnv,q.fetchOptions)).id).toBe(q.record.id);
+    expect((await client.query("select revision,title from qa_execution_fixtures where id=$1",[q.fixtureId])).rows[0]).toEqual({revision:2,title:"Approved QA title"});
+    const runs=(await client.query("select permission_level,agent_definition_id from agent_runs where id=any($1)",[[result.agentRunId,result.verificationRunId]])).rows;
+    expect(runs.map(r=>r.permission_level).sort()).toEqual(["EXECUTE","OBSERVE"]);expect(runs.every(r=>r.agent_definition_id)).toBe(true);
+    for(const query of ["update execution_records set status='FAILED' where id=$1","delete from execution_records where id=$1"]) {
+      await client.query("savepoint retained_execution");await expect(client.query(query,[q.record.id])).rejects.toMatchObject({code:"23514"});await client.query("rollback to savepoint retained_execution");
+    }
+    expect((await row("monthly_cycles")).existing_page_optimizations_completed).toBe(0);
+  });
+  it("Phase 8 deterministic failure rolls back and independently verifies; original failure remains",async()=>{
+    const q=await queuedQa("TITLE_MISMATCH"); const result=await processQaExecution(context,q.record.id,database,qaEnv,q.fetchOptions);
+    expect(result.status).toBe("FAILED");expect(result.verificationStatus).toBe("VERIFICATION_FAILED");
+    const detail=await getQaExecutionDetail(context,result.id,database);expect(detail!.rollbacks).toHaveLength(1);expect(detail!.rollbacks[0]).toMatchObject({status:"ROLLED_BACK",verificationStatus:"VERIFIED"});
+    await processQaExecution(context,q.record.id,database,qaEnv,q.fetchOptions);
+    expect((await client.query("select revision,title from qa_execution_fixtures where id=$1",[q.fixtureId])).rows[0]).toEqual({revision:3,title:"Home"});
+    expect((await getQaExecutionDetail(context,result.id,database))!.record.status).toBe("FAILED");
+  });
+  it("Phase 8 manual rollback is authorized, idempotent and preserves the original success",async()=>{
+    const q=await queuedQa();await processQaExecution(context,q.record.id,database,qaEnv,q.fetchOptions);
+    await expect(requestQaRollback({...context,role:"ANALYST"},q.record.id,false,database,qaEnv)).rejects.toThrow("not allowed");
+    const rollback=await requestQaRollback(context,q.record.id,false,database,qaEnv);
+    expect((await requestQaRollback(context,q.record.id,false,database,qaEnv)).id).toBe(rollback.id);
+    expect((await processQaExecution(context,rollback.id,database,qaEnv,q.fetchOptions)).status).toBe("ROLLED_BACK");
+    expect((await getQaExecutionDetail(context,q.record.id,database))!.record.status).toBe("VERIFIED");
+  });
+  it.each(["global","workspace","action","production","local","role"])("Phase 8 %s stop is rechecked after queueing and performs no write",async gate=>{
+    const q=await queuedQa();let env=qaEnv;
+    if(gate==="global")env={...qaEnv,QA_EXECUTE_ENABLED:false};
+    if(gate==="production"||gate==="local")env={...qaEnv,APP_ENV:gate};
+    if(gate==="workspace"||gate==="action")await setQaExecutionFlag(context,gate==="workspace"?QA_WORKSPACE_FLAG:QA_ACTION_FLAG,false,database,qaEnv);
+    if(gate==="role")await client.query("update workspace_memberships set role='ANALYST' where workspace_id=$1 and user_id=$2",[b,context.userId]);
+    expect((await applyQaExecution(context,q.record.id,database,env)).status).toBe("BLOCKED");
+    expect((await client.query("select revision from qa_execution_fixtures where id=$1",[q.fixtureId])).rows[0].revision).toBe(1);
+  });
+  it("Phase 8 stale precondition blocks after another approved action, and new artifacts cannot alter approval",async()=>{
+    const q=await queuedQa(); const newer=await approvedPackage("New version title",21);
+    const approval=await requestQaExecutionApproval(context,newer.pkg.id,database,qaEnv);await decideQaExecutionApproval(context,approval.id,"APPROVED",database,qaEnv);
+    const later=await requestQaExecution(context,approval.id,database,qaEnv);
+    await processQaExecution(context,q.record.id,database,qaEnv,q.fetchOptions);
+    expect((await applyQaExecution(context,later.id,database,qaEnv)).status).toBe("BLOCKED");
+    expect((await getQaExecutionDetail(context,q.record.id,database))!.record.actionSummary.artifactId).toBe(q.artifact.id);
+    for(const query of ["update execution_approvals set action_hash='forged' where id=$1","delete from execution_approvals where id=$1"]) {
+      await client.query("savepoint immutable_action");await expect(client.query(query,[q.approval.id])).rejects.toMatchObject({code:"23514"});await client.query("rollback to savepoint immutable_action");
+    }
+  });
+  it("Phase 8 unavailable public fetch remains unavailable with no blind rollback",async()=>{
+    const q=await queuedQa(); const result=await processQaExecution(context,q.record.id,database,qaEnv,{lookupHost:async()=>["127.0.0.1"]});
+    expect(result.status).toBe("SUCCEEDED");expect(result.verificationStatus).toBe("UNAVAILABLE");expect((await getQaExecutionDetail(context,result.id,database))!.rollbacks).toHaveLength(0);
+  });
+  it("Phase 8 tenant RLS and composite references protect every new table",async()=>{
+    const q=await queuedQa();
+    const rows=(await Promise.all(["qa_execution_fixtures","execution_approvals","execution_records"].map(async table=>({table,row:(await client.query("select * from "+table+" where workspace_id=$1 limit 1",[b])).rows[0]}))));
+    await client.query("select set_config('app.workspace_id',$1,true)",[a]);
+    for(const {table,row:r} of rows){
+      expect((await client.query("select * from "+table+" where id=$1",[r.id])).rowCount).toBe(0);
+      expect((await client.query("update "+table+" set workspace_id=$1 where id=$2",[a,r.id])).rowCount).toBe(0);
+      expect((await client.query("delete from "+table+" where id=$1",[r.id])).rowCount).toBe(0);
+      for(const workspace of [b,a]){
+        await client.query("savepoint bad_execution_tenant");
+        await expect(client.query("insert into "+table+" select * from json_populate_record(null::"+table+",$1::json)",[JSON.stringify({...r,id:randomUUID(),workspace_id:workspace})])).rejects.toBeTruthy();
+        await client.query("rollback to savepoint bad_execution_tenant");
+      }
+      expect((await client.query("select relrowsecurity,relforcerowsecurity from pg_class where oid=$1::regclass",["public."+table])).rows[0]).toEqual({relrowsecurity:true,relforcerowsecurity:true});
+    }
+    expect(await getQaExecutionDetail({...context,workspaceId:a},q.record.id,database)).toBeNull();
+  });
+
+  it("Phase 8 concurrent request and workflow retries commit exactly one mutation",async()=>{
+    const q=await qaSetup(); await decideQaExecutionApproval(context,q.approval.id,"APPROVED",database,qaEnv);
+    // Only the disposable database: committed fixtures are retained for this real
+    // multi-connection proof, and removed only by the next guarded schema reset.
+    await client.query("commit");
+    const concurrentDb=drizzle({client:pool,schema});
+    const requests=await Promise.all([requestQaExecution(context,q.approval.id,concurrentDb,qaEnv),requestQaExecution(context,q.approval.id,concurrentDb,qaEnv)]);
+    expect(requests[0].id).toBe(requests[1].id);
+    const outcomes=await Promise.all([applyQaExecution(context,requests[0].id,concurrentDb,qaEnv),applyQaExecution(context,requests[1].id,concurrentDb,qaEnv)]);
+    expect(outcomes.every(r=>r.status==="SUCCEEDED")).toBe(true);
+    await client.query("begin");await client.query("select set_config('app.workspace_id',$1,true)",[b]);
+    expect((await client.query("select revision from qa_execution_fixtures where id=$1",[q.fixtureId])).rows[0].revision).toBe(2);
+    expect((await client.query("select count(*)::int n from execution_records where approval_id=$1",[q.approval.id])).rows[0].n).toBe(1);
+    expect((await client.query("select count(*)::int n from agent_tool_calls where agent_run_id=$1",[requests[0].agentRunId])).rows[0].n).toBe(1);
   });
 
 });

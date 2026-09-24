@@ -20,6 +20,7 @@ export type AgentToolDefinition = {
   timeoutMs: number;
   costBehavior: "free" | "bounded_model" | "bounded_storage";
   readsUntrustedExternalContent: boolean;
+  executionPolicy?: { qaOnly: true; idempotent: true; rollbackSupported: true; verificationRequired: true };
 };
 
 const idInput = z.object({
@@ -33,6 +34,13 @@ const summaryOutput = z.object({
 });
 
 export const agentToolRegistry: AgentToolDefinition[] = [
+  {
+    key: "execute.qa_metadata.v1", version: "1.0", description: "QA-only exact fixture metadata action. Idempotent; rollback supported; independent verification required.",
+    inputSchema: z.object({ workspaceId: z.string().uuid(), executionRecordId: z.string().uuid(), actionHash: z.string().length(64) }).strict(),
+    outputSchema: z.object({ changeId: z.string().max(100), revision: z.number().int().positive() }).strict(),
+    executionPolicy: { qaOnly: true, idempotent: true, rollbackSupported: true, verificationRequired: true },
+    requiredPermission: "EXECUTE", resourceScope: "qa/exact-fixture", timeoutMs: 10000, costBehavior: "free", readsUntrustedExternalContent: false,
+  },
   ...["read.implementation_package.v1", "read.public_verification_target.v1", "compare.approved_implementation.v1"].map(key => ({
     key, version: "1.0", description: "Bounded read-only implementation verification; no external write.",
     inputSchema: idInput, outputSchema: summaryOutput, requiredPermission: "OBSERVE" as const,

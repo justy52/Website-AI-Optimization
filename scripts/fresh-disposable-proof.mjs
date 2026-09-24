@@ -73,7 +73,7 @@ try {
   // Each integration test inserts its own retained verification attempts inside
   // a rolled-back transaction. Never delete immutable history for test cleanup.
   for (const table of ordered.filter(t => !["agent_definitions", "service_plan_definitions", "implementation_verification_records"].includes(t))) {
-    for (const row of fixtures[table]) {
+    for (const row of fixtures[table] ?? []) {
       await connection.query("select set_config('app.workspace_id',$1,false)", [row.workspace_id ?? row.id ?? tenants[0]]);
       const columns = Object.keys(row).map(quote).join(",");
       await connection.query(`insert into ${quote(table)} (${columns}) select ${columns} from json_populate_record(null::${quote(table)}, $1::json) on conflict do nothing`, [JSON.stringify(row)]);
