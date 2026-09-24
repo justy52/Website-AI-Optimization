@@ -118,7 +118,9 @@ export function comparePublicPage(pkg: ImplementationPackage, page: SafeFetchRes
       const links = nodes.filter(n => n.tagName === "a" && attr(n, "href")).flatMap(n => {
         try { const url = new URL(attr(n, "href")!, documentBase); return url.protocol === "https:" ? [{ url: url.href, anchor: normalized(textContent(n)) }] : []; } catch { return []; }
       }).filter(link => link.url === new URL(expected.destinationPage).href);
-      observed = links.slice(0, 10);
+      // Keep the actual matching anchor in bounded evidence even if it occurs
+      // after many other links to the same destination.
+      observed = [...links].sort((a, b) => Number(b.anchor === normalized(expected.suggestedAnchor)) - Number(a.anchor === normalized(expected.suggestedAnchor))).slice(0, 10);
       if (links.some(link => link.anchor === normalized(expected.suggestedAnchor))) result = "VERIFIED";
       else if (links.length) { result = "VERIFICATION_WARNING"; rationale = "Destination link exists, but the approved anchor was not observed."; }
     } else {

@@ -68,6 +68,9 @@ export async function requestImplementationVerification(context: WorkspaceContex
     if (!pkg || pkg.opportunityId !== implementation.opportunityId) throw new MonthlyCycleValidationError("Exact implementation package binding was not found.");
     const snapshot = packageSchema.parse(pkg.snapshot);
     if (!snapshot.checks.length) throw new MonthlyCycleValidationError("This package requires human review; no deterministic method is supported.");
+    // Retire expired attempts across this cycle, including superseded manual
+    // records. Otherwise an orphaned older run could block close indefinitely.
+    await tx.update(agentRuns).set({ status: "TIMED_OUT", completedAt: new Date(), errorSummary: "Verification attempt expired without a completed result; no pass is claimed." }).where(and(eq(agentRuns.workspaceId, context.workspaceId), eq(agentRuns.agentKey, "verification"), sql`${agentRuns.inputSummary}->>'monthlyCycleId' = ${cycle.id}`, inArray(agentRuns.status, ["QUEUED", "RUNNING"]), sql`${agentRuns.deadlineAt} < now()`));
     const [active] = await tx.select().from(agentRuns).where(and(eq(agentRuns.workspaceId, context.workspaceId), eq(agentRuns.agentKey, "verification"), sql`${agentRuns.inputSummary}->>'implementationRecordId' = ${implementation.id}`, inArray(agentRuns.status, ["QUEUED", "RUNNING"]))).limit(1);
     if (active && active.deadlineAt && active.deadlineAt > new Date()) return { agentRunId: active.id, shouldStartWorkflow: false };
     if (active) await tx.update(agentRuns).set({ status: "TIMED_OUT", completedAt: new Date(), errorSummary: "Verification attempt expired; request a new attempt." }).where(scoped(context.workspaceId, active.id));

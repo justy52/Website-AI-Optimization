@@ -96,6 +96,7 @@ async function runMonitoringAndCompetitorObservation(page: Page) {
     .first();
   for (let expectedRuns = 1; expectedRuns <= 4; expectedRuns += 1) {
     await healthSchedule.getByRole("button", { name: "Run" }).click();
+    await page.waitForLoadState("networkidle");
     await expect.poll(async () => {
       await page.reload({ waitUntil: "networkidle" });
       return page.locator(".mx-row", { hasText: "website_health" }).filter({ has: page.locator(".mx-chip", { hasText: /^(SUCCEEDED|PARTIAL)$/ }) }).count();
@@ -140,6 +141,9 @@ async function createAuditOpportunity(page: Page) {
 }
 
 async function pollCycleFor(page: Page, text: string | RegExp) {
+  // Await the initiating server action before reloading; reload can otherwise
+  // cancel the POST before its workflow has been queued.
+  await page.waitForLoadState("networkidle");
   await expect
     .poll(
       async () => {
@@ -159,6 +163,7 @@ async function waiveDeliverable(page: Page, title: string) {
   const row = deliverableRow(page, title);
   await row.getByPlaceholder("Waiver reason").fill(`${title} waived by Phase 5 E2E.`);
   await row.getByRole("button", { name: "Waive" }).click();
+  await page.waitForLoadState("networkidle");
   await expect(deliverableRow(page, title).locator(".mx-chip").first()).toHaveText(
     "WAIVED",
   );
@@ -224,8 +229,8 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
     "contractual recurring deliverable not yet fulfilled",
   );
 
-  const workRow = page.locator(".mx-check-row", { hasText: "Selected:" }).filter({ has: page.getByRole("button", { name: "Prepare Page Optimization" }) }).last();
-  await workRow.getByRole("button", { name: "Prepare Page Optimization" }).click();
+  const workRow = page.locator(".mx-check-row", { hasText: "Selected:" }).filter({ has: page.getByRole("button", { name: /^Prepare / }) }).last();
+  await workRow.getByRole("button", { name: /^Prepare / }).click();
   await pollCycleFor(page, /Draft (DRAFT|AWAITING_APPROVAL|APPROVED)/);
 
   await approveLatestPendingDraft(page);
@@ -239,6 +244,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await selectedWork.getByRole("button", { name: "Record verification" }).click();
   await expect(page.locator("main").getByRole("alert")).toContainText("Record an implementation");
   await page.getByRole("button", { name: "Generate draft" }).click();
+  await page.waitForLoadState("networkidle");
   const completedSection = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Completed", exact: true }) }).last();
   const approvedSection = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Prepared / Approved", exact: true }) }).last();
   await expect(approvedSection).toContainText("APPROVED_FOR_MANUAL_IMPLEMENTATION");
@@ -255,6 +261,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(page.locator("main")).toContainText("1 / 1");
 
   await page.getByRole("button", { name: "Generate draft" }).click();
+  await page.waitForLoadState("networkidle");
   await expect(completedSection).toContainText("IMPLEMENTED_UNVERIFIED");
 
   const implementedWork = page
@@ -268,11 +275,13 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(page.locator("main")).toContainText("VERIFIED");
 
   await page.getByRole("button", { name: "Generate draft" }).click();
+  await page.waitForLoadState("networkidle");
   await expect(page.getByText(/Monthly Optimization Report/)).toBeVisible();
   await expect(page.locator("main")).toContainText("Limitations");
   await waiveDeliverable(page, "Weekly Search Console");
   await waiveDeliverable(page, "Major Content Asset");
   await page.getByRole("button", { name: "Generate draft" }).click();
+  await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: "Finalize report" }).click();
   await expect(page.locator("main")).toContainText("FINALIZED");
   await expect(page.locator("main")).toContainText(/[a-f0-9]{64}/);

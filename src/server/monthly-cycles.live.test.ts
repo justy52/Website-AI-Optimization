@@ -439,5 +439,17 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     const security = (await client.query("select relrowsecurity,relforcerowsecurity from pg_class where oid='public.implementation_packages'::regclass")).rows[0];
     expect(security).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
   });
+  it("Phase 7 retry retires expired older attempts without claiming successful evidence", async () => {
+    await clearImplementation(); const { pkg } = await approvedPackage();
+    const old = await recordManualImplementation(context, workId, { ...manual, implementationPackageId: pkg.id }, database);
+    const expired = await requestImplementationVerification(context, old.id, database);
+    await client.query("update agent_runs set deadline_at=now()-interval '1 second' where id=$1", [expired.agentRunId]);
+    const current = await recordManualImplementation(context, workId, { ...manual, whatImplemented: "Corrected implementation", implementationPackageId: pkg.id }, database);
+    const retry = await requestImplementationVerification(context, current.id, database);
+    expect((await client.query("select status from agent_runs where id=$1", [expired.agentRunId])).rows[0].status).toBe("TIMED_OUT");
+    expect((await client.query("select count(*)::int n from implementation_verification_records where agent_run_id=$1", [expired.agentRunId])).rows[0].n).toBe(0);
+    const result = await executeImplementationVerification(context, retry.agentRunId, database, publicResponse("Expected title"));
+    expect(result.structuredOutput?.result).toBe("VERIFIED");
+  });
 
 });

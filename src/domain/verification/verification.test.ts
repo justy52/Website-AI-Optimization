@@ -37,6 +37,11 @@ describe("bounded independent implementation verification", () => {
     ["<!-- <a href='/service'>Learn more</a> -->", "VERIFICATION_FAILED"],
   ])("verifies destination and anchor: %s", (html, expected) => expect(check("internal_link", JSON.stringify({ sourcePage: "https://example.com/", destinationPage: "https://example.com/service", suggestedAnchor: "Learn more" }), html).result).toBe(expected));
   const approvedSchema = { "@context": "https://schema.org", "@type": "Organization", name: "Example" };
+  it("retains the matching link in bounded evidence after repeated destination links", () => {
+    const result = check("internal_link", JSON.stringify({ sourcePage: "https://example.com/", destinationPage: "https://example.com/service", suggestedAnchor: "Learn more" }), `${"<a href='/service'>Other</a>".repeat(15)}<a href='/service'>Learn more</a>`);
+    expect(result.result).toBe("VERIFIED");
+    expect(result.comparisons[0].observed).toEqual(expect.arrayContaining([{ url: "https://example.com/service", anchor: "Learn more" }]));
+  });
   it.each([
     [JSON.stringify(approvedSchema), "VERIFIED"],
     [JSON.stringify({ ...approvedSchema, name: "Different" }), "VERIFICATION_FAILED"],
