@@ -4,12 +4,12 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/client";
 import { authSchema } from "@/db/schema";
 import { serverEnv } from "@/lib/env";
+import { authOriginOptions } from "./origins";
 
 export const auth = betterAuth({
   appName: "OPTIQ",
-  baseURL: serverEnv.BETTER_AUTH_URL,
+  ...authOriginOptions(serverEnv),
   secret: serverEnv.BETTER_AUTH_SECRET,
-  trustedOrigins: [serverEnv.BETTER_AUTH_URL],
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: authSchema,

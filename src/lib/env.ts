@@ -39,6 +39,8 @@ const rawEnvSchema = z.object({
   AI_GATEWAY_API_KEY: optionalNonEmpty,
   AI_GATEWAY_MODEL: optionalNonEmpty,
   VERCEL: optionalNonEmpty,
+  VERCEL_URL: optionalNonEmpty,
+  VERCEL_BRANCH_URL: optionalNonEmpty,
   VERCEL_OIDC_TOKEN: optionalNonEmpty,
   AGENT_PROVIDER: z
     .enum(["deterministic", "ai_gateway"])

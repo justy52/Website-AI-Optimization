@@ -12,6 +12,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["line"], ["html", { open: "never" }]] : "line",
   use: {
     baseURL,
+    storageState: process.env.OPTIQ_E2E_STORAGE_STATE || undefined,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
