@@ -43,6 +43,10 @@ export async function createQaExecutionFixture(c: WorkspaceContext, faultMode: s
   human(c); assertQaEnvironment(env);
   if (!["NONE", "TITLE_MISMATCH"].includes(faultMode)) throw new ExecutionValidationError("Unknown QA fixture scenario.");
   const fixture = await withTenantContext(database, c, async tx => {
+    await lockWorkspace(tx, c);
+    const [existingFixture] = await tx.select({id:qaExecutionFixtures.id}).from(qaExecutionFixtures).where(eq(qaExecutionFixtures.workspaceId,c.workspaceId)).limit(1);
+    const [existingSite] = await tx.select({id:websites.id}).from(websites).where(and(eq(websites.workspaceId,c.workspaceId),eq(websites.domain,"optiq-qa.vercel.app"))).limit(1);
+    if (existingFixture || existingSite) throw new ExecutionValidationError("Use a separate disposable QA workspace for another fixture; the one-website-per-domain rule is preserved.");
     const id = randomUUID();
     const [client] = await tx.insert(clients).values({ workspaceId: c.workspaceId, name: `QA Sandbox ${id.slice(0, 8)}`, servicePlan: "GROWTH" }).returning();
     const [site] = await tx.insert(websites).values({ workspaceId: c.workspaceId, clientId: client.id, displayName: "QA SANDBOX EXECUTION", canonicalUrl: fixtureUrl(c.workspaceId, id), domain: "optiq-qa.vercel.app", authorizationScope: { scope: "PUBLIC_PAGES_ONLY", recordedAt: new Date().toISOString() } }).returning();

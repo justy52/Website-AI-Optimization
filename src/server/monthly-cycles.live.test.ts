@@ -1,4 +1,4 @@
-import { setQaExecutionFlag, requestQaExecutionApproval, decideQaExecutionApproval, requestQaExecution, applyQaExecution, processQaExecution, requestQaRollback, getQaExecutionDetail } from "./qa-execution";
+import { createQaExecutionFixture, setQaExecutionFlag, requestQaExecutionApproval, decideQaExecutionApproval, requestQaExecution, applyQaExecution, processQaExecution, requestQaRollback, getQaExecutionDetail } from "./qa-execution";
 import { fixtureUrl, renderQaFixture, QA_WORKSPACE_FLAG, QA_ACTION_FLAG } from "@/domain/execution/qa-execution";
 import { requestPrepareDraftForOpportunity, executePrepareDraftAgentRun, decideApprovalRequest, getDraftArtifact, createBusinessFact } from "./agents";
 import { nominateContentOpportunity } from "./content-opportunities";
@@ -563,6 +563,12 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     expect(await getQaExecutionDetail({...context,workspaceId:a},q.record.id,database)).toBeNull();
   });
 
+  it("Phase 8 fixture creation retains website domain uniqueness with normal validation",async()=>{
+    const fixture=await createQaExecutionFixture(context,"NONE",database,qaEnv);
+    expect(fixture.faultMode).toBe("NONE");
+    await expect(createQaExecutionFixture(context,"TITLE_MISMATCH",database,qaEnv)).rejects.toThrow("one-website-per-domain");
+    expect((await client.query("select count(*)::int n from qa_execution_fixtures where workspace_id=$1",[b])).rows[0].n).toBe(1);
+  });
   it("Phase 8 concurrent request and workflow retries commit exactly one mutation",async()=>{
     const q=await qaSetup(); await decideQaExecutionApproval(context,q.approval.id,"APPROVED",database,qaEnv);
     // Only the disposable database: committed fixtures are retained for this real
