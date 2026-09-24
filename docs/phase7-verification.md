@@ -36,6 +36,12 @@ Migration `0013` adds the tenant-scoped package table, exact version/composite F
 forced RLS, verification run/package/method links, immutable snapshot/history update
 guards, UNAVAILABLE states and the new immutable agent-definition version.
 
+Migration `0014` also rejects ordinary DELETE of packages and verification
+attempts. Existing workspace foreign keys are unchanged. A future workspace
+purge must use a separately reviewed privileged path; application operations
+cannot discard fulfillment evidence. Disposable integration tests insert their
+own history in rolled-back transactions rather than deleting retained records.
+
 ## QA fixture
 
 `/api/qa/verification-fixture` is available only with `APP_ENV=qa`. It renders fixed,

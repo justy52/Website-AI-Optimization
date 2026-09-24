@@ -63,7 +63,9 @@ try {
     if (!current) throw new Error("Historical fixture definition missing after migration");
     run.agent_definition_id = current.id;
   }
-  for (const table of ordered.filter(t => !["agent_definitions", "service_plan_definitions"].includes(t))) {
+  // Each integration test inserts its own retained verification attempts inside
+  // a rolled-back transaction. Never delete immutable history for test cleanup.
+  for (const table of ordered.filter(t => !["agent_definitions", "service_plan_definitions", "implementation_verification_records"].includes(t))) {
     for (const row of fixtures[table]) {
       await connection.query("select set_config('app.workspace_id',$1,false)", [row.workspace_id ?? row.id ?? tenants[0]]);
       const columns = Object.keys(row).map(quote).join(",");

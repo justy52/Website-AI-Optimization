@@ -48,7 +48,7 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
   afterAll(async () => { client?.release(); await pool?.end(); });
 
   async function clearImplementation() {
-    await client.query("delete from implementation_verification_records where monthly_cycle_id=$1", [cycleId]);
+    expect((await client.query("select count(*)::int n from implementation_verification_records where monthly_cycle_id=$1", [cycleId])).rows[0].n).toBe(0);
     await client.query("delete from manual_implementation_records where monthly_cycle_id=$1", [cycleId]);
     await client.query("update monthly_cycle_work_items set completion_state='NOT_STARTED', status='SELECTED' where id=$1", [workId]);
   }
@@ -184,6 +184,7 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     expect(saved.completedByUserId).toBe(context.userId);
   });
   it.each(tables)("blocks cross-workspace SELECT INSERT UPDATE DELETE on %s", async table => {
+    if (table === "implementation_verification_records") await recordImplementationVerification(context, workId, verification, database);
     const original = await row(table);
     expect(original).toBeTruthy();
     const copy = { ...original, id: randomUUID() };
@@ -345,6 +346,10 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     await client.query("savepoint immutable_package");
     await expect(client.query("update implementation_packages set snapshot='{}' where id=$1", [pkg.id])).rejects.toMatchObject({ code: "23514" });
     await client.query("rollback to savepoint immutable_package");
+    await client.query("savepoint retained_package");
+    await expect(client.query("delete from implementation_packages where id=$1", [pkg.id])).rejects.toMatchObject({ code: "23514" });
+    await client.query("rollback to savepoint retained_package");
+    expect(await getImplementationPackage(context, pkg.id, database)).not.toBeNull();
   });
   it("Phase 7 failure, correction, retry, history and accounting remain consistent", async () => {
     await clearImplementation();
@@ -375,6 +380,12 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     await client.query("savepoint immutable_attempt");
     await expect(client.query("update implementation_verification_records set evidence='{}' where id=$1", [passed.outputRef])).rejects.toMatchObject({ code: "23514" });
     await client.query("rollback to savepoint immutable_attempt");
+    for (const attempt of [failed.outputRef, passed.outputRef]) {
+      await client.query("savepoint retained_attempt");
+      await expect(client.query("delete from implementation_verification_records where id=$1", [attempt])).rejects.toMatchObject({ code: "23514" });
+      await client.query("rollback to savepoint retained_attempt");
+    }
+    expect((await client.query("select status from implementation_verification_records where implementation_record_id=$1 order by verified_at", [implementation.id])).rows.map(r => r.status)).toEqual(["VERIFICATION_FAILED", "VERIFIED"]);
   });
   it("Phase 7 unavailable is preserved and does not consume successful fulfillment", async () => {
     await clearImplementation(); const { pkg } = await approvedPackage();

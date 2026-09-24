@@ -99,6 +99,13 @@
       "when": 1790275545507,
       "tag": "0013_phase7_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790287249794,
+      "tag": "0014_phase7_immutable_verification_history",
+      "breakpoints": true
     }
   ]
 }
