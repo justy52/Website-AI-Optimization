@@ -14,6 +14,7 @@ import {
 import { getWorkspaceShellContext } from "@/server/auth";
 import {
   addOpportunityToMonthlyCycle,
+  assertMonthlyCyclePrepareTarget,
   closeMonthlyCycle,
   createMonthlyCycle,
   finalizeMonthlyReport,
@@ -104,6 +105,7 @@ async function requestMonthlyPrepareDraftActionImpl(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const cycleId = value(formData, "monthlyCycleId");
   const opportunityId = value(formData, "opportunityId");
+  await assertMonthlyCyclePrepareTarget(shell.workspaceContext, cycleId, opportunityId);
   const prepared = await requestPrepareDraftForOpportunity(
     shell.workspaceContext,
     opportunityId,

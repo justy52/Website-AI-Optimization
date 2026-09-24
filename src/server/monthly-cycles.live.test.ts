@@ -1,3 +1,5 @@
+import { requestPrepareDraftForOpportunity, executePrepareDraftAgentRun, decideApprovalRequest, getDraftArtifact, createBusinessFact } from "./agents";
+import { nominateContentOpportunity } from "./content-opportunities";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
@@ -224,4 +226,50 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     expect(fn.acl).not.toMatch(/[{,]=X/);
     expect(readFileSync("src/app/api/cron/monthly-cycles/route.ts", "utf8")).toContain("!serverEnv.CRON_SECRET");
   });
+  it.each([
+    ["seo.content_targeting", "content_targeting", "CONTENT_BRIEF"],
+    ["seo.internal_links", "internal_linking", "INTERNAL_LINK_PROPOSAL"],
+    ["ai.structured_data", "structured_data", "SCHEMA_PROPOSAL"],
+  ])("Phase 6 persists %s through approval and new version without fulfillment", async (check, family, artifactType) => {
+    await clearImplementation();
+    const opportunityId = "80000000-0000-4000-8000-0000000000b1";
+    // Preserve the fixture's composite check-result FK; family is trusted DB routing state.
+    await client.query("update opportunities set normalized_remediation_family=$1 where id=$2", [family, opportunityId]);
+    await client.query("update monthly_cycle_work_items set entitlement_type='major_content_assets_completed' where id=$1", [workId]);
+    await createBusinessFact(context, "20000000-0000-4000-8000-0000000000b1", { factType: "business_name", value: "Example Company", sourceReference: "QA human review", verificationStatus: "VERIFIED", sensitivity: "PUBLIC" }, database);
+    const first = await requestPrepareDraftForOpportunity(context, opportunityId, database);
+    const repeated = await requestPrepareDraftForOpportunity(context, opportunityId, database);
+    expect(repeated.agentRunId).toBe(first.agentRunId);
+    const result = await executePrepareDraftAgentRun(context, first.agentRunId, database);
+    expect(result.artifact, JSON.stringify((await client.query("select status,error_summary from agent_runs where id=$1", [first.agentRunId])).rows)).not.toBeNull();
+    expect(result.artifact!.artifactType).toBe(artifactType);
+    const retry = await executePrepareDraftAgentRun(context, first.agentRunId, database);
+    expect(retry.artifact!.id).toBe(result.artifact!.id);
+    expect((await client.query("select count(*)::int n from activity_events where action='monthly_cycle.draft_prepared' and summary->>'agentRunId'=$1", [first.agentRunId])).rows[0].n).toBe(1);
+    expect(result.artifact!.status).toBe("AWAITING_APPROVAL");
+    await closeMonthlyCycle(context, cycleId, database);
+    expect((await row("monthly_cycles")).major_content_assets_completed).toBe(0);
+    await decideApprovalRequest(context, result.approval!.id, { decision: "APPROVED_UNCHANGED", comments: "Reviewed draft only" }, database);
+    const second = await requestPrepareDraftForOpportunity(context, opportunityId, database);
+    const revision = await executePrepareDraftAgentRun(context, second.agentRunId, database);
+    expect(revision.artifact!.artifactVersion).toBe(result.artifact!.artifactVersion + 1);
+    expect(revision.approval!.status).toBe("PENDING");
+    expect((await getDraftArtifact(context, result.artifact!.id, database))!.artifact.status).toBe("APPROVED");
+    await closeMonthlyCycle(context, cycleId, database);
+    expect((await row("monthly_cycles")).major_content_assets_completed).toBe(0);
+    expect((await row("monthly_cycles")).manual_implementation_minutes).toBe(0);
+    const other = { ...context, workspaceId: a, userId: "rls-user-a" };
+    expect(await getDraftArtifact(other, result.artifact!.id, database)).toBeNull();
+    await expect(requestPrepareDraftForOpportunity(other, opportunityId, database)).rejects.toThrow("not found");
+    await client.query("select set_config('app.workspace_id',$1,true)", [a]);
+    await client.query("savepoint phase6_bad_link");
+    await expect(client.query("update approval_requests set target_artifact_id=$1 where workspace_id=$2", [result.artifact!.id, a])).rejects.toMatchObject({ code: "23503" });
+    await client.query("rollback to savepoint phase6_bad_link");
+  });
+  it("Phase 6 nomination rejects cross-tenant website and missing verified fact", async () => {
+    await expect(nominateContentOpportunity(context, { websiteId: "30000000-0000-4000-8000-0000000000a1", title: "A topic", rationale: "Human requested an educational resource" }, database)).rejects.toThrow("Website was not found");
+    await client.query("delete from business_facts where workspace_id=$1 and fact_type='service'", [b]);
+    await expect(nominateContentOpportunity(context, { websiteId: "30000000-0000-4000-8000-0000000000b1", title: "A topic", rationale: "Human requested an educational resource" }, database)).rejects.toThrow("PUBLIC VERIFIED service fact");
+  });
+
 });

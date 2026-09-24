@@ -6,6 +6,7 @@ import { opportunityStatuses } from "@/domain/opportunities/generation";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { listOpportunities } from "@/server/opportunities";
 import { listClients, listWebsites } from "@/server/revenue";
+import { nominateContentOpportunityAction } from "./actions";
 
 import {
   EmptyState,
@@ -64,6 +65,17 @@ export default async function OpportunitiesPage({
         eyebrow="Audit findings converted to work"
         title="Opportunities"
       />
+      {one(query.validation) ? <p className="mx-error" role="alert">{one(query.validation)}</p> : null}
+      <Panel title="Nominate content work">
+        <p className="mx-muted">Record a human editorial recommendation after an audit and a PUBLIC VERIFIED service fact. This does not claim a measured content gap or search demand.</p>
+        <form action={nominateContentOpportunityAction} className="mx-form">
+          <label>Content website<select className="mx-input" name="websiteId" required>{websites.map(site => <option key={site.id} value={site.id}>{site.displayName} — {site.domain}</option>)}</select></label>
+          <label>Proposed topic<input className="mx-input" name="title" maxLength={160} required /></label>
+          <label className="mx-form-wide">Editorial rationale<textarea className="mx-input" name="rationale" minLength={20} maxLength={1000} required /></label>
+          <button className="mx-btn" type="submit">Nominate content Opportunity</button>
+        </form>
+      </Panel>
+      <div className="mx-spacer" />
       <Panel
         right={
           <Link className="mx-btn mx-btn-ghost" href={"/opportunities" as never}>

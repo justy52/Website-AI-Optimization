@@ -1,3 +1,4 @@
+import { routePrepareOpportunity } from "@/domain/agents/routing";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -203,6 +204,7 @@ export default async function OpportunityDetailPage({
             </span>
           </div>
           <div className="mx-action-stack">
+            <p className="mx-muted">{routePrepareOpportunity(opportunity) ? `Agent: ${routePrepareOpportunity(opportunity)?.agentKey}` : "Manual review required; no supported PREPARE capability for this finding."}</p>
             {prepareState.run ? (
               <Link
                 className="mx-btn mx-btn-ghost"
@@ -230,13 +232,13 @@ export default async function OpportunityDetailPage({
                 Open approval
               </Link>
             ) : null}
-            {!prepareState.approval ||
-            prepareState.approval.status !== "PENDING" ? (
+            {routePrepareOpportunity(opportunity) && (!prepareState.approval ||
+            prepareState.approval.status !== "PENDING") ? (
               <form action={requestPrepareDraftAction}>
                 <input name="opportunityId" type="hidden" value={opportunity.id} />
                 <button className="mx-btn" type="submit">
                   <Bot aria-hidden size={14} />
-                  Prepare draft
+                  {routePrepareOpportunity(opportunity)?.label}
                 </button>
               </form>
             ) : null}

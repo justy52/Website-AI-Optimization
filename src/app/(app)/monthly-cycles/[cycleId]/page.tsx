@@ -416,7 +416,7 @@ export default async function MonthlyCycleDetailPage({
                 <div className="mx-action-stack">
                   {row.item.status !== "REMOVED" ? (
                     <>
-                      <form action={requestMonthlyPrepareDraftAction}>
+                      {row.prepareRoute ? <form action={requestMonthlyPrepareDraftAction}>
                         <input name="monthlyCycleId" type="hidden" value={cycle.id} />
                         <input
                           name="opportunityId"
@@ -425,9 +425,11 @@ export default async function MonthlyCycleDetailPage({
                         />
                         <button className="mx-btn" type="submit">
                           <Bot aria-hidden size={14} />
-                          Prepare draft
+                          {row.prepareRoute.label}
                         </button>
-                      </form>
+                      </form> : <p className="mx-muted">Manual review required</p>}
+                      {row.prepareRoute ? <span className="mx-row-meta">Agent: {row.prepareRoute.agentKey}</span> : null}
+                      {row.prepareArtifactId ? <Link className="mx-btn mx-btn-ghost" href={`/drafts/${row.prepareArtifactId}`}>Review draft</Link> : null}
                       <form action={recordManualImplementationAction} className="mx-form">
                         <input name="monthlyCycleId" type="hidden" value={cycle.id} />
                         <input

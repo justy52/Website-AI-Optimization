@@ -223,11 +223,11 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
 
   await page.getByRole("link", { name: "Opportunities", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Opportunities" })).toBeVisible();
-  await page.locator("main a").filter({ hasText: /Priority|Immediate|High|Normal/i }).first().click();
+  await page.locator("main a.mx-row").filter({ hasText: /seo.title|seo.meta_description|seo.heading_structure/ }).first().click();
   await expect(page.getByRole("heading")).toBeVisible();
   const opportunityUrl = page.url();
   await expect(page.getByText("Priority explanation")).toBeVisible();
-  await page.getByRole("button", { name: "Prepare draft" }).click();
+  await page.getByRole("button", { name: "Prepare Page Optimization" }).click();
 
   await pollForLink(page, /Inspect run/);
   await pollForLink(page, /Open approval/);
@@ -264,7 +264,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await expect(page.getByText("APPROVED", { exact: true })).toBeVisible();
 
   await page.goto(opportunityUrl);
-  await page.getByRole("button", { name: "Prepare draft" }).click();
+  await page.getByRole("button", { name: "Prepare Page Optimization" }).click();
   await openLatestRunDraftVersionForClient(page, clientName, 2);
   await page.getByRole("link", { name: "Approval", exact: true }).click();
   await expect(page.getByText("Pending")).toBeVisible();

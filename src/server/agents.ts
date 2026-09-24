@@ -16,6 +16,8 @@ import {
   clients,
   draftArtifacts,
   operationalNotifications,
+  monthlyCycles,
+  monthlyCycleWorkItems,
   opportunities,
   websites,
 } from "@/db/schema";
@@ -33,7 +35,6 @@ import {
   type ApprovalDecision,
 } from "@/domain/agents/approvals";
 import {
-  EXISTING_PAGE_OPTIMIZATION_AGENT_KEY,
   getEnabledAgentDefinition,
 } from "@/domain/agents/catalog";
 import {
@@ -44,8 +45,11 @@ import {
   PAGE_OPTIMIZATION_PROMPT_VERSION,
   renderDraftPreview,
   type ExistingPageOptimizationInput,
+  type ExistingPageOptimizationOutput,
   type PrepareModelProvider,
 } from "@/domain/agents/page-optimization";
+import { routePrepareOpportunity } from "@/domain/agents/routing";
+import { assertDeliverablePolicy, createDeterministicDeliverableProvider } from "@/domain/agents/prepare-deliverables";
 import { assertToolAllowedForAgent } from "@/domain/agents/tool-registry";
 import { openOpportunityStatuses } from "@/domain/opportunities/generation";
 import {
@@ -164,8 +168,10 @@ async function recordToolCall(
     errorSummary?: string;
   },
 ) {
+  const [run] = await tx.select({ agentKey: agentRuns.agentKey }).from(agentRuns).where(and(eq(agentRuns.workspaceId, context.workspaceId), eq(agentRuns.id, input.agentRunId))).limit(1);
+  if (!run) throw new Error("Agent run was not found.");
   const tool = assertToolAllowedForAgent(
-    getEnabledAgentDefinition(EXISTING_PAGE_OPTIMIZATION_AGENT_KEY),
+    getEnabledAgentDefinition(run.agentKey),
     input.toolKey,
   );
 
@@ -197,13 +203,6 @@ export async function requestPrepareDraftForOpportunity(
 ): Promise<PrepareDraftRequestResult> {
   assertWorkspaceRole(context, ["OWNER", "ADMIN", "ANALYST"]);
 
-  const agent = getEnabledAgentDefinition(EXISTING_PAGE_OPTIMIZATION_AGENT_KEY);
-  const allowedTools = agent.allowedToolKeys.map((toolKey) => {
-    const tool = assertToolAllowedForAgent(agent, toolKey);
-    return tool.key;
-  });
-  const budget = createBudgetSnapshot(agent.budgetLimits);
-
   return withTenantContext(database, context, async (tx) => {
     const [opportunity] = await tx
       .select({
@@ -213,6 +212,7 @@ export async function requestPrepareDraftForOpportunity(
         sourceAuditId: opportunities.sourceAuditId,
         sourceAuditRunId: opportunities.sourceAuditRunId,
         sourceCheckKey: opportunities.sourceCheckKey,
+        normalizedRemediationFamily: opportunities.normalizedRemediationFamily,
         sourceSeverity: opportunities.sourceSeverity,
         status: opportunities.status,
         title: opportunities.title,
@@ -229,6 +229,15 @@ export async function requestPrepareDraftForOpportunity(
     if (!opportunity) {
       throw new Error("Opportunity was not found.");
     }
+
+    const route = routePrepareOpportunity(opportunity);
+    if (!route) throw new Error("This Opportunity requires manual review; no supported PREPARE capability is available.");
+    const agent = getEnabledAgentDefinition(route.agentKey);
+    const allowedTools = agent.allowedToolKeys.map((toolKey) => {
+      const tool = assertToolAllowedForAgent(agent, toolKey);
+      return tool.key;
+    });
+    const budget = createBudgetSnapshot(agent.budgetLimits);
 
     if (!openOpportunityStatuses.includes(opportunity.status)) {
       throw new Error("Only open Opportunities can request PREPARE work.");
@@ -330,14 +339,14 @@ export async function requestPrepareDraftForOpportunity(
         timeoutSeconds: agent.defaultTimeoutSeconds,
         deadlineAt: new Date(Date.now() + agent.defaultTimeoutSeconds * 1_000),
         provider:
-          serverEnv.AGENT_PROVIDER === "ai_gateway" && serverEnv.AI_GATEWAY_MODEL
+          agent.key === "existing-page-optimization" && serverEnv.AGENT_PROVIDER === "ai_gateway" && serverEnv.AI_GATEWAY_MODEL
             ? "vercel-ai-gateway"
             : "deterministic",
         model:
-          serverEnv.AGENT_PROVIDER === "ai_gateway" && serverEnv.AI_GATEWAY_MODEL
+          agent.key === "existing-page-optimization" && serverEnv.AGENT_PROVIDER === "ai_gateway" && serverEnv.AI_GATEWAY_MODEL
             ? serverEnv.AI_GATEWAY_MODEL
-            : "deterministic-existing-page-optimization-v1",
-        promptTemplateVersion: PAGE_OPTIMIZATION_PROMPT_VERSION,
+            : `deterministic-${agent.key}-v1`,
+        promptTemplateVersion: agent.key === "existing-page-optimization" ? PAGE_OPTIMIZATION_PROMPT_VERSION : "prepare-deliverable-prompt-v1.0",
         outputSchemaVersion: agent.outputSchemaVersion,
         estimatedToolCalls: allowedTools.length,
         estimatedModelCalls: 1,
@@ -463,6 +472,7 @@ async function loadPrepareInput(
       summary: row.opportunity.summary,
       recommendedAction: row.opportunity.recommendedAction,
       sourceCheckKey: row.opportunity.sourceCheckKey,
+      normalizedRemediationFamily: row.opportunity.normalizedRemediationFamily,
       sourceResultStatus: row.opportunity.sourceResultStatus,
       sourceSeverity: row.opportunity.sourceSeverity,
       evidenceConfidence: row.opportunity.evidenceConfidence,
@@ -597,6 +607,11 @@ export async function executePrepareDraftAgentRun(
   providerOverride?: PrepareModelProvider,
 ) {
   try {
+    const existing = await withTenantContext(database, context, async tx => {
+      const [result] = await tx.select({ artifact: draftArtifacts, approval: approvalRequests }).from(draftArtifacts).innerJoin(approvalRequests, and(eq(approvalRequests.workspaceId, draftArtifacts.workspaceId), eq(approvalRequests.targetArtifactId, draftArtifacts.id))).where(and(eq(draftArtifacts.workspaceId, context.workspaceId), eq(draftArtifacts.preparedByAgentRunId, runId))).limit(1);
+      return result;
+    });
+    if (existing) return { ...existing, output: existing.artifact.structuredProposal as ExistingPageOptimizationOutput };
     const prepared = await withTenantContext(database, context, async (tx) => {
       const loaded = await loadPrepareInput(tx, context, runId);
       const budget = loaded.run.budgetSnapshot as AgentRunBudgetSnapshot;
@@ -678,17 +693,20 @@ export async function executePrepareDraftAgentRun(
       return { loaded, budget, inputBytes, evidenceBytes };
     });
 
-    const provider = providerForRun(
+    const route = routePrepareOpportunity(prepared.loaded.input.opportunity);
+    if (!route || route.agentKey !== prepared.loaded.run.agentKey) throw new Error("Opportunity route changed; request a new run.");
+    const provider = route.agentKey === "existing-page-optimization" ? providerForRun(
       prepared.budget,
       context,
       runId,
       providerOverride,
-    );
+    ) : (providerOverride ?? createDeterministicDeliverableProvider());
     const generated = await provider.generate(prepared.loaded.input);
-    const output = assertPrepareOutputPolicy(
+    const output = (route.agentKey === "existing-page-optimization" ? assertPrepareOutputPolicy : assertDeliverablePolicy)(
       generated.output,
       prepared.loaded.input,
     );
+    if (output.artifactType !== route.artifactType) throw new Error("Artifact does not match authorized route.");
     const renderedPreview = renderDraftPreview(output);
     const outputBytes = byteLength(JSON.stringify(output));
     const runCostCents =
@@ -754,16 +772,16 @@ export async function executePrepareDraftAgentRun(
           clientId: prepared.loaded.client.id,
           websiteId: prepared.loaded.website.id,
           opportunityId: prepared.loaded.opportunity.id,
-          artifactType: "EXISTING_PAGE_OPTIMIZATION_PROPOSAL",
+          artifactType: output.artifactType,
           artifactVersion,
           status: "AWAITING_APPROVAL",
           preparedByAgentRunId: runId,
-          sourceEvidenceRefs: prepared.loaded.opportunity.sourceEvidenceRefs,
+          sourceEvidenceRefs: [...new Set(output.proposals.flatMap(proposal => proposal.evidenceRefs))],
           structuredProposal: output,
           renderedPreview,
-          factualBasisRefs: output.proposals.flatMap((proposal) =>
+          factualBasisRefs: [...new Set(output.proposals.flatMap((proposal) =>
             proposal.factualBasis.map((basis) => basis.ref),
-          ),
+          ))],
           riskLevel: output.riskLevel,
           contentHash: hashContent(`${renderedPreview}\n${JSON.stringify(output)}`),
           supersedesArtifactId: latestArtifact?.id,
@@ -855,10 +873,16 @@ export async function executePrepareDraftAgentRun(
             eq(agentRuns.id, runId),
           ),
         );
+      const cycleWork = await tx.select({ itemId: monthlyCycleWorkItems.id, cycleId: monthlyCycleWorkItems.monthlyCycleId }).from(monthlyCycleWorkItems).innerJoin(monthlyCycles, and(eq(monthlyCycles.workspaceId, monthlyCycleWorkItems.workspaceId), eq(monthlyCycles.id, monthlyCycleWorkItems.monthlyCycleId))).where(and(eq(monthlyCycleWorkItems.workspaceId, context.workspaceId), eq(monthlyCycleWorkItems.opportunityId, prepared.loaded.opportunity.id), sql`${monthlyCycleWorkItems.status} <> 'REMOVED'`, sql`${monthlyCycles.status} not in ('CLOSED','CANCELED')`, sql`${monthlyCycles.periodStartDate} <= ${now().toISOString().slice(0,10)}`, sql`${monthlyCycles.periodEndDate} >= ${now().toISOString().slice(0,10)}`));
+      for (const item of cycleWork) {
+        await tx.update(monthlyCycleWorkItems).set({ draftState: "AWAITING_APPROVAL", approvalState: "PENDING", updatedAt: now() }).where(and(eq(monthlyCycleWorkItems.workspaceId, context.workspaceId), eq(monthlyCycleWorkItems.id, item.itemId)));
+        await recordActivity(tx, context, "monthly_cycle.draft_prepared", "monthly_cycle", item.cycleId, { workItemId: item.itemId, artifactId: artifact.id, artifactVersion, agentRunId: runId });
+      }
       await recordActivity(tx, context, "draft_artifact.created", "draft_artifact", artifact.id, {
         opportunityId: prepared.loaded.opportunity.id,
         artifactVersion: artifact.artifactVersion,
       });
+      if (latestArtifact) await recordActivity(tx, context, "draft_artifact.revised", "draft_artifact", artifact.id, { supersedesArtifactId: latestArtifact.id, artifactVersion });
       await recordActivity(tx, context, "approval.requested", "approval_request", approval.id, {
         artifactId: artifact.id,
         artifactVersion: artifact.artifactVersion,

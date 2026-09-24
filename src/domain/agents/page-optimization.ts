@@ -34,9 +34,9 @@ const basisKindSchema = z.enum([
 ]);
 
 export const existingPageOptimizationOutputSchema = z.object({
-  schemaVersion: z.literal(EXISTING_PAGE_OPTIMIZATION_OUTPUT_SCHEMA_VERSION),
+  schemaVersion: z.enum([EXISTING_PAGE_OPTIMIZATION_OUTPUT_SCHEMA_VERSION, "prepare-deliverable-v1.0"]),
   artifactTitle: z.string().min(1).max(160),
-  artifactType: z.literal("EXISTING_PAGE_OPTIMIZATION_PROPOSAL"),
+  artifactType: z.enum(["EXISTING_PAGE_OPTIMIZATION_PROPOSAL", "CONTENT_BRIEF", "INTERNAL_LINK_PROPOSAL", "SCHEMA_PROPOSAL"]),
   riskLevel: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
   conciseRationale: z.string().min(1).max(800),
   confidence: z.enum(["LOW", "MEDIUM", "HIGH"]),
@@ -54,6 +54,7 @@ export const existingPageOptimizationOutputSchema = z.object({
           "cta",
           "schema",
           "no_change",
+          "topic", "intent_audience", "outline", "questions", "missing_inputs",
         ]),
         currentValue: z.string().max(500).nullable(),
         proposedValue: z.string().max(1_000).nullable(),
@@ -113,6 +114,7 @@ export type ExistingPageOptimizationInput = {
     summary: string;
     recommendedAction: string;
     sourceCheckKey: string;
+    normalizedRemediationFamily?: string;
     sourceResultStatus: string;
     sourceSeverity: string;
     evidenceConfidence: string;
@@ -543,7 +545,9 @@ function applyClaimPolicies(
   const artifactText = allOutputText(output);
 
   for (const proposal of output.proposals) {
-    for (const category of categoriesInText(proposalText(proposal))) {
+    const referencedCategories = protectedClaimCategories.filter(category => proposal.factualBasis.some(basis => basis.kind === "VERIFIED_FACT" && input.businessFacts.some(fact => fact.id === basis.ref && isModelVisibleBusinessFact(fact) && factTypeMatches(fact, category.factTypes))));
+    const categories = new Map([...categoriesInText(proposalText(proposal)), ...referencedCategories].map(category => [category.key, category]));
+    for (const category of categories.values()) {
       for (const policy of policiesByCategory.get(category.key) ?? []) {
         if (policy.ruleType === "PROHIBITED") {
           errors.push(
@@ -937,7 +941,7 @@ export function renderDraftPreview(
         ]
       : []),
     "Approval of this artifact authorizes human/manual implementation review only.",
-    "No external EXECUTE action is requested or available in Phase 3.",
+    "No external EXECUTE action is requested or available.",
   ].join("\n");
 }
 

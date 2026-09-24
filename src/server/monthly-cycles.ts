@@ -1,3 +1,4 @@
+import { routePrepareOpportunity } from "@/domain/agents/routing";
 import {
   and,
   asc,
@@ -891,7 +892,7 @@ async function latestPrepareStateSelect(
   opportunityIds: string[],
 ) {
   if (opportunityIds.length === 0) {
-    return new Map<string, { draftState: string; approvalState: string }>();
+    return new Map<string, { draftState: string; approvalState: string; artifactId: string }>();
   }
 
   const artifacts = await tx
@@ -937,6 +938,7 @@ async function latestPrepareStateSelect(
           artifact.opportunityId as string,
           {
             draftState: artifact.status,
+            artifactId: artifact.id,
             approvalState: approval?.status ?? "NOT_REQUESTED",
           },
         ] as const;
@@ -2320,6 +2322,8 @@ export async function getMonthlyCycleDetail(
           .select({
             item: monthlyCycleWorkItems,
             opportunityTitle: opportunities.title,
+            normalizedRemediationFamily: opportunities.normalizedRemediationFamily,
+            sourceCheckKey: opportunities.sourceCheckKey,
             opportunitySummary: opportunities.summary,
             sourceSeverity: opportunities.sourceSeverity,
             finalPriority: opportunities.finalPriority,
@@ -2405,6 +2409,8 @@ export async function getMonthlyCycleDetail(
 
         return {
           ...row,
+          prepareRoute: routePrepareOpportunity(row),
+          prepareArtifactId: prepareState?.artifactId ?? null,
           item: {
             ...row.item,
             draftState: prepareState?.draftState ?? row.item.draftState,
@@ -2722,4 +2728,14 @@ export function monthlyCycleCloseReadiness(input: {
     reportFinalized: input.hasFinalizedReport,
     hiddenCriticalCount: input.hiddenCriticalCount,
   };
+}
+
+export async function assertMonthlyCyclePrepareTarget(context: WorkspaceContext, cycleId: string, opportunityId: string, database = db) {
+  assertWorkspaceRole(context, ["OWNER", "ADMIN", "ANALYST"]);
+  return withTenantContext(database, context, async tx => {
+    const cycle = await loadCycle(tx, context, cycleId);
+    assertCycleMutable(cycle.status);
+    const [item] = await tx.select({ id: monthlyCycleWorkItems.id }).from(monthlyCycleWorkItems).where(and(eq(monthlyCycleWorkItems.workspaceId, context.workspaceId), eq(monthlyCycleWorkItems.monthlyCycleId, cycle.id), eq(monthlyCycleWorkItems.opportunityId, opportunityId), sql`${monthlyCycleWorkItems.status} <> 'REMOVED'`)).limit(1);
+    if (!item) throw new MonthlyCycleValidationError("Select this Opportunity for the current cycle before preparing work.");
+  });
 }

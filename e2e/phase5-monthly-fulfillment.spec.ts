@@ -223,8 +223,8 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
     "contractual recurring deliverable not yet fulfilled",
   );
 
-  const workRow = page.locator(".mx-check-row", { hasText: "Selected:" }).last();
-  await workRow.getByRole("button", { name: "Prepare draft" }).click();
+  const workRow = page.locator(".mx-check-row", { hasText: "Selected:" }).filter({ has: page.getByRole("button", { name: "Prepare Page Optimization" }) }).last();
+  await workRow.getByRole("button", { name: "Prepare Page Optimization" }).click();
   await pollCycleFor(page, /Draft (DRAFT|AWAITING_APPROVAL|APPROVED)/);
 
   await approveLatestPendingDraft(page);

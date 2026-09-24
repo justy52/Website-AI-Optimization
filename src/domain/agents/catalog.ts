@@ -1,6 +1,6 @@
 import type { AgentPermissionLevel } from "./permissions";
 
-export const AGENT_CATALOG_VERSION = "agent-catalog-v1.0";
+export const AGENT_CATALOG_VERSION = "agent-catalog-v1.1";
 export const EXISTING_PAGE_OPTIMIZATION_AGENT_KEY =
   "existing-page-optimization";
 export const EXISTING_PAGE_OPTIMIZATION_AGENT_VERSION = "epo-prepare-v1.0";
@@ -132,15 +132,15 @@ export const agentDefinitions: AgentDefinition[] = [
   },
   {
     key: "content-opportunity",
-    version: "content-opportunity-v1.0",
+    version: "content-opportunity-v1.1",
     name: "Content Opportunity Agent",
     capabilityType: "CONTENT_OPPORTUNITY",
     defaultPermissionLevel: "PREPARE",
     allowedToolKeys: prepareTools,
     defaultTimeoutSeconds: 60,
     budgetLimits: prepareDraftBudget,
-    outputSchemaVersion: "prepare-output-v1.0",
-    enabled: false,
+    outputSchemaVersion: "prepare-deliverable-v1.0",
+    enabled: true,
   },
   {
     key: "content-production",
@@ -168,27 +168,27 @@ export const agentDefinitions: AgentDefinition[] = [
   },
   {
     key: "internal-linking",
-    version: "internal-linking-v1.0",
+    version: "internal-linking-v1.1",
     name: "Internal Linking Agent",
     capabilityType: "INTERNAL_LINKING",
     defaultPermissionLevel: "PREPARE",
     allowedToolKeys: prepareTools,
     defaultTimeoutSeconds: 60,
     budgetLimits: prepareDraftBudget,
-    outputSchemaVersion: "prepare-output-v1.0",
-    enabled: false,
+    outputSchemaVersion: "prepare-deliverable-v1.0",
+    enabled: true,
   },
   {
     key: "schema",
-    version: "schema-v1.0",
+    version: "schema-v1.1",
     name: "Schema Agent",
     capabilityType: "SCHEMA",
     defaultPermissionLevel: "PREPARE",
     allowedToolKeys: prepareTools,
     defaultTimeoutSeconds: 60,
     budgetLimits: prepareDraftBudget,
-    outputSchemaVersion: "prepare-output-v1.0",
-    enabled: false,
+    outputSchemaVersion: "prepare-deliverable-v1.0",
+    enabled: true,
   },
   {
     key: "conversion",

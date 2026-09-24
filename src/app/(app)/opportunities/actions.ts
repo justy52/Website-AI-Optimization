@@ -11,6 +11,21 @@ import {
 import { getWorkspaceShellContext } from "@/server/auth";
 import { updateOpportunity } from "@/server/opportunities";
 import { prepareOpportunityDraftWorkflow } from "@/workflows/prepare-draft";
+import { ContentOpportunityValidationError, nominateContentOpportunity } from "@/server/content-opportunities";
+
+export async function nominateContentOpportunityAction(formData: FormData) {
+  const shell = await getWorkspaceShellContext();
+  let id: string;
+  try {
+    const result = await nominateContentOpportunity(shell.workspaceContext, { websiteId: value(formData, "websiteId"), title: value(formData, "title"), rationale: value(formData, "rationale") });
+    id = result.id;
+  } catch (error) {
+    if (error instanceof ContentOpportunityValidationError) redirect(`/opportunities?validation=${encodeURIComponent(error.message)}`);
+    throw error;
+  }
+  revalidatePath("/opportunities");
+  redirect(`/opportunities/${id}`);
+}
 
 function value(formData: FormData, key: string): string {
   const item = formData.get(key);
