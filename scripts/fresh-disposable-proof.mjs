@@ -55,6 +55,13 @@ try {
       console.log(`phase${phase}_live_rls_ok`);
     }
   } finally { rls.release(); }
+  // The standalone SQL proofs commit retained audit fixtures. Rebuild this
+  // disposable schema for independent application tests instead of bypassing
+  // DELETE protection to clean those records. The target guard above still
+  // applies; QA is never a valid target for this script.
+  await connection.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+  for (const entry of journal.entries) await connection.query(readFileSync(`drizzle/${entry.tag}.sql`, "utf8"));
+  await connection.query("GRANT USAGE ON SCHEMA public TO optiq_phase1_rls_runner; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO optiq_phase1_rls_runner; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO optiq_phase1_rls_runner;");
   const definitions = (await connection.query("select id,key,version from agent_definitions")).rows;
   for (const run of fixtures.agent_runs ?? []) {
     if (!run.agent_definition_id) continue;
