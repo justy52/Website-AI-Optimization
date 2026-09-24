@@ -70,7 +70,7 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   await page.getByRole("button", { name: "Start audit" }).click(); await expect(page.getByRole("heading", { name: /Audit/ })).toBeVisible(); await page.getByRole("button", { name: "Finalize audit snapshot" }).click();
   await page.goto("/opportunities");
   const titleId = (await page.locator("main a.mx-row").filter({ hasText: "seo.title" }).first().getAttribute("href"))!.split("/").pop()!;
-  const metaId = (await page.locator("main a.mx-row").filter({ hasText: "seo.meta_description" }).first().getAttribute("href"))!.split("/").pop()!;
+  const headingId = (await page.locator("main a.mx-row").filter({ hasText: "seo.heading_structure" }).first().getAttribute("href"))!.split("/").pop()!;
   await page.goto("/monthly-cycles"); await page.getByLabel("Client").selectOption({ label: `${client} - GROWTH` }); await page.getByRole("button", { name: "Create cycle" }).click();
   await expect(page.getByRole("heading", { name: "Monthly Fulfillment Cycle" })).toBeVisible(); const cycleUrl = page.url();
   const titlePackage = await prepareAndPackage(page, cycleUrl, titleId);
@@ -78,14 +78,14 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   await verify(page, titleId, "VERIFIED");
   await page.getByRole("link", { name: "Verification VERIFIED", exact: true }).first().click();
   await expect(page.locator("main")).toContainText("DETERMINISTIC"); await expect(page.locator("main")).toContainText("public-html-verifier-v1.0"); await expect(page.locator("main")).toContainText("observed");
-  await prepareAndPackage(page, cycleUrl, metaId);
+  await prepareAndPackage(page, cycleUrl, headingId);
   expect(Date.now(), "Mismatch must be observed before the scheduled fixture correction").toBeLessThan(correctAt);
-  await verify(page, metaId, "VERIFICATION_FAILED");
+  await verify(page, headingId, "VERIFICATION_FAILED");
   await expect(work(page, titleId)).toContainText("VERIFIED");
   await page.getByRole("button", { name: "Generate draft" }).click();
   await expect(page.locator("main")).toContainText("Verification Attention"); await expect(page.locator("main")).toContainText("VERIFICATION_FAILED");
-  await expect.poll(async () => (await (await request.get(target)).text()).includes("OPTIQ QA Fixture helps customers with verification fixture."), { timeout: 480_000, intervals: [15_000] }).toBe(true);
-  await verify(page, metaId, "VERIFIED");
+  await expect.poll(async () => (await (await request.get(target)).text()).includes("<h1>Verification fixture</h1>"), { timeout: 480_000, intervals: [15_000] }).toBe(true);
+  await verify(page, headingId, "VERIFIED");
   await expect(page.getByRole("link", { name: "Verification VERIFIED", exact: true })).toHaveCount(2);
   await expect(page.getByRole("link", { name: "Verification VERIFICATION_FAILED", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "Generate draft" }).click();
@@ -96,5 +96,5 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto(cycleUrl); await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click(); await expect(page).toHaveURL(/login/); await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByLabel("Email").fill(email); await page.getByLabel("Password").fill(password); await page.getByRole("button", { name: "Enter" }).click();
-  await page.goto(cycleUrl); await expect(work(page, titleId)).toContainText("VERIFIED"); await expect(work(page, metaId)).toContainText("VERIFIED");
+  await page.goto(cycleUrl); await expect(work(page, titleId)).toContainText("VERIFIED"); await expect(work(page, headingId)).toContainText("VERIFIED");
 });
