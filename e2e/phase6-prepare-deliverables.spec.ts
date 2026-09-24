@@ -42,9 +42,11 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await page.getByLabel("Contact email").fill(email);
   await page.getByLabel("Website URL").fill("https://example.com");
   await page.getByRole("button", { name: "Create lead" }).click();
+  await expect(page.getByRole("heading", { name: clientName })).toBeVisible();
   await page.getByLabel("Status").selectOption("QUALIFIED");
   await page.getByRole("button", { name: "Save lead" }).click();
   await page.getByRole("button", { name: "Convert to client" }).click();
+  await expect(page.getByRole("heading", { name: clientName })).toBeVisible();
   await page.getByLabel("Service plan").selectOption("GROWTH");
   await page.getByRole("button", { name: "Save client" }).click();
   const clientUrl = page.url();
@@ -90,8 +92,8 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await expect.poll(async () => {
     await page.reload({ waitUntil: "networkidle" });
     const link = page.getByRole("link", { name: "Review draft", exact: true });
-    return (await link.count()) ? await link.getAttribute("href") : null;
-  }, { timeout: 120_000, intervals: [2_000, 4_000] }).not.toBe(new URL(firstArtifactUrl).pathname);
+    return (await link.count()) > 0 && (await link.getAttribute("href")) !== new URL(firstArtifactUrl).pathname;
+  }, { timeout: 120_000, intervals: [2_000, 4_000] }).toBe(true);
   await page.getByRole("link", { name: "Review draft", exact: true }).click();
   await expect(page.locator("main")).toContainText("AWAITING_APPROVAL");
   await expect(page.locator("main")).toContainText("v2");
@@ -112,6 +114,7 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await page.getByRole("link", { name: "Review draft", exact: true }).click();
   await expect(page.locator("main")).toContainText("SCHEMA_PROPOSAL");
   await expect(page.locator("main")).toContainText("No JSON-LD was generated");
+  const missingSchemaArtifact = new URL(page.url()).pathname;
   await page.getByRole("link", { name: "Approval", exact: true }).click();
   await page.getByLabel("Decision").selectOption("CHANGES_REQUESTED");
   await page.getByLabel("Comments").fill("Provide verified entity facts before proposing JSON-LD.");
@@ -123,12 +126,9 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await page.getByRole("button", { name: "Prepare Schema" }).click();
   await expect.poll(async () => {
     await page.reload({ waitUntil: "networkidle" });
-    return page.getByRole("link", { name: "Open approval", exact: true }).getAttribute("href");
-  }, { timeout: 120_000, intervals: [2_000, 4_000] }).toBeTruthy();
-  // Wait for a new pending artifact rather than merely the old rejected version.
-  await page.getByRole("link", { name: "Inspect run", exact: true }).click();
-  await expect.poll(async () => { await page.reload({ waitUntil: "networkidle" }); return page.locator("main").textContent(); }, { timeout: 120_000, intervals: [2_000, 4_000] }).toContain("SUCCEEDED");
-  await page.goto(schemaOpportunity);
+    const link = page.getByRole("link", { name: "Review draft", exact: true });
+    return (await link.count()) > 0 && (await link.getAttribute("href")) !== missingSchemaArtifact;
+  }, { timeout: 120_000, intervals: [2_000, 4_000] }).toBe(true);
   await page.getByRole("link", { name: "Review draft", exact: true }).click();
   await expect(page.locator("main")).toContainText("Example Entity");
   await expect(page.locator("main")).toContainText("https://schema.org");

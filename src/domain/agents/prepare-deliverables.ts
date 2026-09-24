@@ -59,14 +59,14 @@ export function createDeterministicDeliverable(input: Input): Output {
     const location = fact("service_area");
     const used = [service, location].filter((f): f is PrepareBusinessFact => !!f);
     const topic = service ? `Guide to ${service.value}` : "TBD: confirm topic with the client";
-    proposals.push(proposal(input, "topic", { proposedTitle: topic, targetService: service?.value ?? "TBD", targetLocation: location?.value ?? "TBD" }, used, !service));
+    proposals.push(proposal(input, "topic", { proposedTitle: topic, targetService: service?.value ?? "TBD", targetLocation: location?.value ?? "TBD" }, used, !service || !location));
     proposals.push(proposal(input, "intent_audience", { intent: "Informational; proposed, not measured", audience: "Prospective readers evaluating this topic; confirm with client", purpose: "Answer the evidenced content gap with an educational resource" }));
     proposals.push(proposal(input, "outline", { H1: topic, H2: ["What the reader should understand", "Questions to ask", "How to evaluate the next step"] }, service ? [service] : [], !service));
     proposals.push(proposal(input, "questions", ["What should readers understand before deciding?", "What information should readers gather?", "Which next step fits the reader's needs?"]));
     const pages = capturedInternalPages(input);
     proposals.push(proposal(input, "internal_link", { candidates: pages.map(p => p.url), instruction: "Choose a relevant captured page after reviewing the finished content" }, [], pages.length === 0));
     proposals.push(proposal(input, "cta", "Invite the reader to discuss the next step; confirm the destination and wording with the client."));
-    proposals.push(proposal(input, "missing_inputs", { topic: service ? "Supported by referenced fact" : "TBD", location: location ? "Supported by referenced fact" : "TBD", finalCopy: "TBD: human authoring required", analytics: "Not supplied", publication: "Not performed" }));
+    proposals.push(proposal(input, "missing_inputs", { topic: service ? "Supported by referenced fact" : "TBD", location: location ? "Supported by referenced fact" : "TBD", finalCopy: "TBD: human authoring required", analytics: "Not supplied", publication: "Not performed" }, [], true));
   } else if (route.artifactType === "INTERNAL_LINK_PROPOSAL") {
     const pages = capturedInternalPages(input);
     const source = pages[0];

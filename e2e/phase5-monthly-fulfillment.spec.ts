@@ -24,6 +24,7 @@ async function signUp(page: Page) {
 }
 
 async function ensureWorkspace(page: Page) {
+  await expect(page).not.toHaveURL(/\/login/);
   await page.waitForLoadState("networkidle");
   if (page.url().includes("/workspace-setup")) {
     await page.getByLabel("Workspace name").fill(workspaceName);
