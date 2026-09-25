@@ -63,6 +63,14 @@ describe("Doc 28 deterministic parser fixtures", () => {
     expect(parsed.client).toMatchObject({ classification: "REVIEW_REQUIRED", confidence: "LOW" });
     expect(aggregateVisibility([{ status: "SUCCEEDED", parsed }]).mentions).toBe(0);
   });
+  it("does not treat uppercase common-name businesses as approved abbreviations", () => {
+    const parsed = parseVisibilityAnswer("The tide in Denver is an unrelated topic.", [], { ...aliases, client: { ...aliases.client, names: ["TIDE"], abbreviations: [] } });
+    expect(parsed.client).toMatchObject({ classification: "REVIEW_REQUIRED", confidence: "LOW" });
+    expect(aggregateVisibility([{ status: "SUCCEEDED", parsed }]).mentions).toBe(0);
+  });
+  it("recognizes explicitly approved abbreviations without inventing aliases", () => {
+    expect(parseVisibilityAnswer("CPH provides plumbing services.", [], aliases).client.classification).toBe("DIRECT_MENTION");
+  });
   it.each(["https://cedar.example/", "https://www.cedar.example/services?x=1"])("classifies native citation %s without naming", url => {
     const parsed = parseVisibilityAnswer("See these sources.", [citation(url)], aliases);
     expect(parsed.client.classification).toBe("CITED_SOURCE"); expect(parsed.clientCitationCount).toBe(1);

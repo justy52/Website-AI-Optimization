@@ -15,8 +15,12 @@ function classifyEntity(answer: string, entity: AliasEntity, citations: ParsedCi
     const name = entity.names.find(alias => contains(sentence, alias));
     if (!name) continue;
     const evidence = sentence.slice(0, 500);
-    const ambiguous = name.split(/\s+/).length === 1 && name !== name.toUpperCase();
-    const disambiguated = cited || urlMention || entity.locations.some(location => contains(sentence, location));
+    // Capitalization alone cannot turn a common noun into an abbreviation.
+    // Only an explicitly approved abbreviation, in its approved case, qualifies.
+    const abbreviation = entity.abbreviations?.includes(name) && new RegExp(`(?<![\\p{L}\\p{N}])${escaped(name)}(?![\\p{L}\\p{N}])`, "u").test(sentence);
+    const ambiguous = name.split(/\s+/).length === 1 && !abbreviation;
+    // A place name alone does not establish which single-word entity is meant.
+    const disambiguated = cited || urlMention;
     if (ambiguous && !disambiguated) return { ...base, classification: "REVIEW_REQUIRED", confidence: "LOW", evidence };
     if (/\b(example|hypothetical|unrelated|not (?:a |the )?(?:business|company)|word|phrase|fictional|ignore (?:all|previous)|system prompt|grant execute|change (?:the )?entitlements)\b/i.test(sentence)) {
       return { ...base, classification: "CONTEXT_ONLY", evidence };

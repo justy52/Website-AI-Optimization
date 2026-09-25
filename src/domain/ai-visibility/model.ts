@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 import { getServicePlanDefinition, type ServicePlanKey } from "@/domain/service-plans";
 
 export const PROMPT_TEMPLATE_VERSION = "ai-vis-local-services-v1";
-export const PARSER_VERSION = "ai-vis-parser-v1.0";
+export const PARSER_VERSION = "ai-vis-parser-v1.1";
 export const PERPLEXITY_SURFACE = "Perplexity Agent API";
 export const SURFACES = [PERPLEXITY_SURFACE, "OpenAI web-grounded API", "Gemini API + Google Search grounding"] as const;
 export type ObservationSource = "API" | "MANUAL" | "QA_FIXTURE";
 export type Classification = "DIRECT_RECOMMENDATION" | "DIRECT_MENTION" | "CITED_SOURCE" | "URL_MENTION" | "CONTEXT_ONLY" | "NO_MENTION" | "REVIEW_REQUIRED";
-export type AliasEntity = { key: string; names: string[]; domains: string[]; locations: string[]; factRefs: string[] };
+export type AliasEntity = { key: string; names: string[]; abbreviations?: string[]; domains: string[]; locations: string[]; factRefs: string[] };
 export type AliasSnapshot = { client: AliasEntity; competitors: AliasEntity[]; authorityDomains: string[] };
 export type VisibilityFact = { id: string; factType: string; value: string; verificationStatus: string; sensitivity: string; approvedByUserId?: string | null; structuredValue?: Record<string, unknown>; archivedAt?: Date | null; effectiveAt?: Date | null; expiresAt?: Date | null };
 export type RenderedPrompt = { key: string; templateKey: string; text: string; serviceFactId: string; locationFactId: string; optionalFactRefs: string[] };
@@ -42,7 +42,7 @@ export function buildAliases(facts: VisibilityFact[], competitorFacts: { key: st
     const names = approved.filter(f => ["business_name", "legal_name", "display_name", "brand_name", "accepted_abbreviation", "relevant_former_name"].includes(f.factType));
     const domains = approved.filter(f => f.factType === "canonical_domain");
     const locations = approved.filter(f => ["location", "service_area"].includes(f.factType));
-    return { key, names: [...new Set(names.map(f => f.value.trim()).filter(v => v.length >= 2 && v.length <= 160))], domains: [...new Set(domains.map(f => normalizeDomain(f.value)).filter((v): v is string => Boolean(v)))], locations: locations.map(f => f.value.trim()), factRefs: [...names, ...domains, ...locations].map(f => f.id) };
+    return { key, names: [...new Set(names.map(f => f.value.trim()).filter(v => v.length >= 2 && v.length <= 160))], abbreviations: names.filter(f => f.factType === "accepted_abbreviation").map(f => f.value.trim()), domains: [...new Set(domains.map(f => normalizeDomain(f.value)).filter((v): v is string => Boolean(v)))], locations: locations.map(f => f.value.trim()), factRefs: [...names, ...domains, ...locations].map(f => f.id) };
   };
   const client = entity("client", facts);
   if (!client.names.length || !client.domains.length) throw new VisibilityValidationError("Add PUBLIC VERIFIED business name and canonical_domain facts before creating aliases.");

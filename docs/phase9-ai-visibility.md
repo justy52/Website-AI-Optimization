@@ -64,10 +64,13 @@ websites. Only successful API observations consume usage. A cadence window earns
 completion only when all selected prompts succeed. QA fixtures and manual records
 never consume API usage or complete contractual deliverables.
 
-`ai-vis-parser-v1.0` uses provider-native sources first and approved alias/domain
+`ai-vis-parser-v1.1` uses provider-native sources first and approved alias/domain
 matches second. Lists alone do not imply recommendation, negatives cannot become
 recommendation wins, ambiguous common names require review, and prose URLs are
 not provider citations. Unknown sources remain OTHER; no authority is inferred.
+Version 1.1 requires an explicit accepted-abbreviation fact and matching case;
+uppercase spelling or a location alone cannot disambiguate a single-word name.
+Earlier v1.0 QA observations retain their original parser version and result.
 
 Reports disclose surface, window, sample size, failures, limitations, and sampled
 rates. Failed/unavailable prompts do not enter successful denominators. No safe
