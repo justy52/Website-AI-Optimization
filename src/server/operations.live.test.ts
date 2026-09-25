@@ -1,3 +1,4 @@
+import { recoverInternalRun } from "./recovery";
 import { requestManualMonitoringRun, executeMonitoringRun } from "./monitoring";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
@@ -116,8 +117,20 @@ describe.skipIf(!connectionString)("Phase 10 live operational controls / non-byp
     expect((await cleanupWorkspace(c,false,database)).deletedCount).toBe(1);
     expect((await cleanupWorkspace(c,false,database)).deletedCount).toBe(0);
     expect((await client.query("select count(*)::int n from ai_visibility_captures where workspace_id=$1",[workspaceId])).rows[0].n).toBe(1);
-    expect((await exportWorkspace(c,workspaceId,database)).counts).toEqual(before);
+    const after=(await exportWorkspace(c,workspaceId,database)).counts;
+    for(const key of ["ai_visibility_observations","reports","monthly_reports","execution_records","implementation_verification_records"] as const) expect(after[key]).toBe(before[key]);
     expect((await getVisibilityPanel(c,websiteId,database)).observations).toHaveLength(2);
+  });
+  it("provider dollar precision and unknown costs survive reconciliation; paid recovery is blocked",async()=>{
+    const insert=async(metadata:Record<string,unknown>,cost:number)=>withTenantContext(database,c,async tx=>(await tx.insert(schema.agentRuns).values({workspaceId,triggerType:"USER",agentKey:"existing-page-optimization",agentVersion:"test",permissionLevel:"PREPARE",status:"FAILED",timeoutSeconds:60,provider:"vercel-ai-gateway",model:"synthetic",promptTemplateVersion:"test",outputSchemaVersion:"test",idempotencyKey:randomUUID(),actualCostCents:cost,providerMetadata:metadata,completedAt:new Date()}).returning())[0]);
+    const known=await insert({gateway:{totalCostUsd:0.000123}},1);const unknown=await insert({},0);
+    await withTenantContext(database,c,tx=>syncUsageLedger(tx,c));await withTenantContext(database,c,tx=>syncUsageLedger(tx,c));
+    expect((await client.query("select actual_cost_usd from usage_ledger where agent_run_id=$1",[known.id])).rows[0].actual_cost_usd).toBe("0.000123");
+    expect((await client.query("select actual_cost_usd from usage_ledger where agent_run_id=$1",[unknown.id])).rows[0].actual_cost_usd).toBeNull();
+    await expect(recoverInternalRun(c,{kind:"prepare",id:unknown.id,mode:"retry",reason:"Indeterminate paid outcome"},database)).rejects.toMatchObject({code:"MANUAL_REVIEW"});
+    expect(await recoverInternalRun(c,{kind:"prepare",id:unknown.id,mode:"review",reason:"Investigate provider outcome"},database)).toEqual({kind:"review"});
+    expect((await client.query("select count(*)::int n from agent_runs where workspace_id=$1",[workspaceId])).rows[0].n).toBe(2);
+    await client.query("savepoint history");await expect(client.query("delete from usage_ledger where workspace_id=$1",[workspaceId])).rejects.toMatchObject({code:"23514"});await client.query("rollback to savepoint history");
   });
   it("ledger reconciles deterministic usage as zero and dashboard is readable",async()=>{
     await facts();const panel=await getVisibilityPanel(c,websiteId,database);

@@ -26,6 +26,7 @@ test("Phase 10 pilot operations, pause, budget, retention, export and accessibil
   await expect(page.getByRole("heading", {name:/Audit/,level:1})).toBeVisible();
   await page.getByRole("button", {name:"Finalize audit snapshot"}).click();
   await expect(page.getByText("Audit snapshot finalized.",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Create report"}).click();await page.getByRole("button",{name:"Finalize report"}).click();
   await page.goto("/opportunities?websiteId="+new URL(websiteUrl).pathname.split("/").pop());
   await page.locator("main a.mx-row").filter({hasText:/seo.title|seo.meta_description|seo.heading_structure|conv.primary_cta/}).first().click();
   const opportunityUrl=page.url();const opportunityId=new URL(opportunityUrl).pathname.split("/").pop()!;
@@ -33,7 +34,7 @@ test("Phase 10 pilot operations, pause, budget, retention, export and accessibil
   const pause=page.locator("form").filter({has:page.getByRole("button",{name:"Update workspace pause"})});
   await pause.getByLabel("Reason",{exact:true}).fill("QA pause exercise");await pause.getByRole("button").click();await expect(page.locator("main")).toContainText("AUTOMATION PAUSED");
   await page.goto(opportunityUrl);await page.getByRole("button",{name:"Prepare Page Optimization"}).click();await expect(page.locator("main").getByRole("alert")).toContainText("Automation is paused");
-  await pause.getByLabel("Change",{exact:true}).selectOption("false");await pause.getByLabel("Reason",{exact:true}).fill("QA resume exercise");await pause.getByRole("button").click();await expect(page.getByRole("status")).toContainText("Operation completed");
+  await pause.getByRole("combobox",{name:"Change",exact:true}).selectOption("false");await pause.getByLabel("Reason",{exact:true}).fill("QA resume exercise");await pause.getByRole("button").click();await expect(page.getByRole("status")).toContainText("Operation completed");
   const budget=page.locator("form").filter({has:page.getByRole("button",{name:"Save workspace budgets"})});
   await budget.getByLabel("Active workflow ceiling",{exact:true}).fill("0");await budget.getByLabel("Budget-change reason").fill("QA zero active workflow ceiling");await budget.getByRole("button").click();await expect(page.getByRole("status")).toBeVisible();
   await page.goto(opportunityUrl);await page.getByRole("button",{name:"Prepare Page Optimization"}).click();await expect(page.locator("main").getByRole("alert")).toContainText("active workflow ceiling");
@@ -46,7 +47,7 @@ test("Phase 10 pilot operations, pause, budget, retention, export and accessibil
   await page.getByLabel("Cleanup mode").selectOption("false");await page.getByRole("button",{name:"Run retention cleanup"}).click();await expect(page.getByRole("status")).toContainText("1 deleted");
   await page.getByLabel("Cleanup mode").selectOption("true");await page.getByRole("button",{name:"Run retention cleanup"}).click();await expect(page.getByRole("status")).toContainText("0 expired eligible");
   const exported=await page.request.get("/api/workspace-export");expect(exported.status()).toBe(200);const data=await exported.json();
-  expect(data.exportVersion).toBe("optiq-workspace-v1");expect(data.counts.ai_visibility_observations).toBe(2);expect(data.counts.clients).toBe(1);
+  expect(data.exportVersion).toBe("optiq-workspace-v1");expect(data.counts.ai_visibility_observations).toBe(2);expect(data.counts.clients).toBe(1);expect(data.counts.reports).toBe(1);
   for(const [key,rows]of Object.entries(data.data))expect(data.counts[key]).toBe((rows as unknown[]).length);
   expect(JSON.stringify(data)).not.toMatch(/integration_secrets|access_token|refresh_token|ciphertext|BETTER_AUTH_SECRET/);
   await expect(page.locator("main")).toContainText("PREPARE");await expect(page.locator("main")).toContainText("Production EXECUTE: DISABLED");

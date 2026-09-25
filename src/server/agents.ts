@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lockOperationalWorkspace, assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext } from "./operations";
+import { lockOperationalWorkspace, assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext, OperationsValidationError } from "./operations";
 import { reserveUsage, recordPrepareUsage } from "./usage-ledger";
 import { createHash } from "node:crypto";
 
@@ -294,6 +294,11 @@ export async function requestPrepareDraftForOpportunity(
         status: existingRun.status,
       };
     }
+
+    const uncertain = await tx.execute(sql`select r.id from agent_runs r left join usage_ledger l on l.workspace_id=r.workspace_id and l.agent_run_id=r.id
+      where r.workspace_id=${context.workspaceId} and r.opportunity_id=${opportunity.id} and r.agent_key=${agent.key} and r.provider<>'deterministic'
+      and r.status in ('FAILED','TIMED_OUT','BUDGET_LIMITED','CANCELED') and (l.id is null or coalesce((l.metadata->>'attemptCommitted')::boolean,false)) limit 1`);
+    if (uncertain.rows.length) throw new OperationsValidationError("An earlier paid PREPARE attempt requires manual review. Its outcome cannot be safely retried.", "MANUAL_REVIEW");
 
     const [latestArtifact] = await tx
       .select({ version: draftArtifacts.artifactVersion })

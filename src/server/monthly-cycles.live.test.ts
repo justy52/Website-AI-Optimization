@@ -60,6 +60,14 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     expect((await client.query("select count(*)::int n from agent_runs where workspace_id=$1",[b])).rows[0].n).toBe(before);
   });
 
+  it("Phase 10 ordinary PREPARE requests cannot replay an uncertain earlier paid failure",async()=>{
+    const opp=(await client.query("select * from opportunities where id='80000000-0000-4000-8000-0000000000b1'")).rows[0];
+    await client.query("insert into agent_runs(workspace_id,client_id,website_id,opportunity_id,trigger_type,agent_key,agent_version,permission_level,status,timeout_seconds,provider,model,prompt_template_version,output_schema_version,idempotency_key,completed_at) values($1,$2,$3,$4,'USER','existing-page-optimization','test','PREPARE','FAILED',60,'vercel-ai-gateway','synthetic','test','test',$5,now())",[b,opp.client_id,opp.website_id,opp.id,randomUUID()]);
+    const before=(await client.query("select count(*)::int n from agent_runs where workspace_id=$1",[b])).rows[0].n;
+    await expect(requestPrepareDraftForOpportunity(context,opp.id,database)).rejects.toMatchObject({code:"MANUAL_REVIEW"});
+    expect((await client.query("select count(*)::int n from agent_runs where workspace_id=$1",[b])).rows[0].n).toBe(before);
+  });
+
   async function clearImplementation() {
     expect((await client.query("select count(*)::int n from implementation_verification_records where monthly_cycle_id=$1", [cycleId])).rows[0].n).toBe(0);
     await client.query("delete from manual_implementation_records where monthly_cycle_id=$1", [cycleId]);

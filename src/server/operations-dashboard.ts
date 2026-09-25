@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { workspaceOperations, retentionCleanupRuns, activityEvents } from "@/db/schema";
 import { withTenantContext } from "@/db/tenant";
@@ -23,8 +23,9 @@ export async function getOperationsPanel(c: WorkspaceContext, database = db) {
       (select count(*) from retention_cleanup_runs where workspace_id=${c.workspaceId} and status='FAILED') as cleanup_failures`);
     const jobs = await tx.execute(sql`select id,'prepare' as kind,agent_key as type,status::text,provider,created_at from agent_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING','FAILED','TIMED_OUT','BUDGET_LIMITED') union all select id,'monitor',monitor_key,status::text,source_provider,created_at from monitoring_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING','FAILED') union all select id,'visibility',surface,status,'perplexity',created_at from ai_visibility_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING','FAILED','UNAVAILABLE') order by created_at desc limit 50`);
     const [cleanup] = await tx.select().from(retentionCleanupRuns).where(eq(retentionCleanupRuns.workspaceId, c.workspaceId)).orderBy(desc(retentionCleanupRuns.completedAt)).limit(1);
+    const [successfulCleanup] = await tx.select().from(retentionCleanupRuns).where(and(eq(retentionCleanupRuns.workspaceId,c.workspaceId),eq(retentionCleanupRuns.status,"SUCCEEDED"),eq(retentionCleanupRuns.dryRun,false))).orderBy(desc(retentionCleanupRuns.completedAt)).limit(1);
     const events = await tx.select().from(activityEvents).where(eq(activityEvents.workspaceId, c.workspaceId)).orderBy(desc(activityEvents.createdAt)).limit(30);
-    return { global, workspace: workspace ?? { ...DEFAULT_BUDGETS, ...UNPAUSED }, usage, costs: costs.rows, health: health.rows[0], jobs: jobs.rows, cleanup, events, platformOperator: isPlatformOperator(c), readiness: environmentReadiness() };
+    return { global, workspace: workspace ?? { ...DEFAULT_BUDGETS, ...UNPAUSED }, usage, costs: costs.rows, health: health.rows[0], jobs: jobs.rows, cleanup, successfulCleanup, events, platformOperator: isPlatformOperator(c), readiness: environmentReadiness() };
   });
 }
 export function environmentReadiness() {
