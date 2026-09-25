@@ -25,8 +25,9 @@ async function signUp(page: Page) {
 
 async function ensureWorkspace(page: Page) {
   await expect(page).not.toHaveURL(/\/login/);
-  await page.waitForLoadState("domcontentloaded");
-  if (page.url().includes("/workspace-setup")) {
+  const workspaceForm = page.getByRole("heading", { name: "Create Workspace", exact: true });
+  await expect(workspaceForm.or(monthlyCyclesNavLink(page))).toBeVisible();
+  if (await workspaceForm.isVisible()) {
     await page.getByLabel("Workspace name").fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
   }

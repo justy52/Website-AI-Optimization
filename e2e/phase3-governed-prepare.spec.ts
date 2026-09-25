@@ -1,4 +1,11 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Locator } from "@playwright/test";
+
+async function submit(page: Page, button: Locator) {
+  const path = new URL(page.url()).pathname;
+  const responsePromise = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === path);
+  await button.click();
+  expect((await responsePromise).status()).toBeLessThan(400);
+}
 
 const timestamp = Date.now();
 const runId = `${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
@@ -22,9 +29,10 @@ async function signUp(page: Page) {
 
 async function ensureWorkspace(page: Page) {
   await expect(page).not.toHaveURL(/\/login/);
-  // Preview may keep background requests open after the form is ready.
-  await page.waitForLoadState("domcontentloaded");
-  if (page.url().includes("/workspace-setup")) {
+  // Auth can pass through / before redirecting to workspace setup.
+  const workspaceForm = page.getByRole("heading", { name: "Create Workspace", exact: true });
+  await expect(workspaceForm.or(page.getByRole("link", { name: "Leads", exact: true }))).toBeVisible();
+  if (await workspaceForm.isVisible()) {
     await page.getByLabel("Workspace name").fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
   }
@@ -57,7 +65,7 @@ async function pollForLink(page: Page, name: RegExp) {
   await expect
     .poll(
       async () => {
-        await page.reload({ waitUntil: "networkidle" });
+        await page.reload({ waitUntil: "domcontentloaded" });
         return page.getByRole("link", { name }).count();
       },
       { timeout: 180_000, intervals: [2_000, 5_000, 10_000] },
@@ -74,7 +82,7 @@ async function openLatestRunDraftVersionForClient(
   const artifactMarker = `v${version}`;
 
   while (Date.now() < deadline) {
-    await page.goto("/runs", { waitUntil: "networkidle" });
+    await page.goto("/runs", { waitUntil: "domcontentloaded" });
     const runRow = page.locator("main a.mx-row", {
       hasText: expectedClientName,
     }).first();
@@ -88,7 +96,7 @@ async function openLatestRunDraftVersionForClient(
 
         if ((await draftLink.count()) > 0) {
           await draftLink.click();
-          await page.waitForLoadState("networkidle");
+          await expect(page).toHaveURL(/\/drafts\//);
           const draftText = (await page.locator("main").textContent()) ?? "";
 
           if (draftText.includes(artifactMarker)) {
@@ -149,11 +157,11 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await expect(page.getByText("website_health")).toBeVisible();
   await expect(page.getByText("search_console")).toBeVisible();
   const healthSchedule = page.locator(".mx-row", { hasText: "website_health" }).first();
-  await healthSchedule.getByRole("button", { name: "Run" }).click();
+  await submit(page, healthSchedule.getByRole("button", { name: "Run" }));
   await expect
     .poll(
       async () => {
-        await page.reload({ waitUntil: "networkidle" });
+        await page.reload({ waitUntil: "domcontentloaded" });
         return (await page.locator("main").textContent()) ?? "";
       },
       { timeout: 180_000, intervals: [3_000, 5_000, 10_000] },
@@ -172,11 +180,11 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await competitorForm.getByRole("button", { name: "Add competitor" }).click();
   await expect(page.getByText(competitorName)).toBeVisible();
   const competitorRow = page.locator(".mx-row", { hasText: competitorName }).first();
-  await competitorRow.getByRole("button", { name: "Observe" }).click();
+  await submit(page, competitorRow.getByRole("button", { name: "Observe" }));
   await expect
     .poll(
       async () => {
-        await page.reload({ waitUntil: "networkidle" });
+        await page.reload({ waitUntil: "domcontentloaded" });
         return (await page.locator("main").textContent()) ?? "";
       },
       { timeout: 120_000, intervals: [2_000, 5_000, 10_000] },
@@ -189,7 +197,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Integrations" })).toBeVisible();
   await expect(page.getByText("Google Search Console")).toBeVisible();
 
-  await page.goto(clientDetailUrl, { waitUntil: "networkidle" });
+  await page.goto(clientDetailUrl, { waitUntil: "domcontentloaded" });
   await addBusinessFact(page, {
     factType: "service",
     verification: "VERIFIED",
@@ -229,7 +237,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await expect(page.getByRole("heading")).toBeVisible();
   const opportunityUrl = page.url();
   await expect(page.getByText("Priority explanation")).toBeVisible();
-  await page.getByRole("button", { name: "Prepare Page Optimization" }).click();
+  await submit(page, page.getByRole("button", { name: "Prepare Page Optimization" }));
 
   await pollForLink(page, /Inspect run/);
   await pollForLink(page, /Open approval/);
@@ -266,7 +274,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await expect(page.getByText("APPROVED", { exact: true })).toBeVisible();
 
   await page.goto(opportunityUrl);
-  await page.getByRole("button", { name: "Prepare Page Optimization" }).click();
+  await submit(page, page.getByRole("button", { name: "Prepare Page Optimization" }));
   await openLatestRunDraftVersionForClient(page, clientName, 2);
   await page.getByRole("link", { name: "Approval", exact: true }).click();
   await expect(page.getByText("Pending")).toBeVisible();
