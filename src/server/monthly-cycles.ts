@@ -1,4 +1,6 @@
 import { routePrepareOpportunity } from "@/domain/agents/routing";
+import { visibilityCycleSummary } from "./ai-visibility";
+import { serverEnv } from "@/lib/env";
 import {
   and,
   asc,
@@ -320,6 +322,7 @@ async function refreshMonthlyCycleAccounting(
     );
 
   const manualMinutes = manual?.minutes ?? 0;
+  const visibility = await visibilityCycleSummary(tx, context.workspaceId, cycle.clientId, cycle.websiteId, cycle.periodStartDate, cycle.periodEndDate);
   const pageCompleted = pageCount?.count ?? 0;
   const contentCompleted = contentCount?.count ?? 0;
   const updatedAt = now();
@@ -331,7 +334,7 @@ async function refreshMonthlyCycleAccounting(
       manualImplementationMinutes: manualMinutes,
       majorContentAssetsCompleted: contentCompleted,
       existingPageOptimizationsCompleted: pageCompleted,
-      aiVisibilityObservationsUsed: 0,
+      aiVisibilityObservationsUsed: visibility.observationsUsed,
       competitorTargetsActive: competitors?.count ?? 0,
       trackedKeywordsActive: 0,
       updatedAt,
@@ -357,7 +360,7 @@ async function refreshMonthlyCycleAccounting(
     manualImplementationMinutes: manualMinutes,
     majorContentAssetsCompleted: contentCompleted,
     existingPageOptimizationsCompleted: pageCompleted,
-    aiVisibilityObservationsUsed: 0,
+    aiVisibilityObservationsUsed: visibility.observationsUsed,
     competitorTargetsActive: competitors?.count ?? 0,
     trackedKeywordsActive: 0,
   };
@@ -615,7 +618,11 @@ async function syncOperationalDeliverablesForCycle(
     completedCount: summary.aiReadinessRechecks > 0 ? 1 : 0,
   });
 
-  await tx.update(monthlyCycleDeliverables).set({
+  const visibility = await visibilityCycleSummary(tx, context.workspaceId, cycle.clientId, cycle.websiteId, cycle.periodStartDate, cycle.periodEndDate);
+  if (visibility.configured || visibility.completedWindows > 0) {
+    await updateCountedDeliverable(tx, context, cycle.id, { key: "observed_ai_visibility", completedCount: visibility.completedWindows });
+    await tx.update(monthlyCycleDeliverables).set({ limitations: { sampled: true, observationsUsed: visibility.observationsUsed, surfaces: visibility.sections }, completionEvidence: { runs: visibility.sections.map(s => s.runId) } }).where(and(eq(monthlyCycleDeliverables.workspaceId, context.workspaceId), eq(monthlyCycleDeliverables.monthlyCycleId, cycle.id), eq(monthlyCycleDeliverables.deliverableKey, "observed_ai_visibility")));
+  } else await tx.update(monthlyCycleDeliverables).set({
     status: sql`case when ${monthlyCycleDeliverables.status} = 'WAIVED' then 'WAIVED'::public.monthly_deliverable_status else 'UNAVAILABLE'::public.monthly_deliverable_status end`, completedCount: 0, completedAt: null,
     completedByUserId: null, completionEvidence: {},
     limitations: { code: "PROVIDER_NOT_ACTIVE" }, updatedAt: now(),
@@ -645,7 +652,7 @@ async function insertCycleDeliverables(
     snapshot: cycle.entitlementSnapshot as MonthlyEntitlementSnapshot,
     period: { month: cycle.cycleMonth },
     searchConsoleConnected,
-    observedAiVisibilityEnabled: false,
+    observedAiVisibilityEnabled: Boolean(serverEnv.PERPLEXITY_API_KEY),
   });
 
   for (const template of templates) {
@@ -719,6 +726,7 @@ export async function createMonthlyCycle(
     const snapshot = buildMonthlyEntitlementSnapshot(
       client.servicePlan as ServicePlanKey,
       client.servicePlanVersion,
+      Boolean(serverEnv.PERPLEXITY_API_KEY),
     );
     const [inserted] = await tx
       .insert(monthlyCycles)
@@ -824,6 +832,7 @@ export async function createScheduledMonthlyCycle(
     const snapshot = buildMonthlyEntitlementSnapshot(
       client.servicePlan as ServicePlanKey,
       client.servicePlanVersion,
+      Boolean(serverEnv.PERPLEXITY_API_KEY),
     );
     const [inserted] = await tx
       .insert(monthlyCycles)
@@ -1748,6 +1757,7 @@ async function reportDataForCycle(
 
   const prepareStates = await latestPrepareStateSelect(tx, context, workRows.map(row => row.item.opportunityId));
   return buildMonthlyReportDraft({
+    observedAiVisibility: (await visibilityCycleSummary(tx, context.workspaceId, cycle.clientId, cycle.websiteId, cycle.periodStartDate, cycle.periodEndDate)).sections,
     cycle: {
       id: cycle.id,
       clientName: client.name,

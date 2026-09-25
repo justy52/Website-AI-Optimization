@@ -21,6 +21,7 @@ import { getMonthlyCycleDashboardSummary } from "@/server/monthly-cycles";
 import { getOpportunityDashboardSummary } from "@/server/opportunities";
 import { getDashboardSummary } from "@/server/revenue";
 import { getVerificationDashboard } from "@/server/verification";
+import { getVisibilityDashboard } from "@/server/ai-visibility";
 
 import { EmptyState, PageHeader, Panel, RowLink, StatusChip } from "./ui";
 
@@ -40,6 +41,7 @@ export default async function DashboardPage() {
     competitorSummary,
     monthlyCycleSummary,
     verificationSummary,
+    visibilitySummary,
   ] = await Promise.all([
     getDashboardSummary(shell.workspaceContext),
     getOpportunityDashboardSummary(shell.workspaceContext),
@@ -48,6 +50,7 @@ export default async function DashboardPage() {
     getCompetitorDashboardSummary(shell.workspaceContext),
     getMonthlyCycleDashboardSummary(shell.workspaceContext),
     getVerificationDashboard(shell.workspaceContext),
+    getVisibilityDashboard(shell.workspaceContext),
   ]);
 
   return (
@@ -66,6 +69,7 @@ export default async function DashboardPage() {
         <div className="mx-grid mx-grid-3">{[["Awaiting verification", verificationSummary.awaiting], ["Verification failures", verificationSummary.failed], ["Verification warnings", verificationSummary.warnings], ["Verified this cycle", verificationSummary.verified]].map(([label, count]) => <Link className="mx-kpi" href="/monthly-cycles" key={label}><span className="mx-kpi-label">{label}</span><span className="mx-kpi-value">{count}</span></Link>)}</div>
       </Panel>
       <div className="mx-spacer" />
+      <Panel title="Observed AI Visibility — sampled evidence"><p>Runs due {visibilitySummary.due} · Failed runs {visibilitySummary.failed} · Clients missing verified facts {visibilitySummary.missingFacts} · Provider unavailable {visibilitySummary.unavailable} · Samples requiring review {visibilitySummary.review}</p><Link className="mx-link" href={"/ai-visibility" as never}>Review AI visibility</Link></Panel>
       <div className="mx-grid mx-grid-3">
         {statCards.map((card) => {
           const Icon = card.icon;

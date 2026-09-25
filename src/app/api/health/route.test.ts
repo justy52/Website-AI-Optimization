@@ -12,7 +12,7 @@ describe("/api/health", () => {
     expect(body).toEqual({
       status: "ok",
       app: "optiq",
-      phase: "8",
+      phase: "9",
       commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     });
     expect(JSON.stringify(body)).not.toMatch(

@@ -120,6 +120,7 @@ export default async function MonthlyCycleDetailPage({
   return (
     <>
       {validation ? <p role="alert">{validation}</p> : null}
+      {cycle.websiteId && <Link className="mx-btn mx-btn-ghost" href={`/ai-visibility?websiteId=${cycle.websiteId}` as never}>Observed AI Visibility — prompt sets and samples</Link>}
       <PageHeader
         action={
           <div className="mx-top-actions">
@@ -604,6 +605,10 @@ export default async function MonthlyCycleDetailPage({
                 </div>
               ))}
             </div>
+            {reportSections?.observedAiVisibility ? <div><h3>Observed AI Visibility</h3>{(() => {
+              const visibility = reportSections.observedAiVisibility as { explanation?: string; samples?: { runId: string; surface: string; window: string; copy: string; limitations: string[] }[] };
+              return <>{visibility.explanation && <p>{visibility.explanation}</p>}{visibility.samples?.map(sample => <div key={sample.runId}><p>{sample.surface} · {sample.window}</p><p>{sample.copy}</p><p>{sample.limitations.join(" ")}</p></div>)}</>;
+            })()}</div> : null}
             <div className="mx-grid mx-grid-3">
               <div className="mx-mini-panel">
                 <span className="mx-eyebrow">Sections</span>

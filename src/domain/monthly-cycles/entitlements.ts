@@ -58,7 +58,7 @@ export type MonthlyEntitlementSnapshot = {
   accountingKeys: MonthlyAccountingKey[];
   noRollover: true;
   deferredProviders: {
-    observedAiVisibility: "PROVIDER_NOT_ACTIVE";
+    observedAiVisibility: "PROVIDER_NOT_ACTIVE" | "CONFIGURED_API_SURFACE";
     rankKeywordObservation: "PROVIDER_NOT_ACTIVE";
   };
 };
@@ -103,6 +103,7 @@ export function shouldCreateRecurringMonthlyCycle(
 export function buildMonthlyEntitlementSnapshot(
   plan: ServicePlanKey,
   version = SERVICE_PLAN_DEFINITION_VERSION,
+  observedAiVisibilityConfigured = false,
 ): MonthlyEntitlementSnapshot {
   const definition = getServicePlanDefinition(plan, version);
 
@@ -122,7 +123,7 @@ export function buildMonthlyEntitlementSnapshot(
     accountingKeys: monthlyAccountingKeys,
     noRollover: true,
     deferredProviders: {
-      observedAiVisibility: "PROVIDER_NOT_ACTIVE",
+      observedAiVisibility: observedAiVisibilityConfigured ? "CONFIGURED_API_SURFACE" : "PROVIDER_NOT_ACTIVE",
       rankKeywordObservation: "PROVIDER_NOT_ACTIVE",
     },
   };
@@ -232,7 +233,7 @@ export function buildMonthlyDeliverableTemplates(input: {
   }
 
   if (hasCadence(snapshot.monitoring.observedAiVisibility)) {
-    const enabled = false; // No observation provider is active in Phase 5.
+    const enabled = input.observedAiVisibilityEnabled === true;
 
     templates.push(
       deliverable({

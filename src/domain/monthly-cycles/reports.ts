@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { MonthlyEntitlementSnapshot } from "./entitlements";
 
 export const MONTHLY_REPORT_METHODOLOGY_VERSION =
-  "monthly-report-deterministic-v1.1";
+  "monthly-report-deterministic-v1.2";
 
 export type MonthlyReportCycleInput = {
   id: string;
@@ -54,6 +54,7 @@ export type MonthlyReportCompetitorInput = {
 };
 
 export type MonthlyReportDraftInput = {
+  observedAiVisibility?: Record<string, unknown>[];
   cycle: MonthlyReportCycleInput;
   deliverables: MonthlyReportDeliverableInput[];
   workItems: MonthlyReportWorkInput[];
@@ -167,6 +168,7 @@ export function buildMonthlyReportDraft(
       competitorWindow: { startDate: periodStart, endDate: periodEnd },
     },
     sections: {
+      observedAiVisibility: input.observedAiVisibility?.length ? { status: "SAMPLED_API_OBSERVATIONS", samples: input.observedAiVisibility, scoreImpact: "NONE" } : { status: "UNAVAILABLE_OR_NO_API_OBSERVATIONS", explanation: "No legitimate API visibility samples are available for this window. AI Readiness is a separate scored dimension." },
       executiveSummary: {
         periodStart,
         periodEnd,

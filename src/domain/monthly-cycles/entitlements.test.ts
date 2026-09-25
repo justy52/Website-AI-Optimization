@@ -7,6 +7,11 @@ import {
 } from "./entitlements";
 
 describe("monthly cycle entitlements", () => {
+  it("configured visibility starts pending and never claims observations from configuration alone", () => {
+    expect(buildMonthlyEntitlementSnapshot("PRO", undefined, true).deferredProviders.observedAiVisibility).toBe("CONFIGURED_API_SURFACE");
+    const deliverable = buildMonthlyDeliverableTemplates({ snapshot: buildMonthlyEntitlementSnapshot("PRO"), period: { month: 9 }, searchConsoleConnected: false, observedAiVisibilityEnabled: true }).find(item => item.key === "observed_ai_visibility");
+    expect(deliverable).toMatchObject({ status: "NOT_STARTED", completedCount: 0, targetCount: 2 });
+  });
   it("snapshots Doc 27 package limits without rollover", () => {
     const essentials = buildMonthlyEntitlementSnapshot("ESSENTIALS");
     const growth = buildMonthlyEntitlementSnapshot("GROWTH");

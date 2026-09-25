@@ -19,6 +19,7 @@ import {
 import { SCORING_DEFINITION_VERSION } from "@/domain/audits/scoring";
 import { PRIORITY_DEFINITION_VERSION } from "@/domain/opportunities/priority";
 import { SERVICE_PLAN_DEFINITION_VERSION } from "@/domain/service-plans";
+import type { AliasSnapshot, ParsedObservation, ObservationSource } from "@/domain/ai-visibility/model";
 
 export type ExecutionStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "ROLLED_BACK" | "ROLLBACK_FAILED" | "BLOCKED" | "VERIFYING" | "VERIFIED";
 
@@ -3230,4 +3231,92 @@ export const executionRecords = pgTable("execution_records", {
   foreignKey({ columns: [t.workspaceId, t.clientId, t.opportunityId], foreignColumns: [opportunities.workspaceId, opportunities.clientId, opportunities.id], name: "execution_record_opportunity_fk" }).onDelete("restrict"),
   check("execution_record_status_check", sql`${t.status} in ('QUEUED','RUNNING','SUCCEEDED','FAILED','ROLLED_BACK','ROLLBACK_FAILED','BLOCKED','VERIFYING','VERIFIED')`),
   check("execution_record_kind_check", sql`(${t.kind} = 'APPLY' and ${t.parentExecutionId} is null) or (${t.kind} = 'ROLLBACK' and ${t.parentExecutionId} is not null)`),
+]).enableRLS();
+
+// Observed AI Visibility is a separate measurement history, never an audit score input.
+export const aiVisibilityPromptSets = pgTable("ai_visibility_prompt_sets", {
+  id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull(), websiteId: uuid("website_id").notNull(),
+  key: text("key").notNull(), version: integer("version").notNull(), name: text("name").notNull(),
+  status: text("status").notNull().default("ACTIVE"), templateVersion: text("template_version").notNull(),
+  generatedFromFactRefs: jsonb("generated_from_fact_refs").$type<string[]>().notNull(),
+  aliases: jsonb("aliases").$type<AliasSnapshot>().notNull(), contentHash: text("content_hash").notNull(),
+  createdByUserId: text("created_by_user_id").notNull().references(() => user.id, { onDelete: "restrict" }), createdAt: createdAt(),
+}, t => [
+  uniqueIndex("ai_vis_sets_binding").on(t.workspaceId, t.clientId, t.websiteId, t.id),
+  uniqueIndex("ai_vis_sets_version").on(t.workspaceId, t.websiteId, t.key, t.version),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.websiteId], foreignColumns: [websites.workspaceId, websites.clientId, websites.id], name: "ai_vis_sets_site_fk" }).onDelete("restrict"),
+  check("ai_vis_sets_version_positive", sql`${t.version}>0 and ${t.status} in ('ACTIVE','RETIRED')`),
+]).enableRLS();
+
+export const aiVisibilityPrompts = pgTable("ai_visibility_prompts", {
+  id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull(), websiteId: uuid("website_id").notNull(), promptSetId: uuid("prompt_set_id").notNull(),
+  key: text("key").notNull(), templateKey: text("template_key").notNull(), renderedPrompt: text("rendered_prompt").notNull(), promptHash: text("prompt_hash").notNull(),
+  serviceFactId: uuid("service_fact_id").notNull(), locationFactId: uuid("location_fact_id").notNull(), optionalFactRefs: jsonb("optional_fact_refs").$type<string[]>().notNull().default([]),
+  active: boolean("active").notNull().default(true), createdAt: createdAt(),
+}, t => [
+  uniqueIndex("ai_vis_prompts_binding").on(t.workspaceId, t.promptSetId, t.id),
+  uniqueIndex("ai_vis_prompts_key").on(t.workspaceId, t.promptSetId, t.key),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.websiteId, t.promptSetId], foreignColumns: [aiVisibilityPromptSets.workspaceId, aiVisibilityPromptSets.clientId, aiVisibilityPromptSets.websiteId, aiVisibilityPromptSets.id], name: "ai_vis_prompts_set_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.serviceFactId], foreignColumns: [businessFacts.workspaceId, businessFacts.id], name: "ai_vis_prompts_service_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.locationFactId], foreignColumns: [businessFacts.workspaceId, businessFacts.id], name: "ai_vis_prompts_location_fk" }).onDelete("restrict"),
+  check("ai_vis_prompt_bounds", sql`length(${t.renderedPrompt}) between 1 and 1500`),
+]).enableRLS();
+
+export const aiVisibilityRuns = pgTable("ai_visibility_runs", {
+  id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull(), websiteId: uuid("website_id").notNull(), promptSetId: uuid("prompt_set_id").notNull(), promptSetVersion: integer("prompt_set_version").notNull(),
+  source: text("source").$type<ObservationSource>().notNull(), surface: text("surface").notNull(), adapterVersion: text("adapter_version").notNull(), model: text("model").notNull(),
+  trigger: text("trigger").notNull(), status: text("status").$type<"QUEUED" | "RUNNING" | "SUCCEEDED" | "PARTIAL" | "FAILED" | "UNAVAILABLE">().notNull().default("QUEUED"),
+  window: text("window").notNull(), idempotencyKey: text("idempotency_key").notNull(),
+  context: jsonb("context").$type<Record<string, unknown>>().notNull(), budget: jsonb("budget").$type<Record<string, number>>().notNull(),
+  promptCount: integer("prompt_count").notNull(), successCount: integer("success_count").notNull().default(0), errorCount: integer("error_count").notNull().default(0), unavailableCount: integer("unavailable_count").notNull().default(0),
+  usage: jsonb("usage").$type<Record<string, unknown>>().notNull().default({}), limitations: jsonb("limitations").$type<string[]>().notNull().default([]),
+  actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "restrict" }),
+  startedAt: timestamp("started_at", { withTimezone: true }), completedAt: timestamp("completed_at", { withTimezone: true }), createdAt: createdAt(),
+}, t => [
+  uniqueIndex("ai_vis_runs_binding").on(t.workspaceId, t.promptSetId, t.id),
+  uniqueIndex("ai_vis_runs_idempotency").on(t.workspaceId, t.idempotencyKey),
+  // A changed prompt-set version cannot bypass a paid cadence window.
+  uniqueIndex("ai_vis_runs_paid_window").on(t.workspaceId, t.websiteId, t.surface, t.window).where(sql`${t.source}='API'`),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.websiteId, t.promptSetId], foreignColumns: [aiVisibilityPromptSets.workspaceId, aiVisibilityPromptSets.clientId, aiVisibilityPromptSets.websiteId, aiVisibilityPromptSets.id], name: "ai_vis_runs_set_fk" }).onDelete("restrict"),
+  check("ai_vis_run_bounds", sql`${t.promptCount} between 1 and 30 and ${t.successCount}>=0 and ${t.errorCount}>=0 and ${t.unavailableCount}>=0 and ${t.source} in ('API','MANUAL','QA_FIXTURE') and ${t.status} in ('QUEUED','RUNNING','SUCCEEDED','PARTIAL','FAILED','UNAVAILABLE')`),
+]).enableRLS();
+
+export const aiVisibilityCalls = pgTable("ai_visibility_calls", {
+  id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  promptSetId: uuid("prompt_set_id").notNull(), runId: uuid("run_id").notNull(), promptId: uuid("prompt_id").notNull(),
+  createdAt: createdAt(),
+}, t => [
+  uniqueIndex("ai_vis_calls_binding").on(t.workspaceId, t.promptSetId, t.runId, t.promptId, t.id),
+  uniqueIndex("ai_vis_calls_once").on(t.workspaceId, t.runId, t.promptId),
+  foreignKey({ columns: [t.workspaceId, t.promptSetId, t.runId], foreignColumns: [aiVisibilityRuns.workspaceId, aiVisibilityRuns.promptSetId, aiVisibilityRuns.id], name: "ai_vis_calls_run_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.promptSetId, t.promptId], foreignColumns: [aiVisibilityPrompts.workspaceId, aiVisibilityPrompts.promptSetId, aiVisibilityPrompts.id], name: "ai_vis_calls_prompt_fk" }).onDelete("restrict"),
+]).enableRLS();
+
+export const aiVisibilityObservations = pgTable("ai_visibility_observations", {
+  id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  promptSetId: uuid("prompt_set_id").notNull(), runId: uuid("run_id").notNull(), promptId: uuid("prompt_id").notNull(), callId: uuid("call_id").notNull(),
+  source: text("source").$type<ObservationSource>().notNull(), surface: text("surface").notNull(), model: text("model").notNull(),
+  status: text("status").$type<"SUCCEEDED" | "FAILED" | "UNAVAILABLE">().notNull(),
+  renderedPrompt: text("rendered_prompt").notNull(), promptHash: text("prompt_hash").notNull(), answerHash: text("answer_hash"), providerResponseId: text("provider_response_id"),
+  parsed: jsonb("parsed").$type<ParsedObservation>(), parserVersion: text("parser_version").notNull(),
+  usage: jsonb("usage").$type<Record<string, unknown>>().notNull(), limitations: jsonb("limitations").$type<string[]>().notNull(),
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(), recordedByUserId: text("recorded_by_user_id").references(() => user.id, { onDelete: "restrict" }), createdAt: createdAt(),
+}, t => [
+  uniqueIndex("ai_vis_observations_binding").on(t.workspaceId, t.id),
+  uniqueIndex("ai_vis_observations_once").on(t.workspaceId, t.runId, t.promptId),
+  foreignKey({ columns: [t.workspaceId, t.promptSetId, t.runId, t.promptId, t.callId], foreignColumns: [aiVisibilityCalls.workspaceId, aiVisibilityCalls.promptSetId, aiVisibilityCalls.runId, aiVisibilityCalls.promptId, aiVisibilityCalls.id], name: "ai_vis_observation_call_fk" }).onDelete("restrict"),
+  check("ai_vis_observation_status", sql`${t.status} in ('SUCCEEDED','FAILED','UNAVAILABLE') and ((${t.status}='SUCCEEDED' and ${t.parsed} is not null and ${t.answerHash} is not null) or (${t.status}<>'SUCCEEDED' and ${t.parsed} is null))`),
+]).enableRLS();
+
+export const aiVisibilityCaptures = pgTable("ai_visibility_captures", {
+  id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  observationId: uuid("observation_id").notNull(), answer: text("answer").notNull(), providerData: jsonb("provider_data").$type<Record<string, unknown>>().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), createdAt: createdAt(),
+}, t => [
+  uniqueIndex("ai_vis_capture_observation").on(t.workspaceId, t.observationId),
+  foreignKey({ columns: [t.workspaceId, t.observationId], foreignColumns: [aiVisibilityObservations.workspaceId, aiVisibilityObservations.id], name: "ai_vis_capture_observation_fk" }).onDelete("restrict"),
+  check("ai_vis_capture_bounds", sql`length(${t.answer})<=100000 and ${t.expiresAt}>${t.createdAt}`),
 ]).enableRLS();

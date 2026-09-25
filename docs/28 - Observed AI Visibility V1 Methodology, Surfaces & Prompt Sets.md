@@ -4,6 +4,13 @@
 
 Authoritative V1 methodology for the measured AI-search feature.
 
+**Approved Phase 9 amendment, 2026-09-25:** use the successor official
+`Perplexity Agent API` as the first automated surface, replacing the retiring
+Sonar endpoint integration. Keep this distinct label and its own adapter version;
+do not relabel historical Sonar observations. All sampling, parsing, scoring
+isolation, and official-API-only rules below remain authoritative. See
+[Phase 9 implementation notes](phase9-ai-visibility.md) for current API contracts.
+
 The product must distinguish:
 - **AI Readiness** -> scored by Document 26.
 - **Observed AI Visibility** -> sampled provider/API observations defined here.

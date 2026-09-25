@@ -59,6 +59,7 @@ export default async function WebsiteDetailPage({
 
   return (
     <>
+      <Link className="mx-btn mx-btn-ghost" href={`/ai-visibility?websiteId=${website.id}` as never}>Observed AI Visibility</Link>
       <PageHeader
         action={
           <Link className="mx-btn mx-btn-ghost" href="/websites">

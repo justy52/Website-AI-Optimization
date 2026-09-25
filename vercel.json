@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/ai-visibility",
+      "schedule": "30 10 * * *"
+    },
+    {
       "path": "/api/cron/monitoring",
       "schedule": "0 10 * * *"
     },
