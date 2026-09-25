@@ -22,7 +22,8 @@ async function signUp(page: Page) {
 
 async function ensureWorkspace(page: Page) {
   await expect(page).not.toHaveURL(/\/login/);
-  await page.waitForLoadState("networkidle");
+  // Preview may keep background requests open after the form is ready.
+  await page.waitForLoadState("domcontentloaded");
   if (page.url().includes("/workspace-setup")) {
     await page.getByLabel("Workspace name").fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
