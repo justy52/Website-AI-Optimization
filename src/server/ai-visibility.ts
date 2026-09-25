@@ -74,6 +74,9 @@ export async function requestVisibilityRun(context: WorkspaceContext, websiteId:
   human(context);
   if (source === "MANUAL") throw new VisibilityValidationError("Use the explicitly labeled manual observation form.");
   if (source === "QA_FIXTURE" && serverEnv.APP_ENV !== "qa") throw new VisibilityValidationError("Deterministic visibility fixtures are QA-only.");
+  // Missing configuration is not a paid attempt and must not occupy a cadence window.
+  // Once queued, the durable call reservations and fail-closed recovery still apply.
+  if (source === "API" && !serverEnv.PERPLEXITY_API_KEY) throw new VisibilityValidationError("Perplexity Agent API is not configured for this environment.");
   return withTenantContext(database, context, async tx => {
     await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, context.workspaceId)).for("update");
     const data = await sourceData(tx, context, websiteId);

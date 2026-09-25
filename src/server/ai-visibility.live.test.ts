@@ -18,6 +18,7 @@ const tables = ["ai_visibility_prompt_sets", "ai_visibility_prompts", "ai_visibi
 describe.skipIf(!connectionString)("Phase 9 live visibility and non-bypass RLS", () => {
   let pool: Pool, client: PoolClient, database: Db, websiteId: string, clientId: string;
   const originalEnv = serverEnv.APP_ENV;
+  const originalKey = serverEnv.PERPLEXITY_API_KEY;
   beforeAll(async () => {
     const url = new URL(connectionString!);
     if (url.pathname !== "/optiq_phase5_review_final_20260922" || !url.hostname.startsWith("ep-shy-firefly-arkuloja")) throw new Error("Designated disposable test database only");
@@ -27,6 +28,7 @@ describe.skipIf(!connectionString)("Phase 9 live visibility and non-bypass RLS",
   });
   beforeEach(async () => {
     serverEnv.APP_ENV = "qa";
+    serverEnv.PERPLEXITY_API_KEY = "synthetic-test-key-no-network";
     await client.query("begin");
     await client.query("select set_config('app.workspace_id',$1,true),set_config('app.user_id','rls-user-b',true)", [workspaceId]);
     await client.query("insert into workspaces(id,name,slug) values($1,'Phase 9 isolated disposable tenant',$2)", [workspaceId, `phase9-${workspaceId}`]);
@@ -35,7 +37,7 @@ describe.skipIf(!connectionString)("Phase 9 live visibility and non-bypass RLS",
     websiteId = (await client.query("insert into websites(workspace_id,client_id,display_name,domain,canonical_url) values($1,$2,'Visibility disposable website','cedar.example','https://cedar.example') returning id", [workspaceId, clientId])).rows[0].id;
     for (const [factType, value] of [["business_name", "Cedar Plumbing"], ["canonical_domain", "cedar.example"], ["service", "plumbing"], ["location", "Denver"]]) await createBusinessFact(context, clientId, { factType, value, sourceReference: "Human reviewed disposable fixture", verificationStatus: "VERIFIED", sensitivity: "PUBLIC" }, database);
   });
-  afterEach(async () => { await client.query("rollback"); serverEnv.APP_ENV = originalEnv; vi.restoreAllMocks(); });
+  afterEach(async () => { await client.query("rollback"); serverEnv.APP_ENV = originalEnv; serverEnv.PERPLEXITY_API_KEY = originalKey; vi.restoreAllMocks(); });
   afterAll(async () => { client?.release(); await pool?.end(); });
   const provider = (): VisibilityProvider => ({ surface: "Perplexity Agent API", version: "perplexity-agent-v1.0", model: PERPLEXITY_MODEL, observe: vi.fn(async () => parsePerplexityResponse({ id: "disposable-provider-result", status: "completed", model: PERPLEXITY_MODEL, output: [{ type: "message", content: [{ type: "output_text", text: "We recommend Cedar Plumbing in Denver." }] }, { type: "search_results", results: [{ id: 1, url: "https://cedar.example/services" }] }], usage: { input_tokens: 5, output_tokens: 10, cost: { currency: "USD", total_cost: 0.001 } } })) });
   async function runAll(source: "API" | "QA_FIXTURE" = "QA_FIXTURE") {
@@ -89,18 +91,38 @@ describe.skipIf(!connectionString)("Phase 9 live visibility and non-bypass RLS",
     expect(JSON.stringify(report.sections.observedAiVisibility)).toContain("SAMPLED_API_OBSERVATIONS");
   });
   it("QA fixtures earn zero entitlement and do not enter API report sections", async () => {
+    serverEnv.PERPLEXITY_API_KEY = undefined;
     await runAll();
     const summary = await database.transaction(tx => visibilityCycleSummary(tx, workspaceId, clientId, websiteId, "2026-09-01", "2026-09-30"));
     expect(summary.observationsUsed).toBe(0); expect(summary.completedWindows).toBe(0); expect(summary.sections).toHaveLength(0);
   });
-  it("unavailable provider is retained with zero usage and failed denominators", async () => {
+  it("missing credential rejects before any insertion and activation can use the same window", async () => {
+    await createVisibilityPromptSet(context, websiteId, database);
+    const at = new Date("2026-09-25T12:00:00Z");
+    serverEnv.PERPLEXITY_API_KEY = undefined;
+    const transaction = vi.spyOn(database, "transaction");
+    await expect(requestVisibilityRun(context, websiteId, "API", database, at)).rejects.toThrow("Perplexity Agent API is not configured");
+    expect(transaction).not.toHaveBeenCalled();
+    for (const table of tables.slice(2)) expect((await client.query(`select count(*)::int n from ${table} where workspace_id=$1`, [workspaceId])).rows[0].n).toBe(0);
+    serverEnv.PERPLEXITY_API_KEY = "synthetic-test-key-no-network";
+    const run = await requestVisibilityRun(context, websiteId, "API", database, at);
+    expect(run.status).toBe("QUEUED");
+    expect((await requestVisibilityRun(context, websiteId, "API", database, at)).id).toBe(run.id);
+    expect((await client.query("select count(*)::int n from ai_visibility_runs where workspace_id=$1", [workspaceId])).rows[0].n).toBe(1);
+    expect((await client.query("select count(*)::int n from ai_visibility_calls where workspace_id=$1", [workspaceId])).rows[0].n).toBe(0);
+  });
+  it("credential removed after queue fails closed and retains its paid cadence window", async () => {
     await createVisibilityPromptSet(context, websiteId, database);
     const run = await requestVisibilityRun(context, websiteId, "API", database);
+    serverEnv.PERPLEXITY_API_KEY = undefined;
     for (const id of await visibilityRunPromptIds(context, run.id, database)) await observeVisibilityPrompt(context, run.id, id, database);
     await finishVisibilityRun(context, run.id, database);
     expect((await client.query("select status,success_count from ai_visibility_runs where id=$1", [run.id])).rows[0]).toEqual({ status: "UNAVAILABLE", success_count: 0 });
+    serverEnv.PERPLEXITY_API_KEY = "synthetic-test-key-no-network";
+    expect((await requestVisibilityRun(context, websiteId, "API", database)).id).toBe(run.id);
   });
   it("manual capture retains recorder, timestamp and labels, with no API credit", async () => {
+    serverEnv.PERPLEXITY_API_KEY = undefined;
     await createVisibilityPromptSet(context, websiteId, database); const panel = await getVisibilityPanel(context, websiteId, database);
     const manual = await recordManualVisibilityObservation({ ...context, role: "ANALYST" }, websiteId, { promptId: panel.prompts[0].id, surface: "Consumer UI manually inspected", answer: "Cedar Plumbing serves Denver.", observedAt: "2026-09-01T12:00:00Z", limitations: "Screenshot retained by reviewer; personalized session; manual only." }, database);
     expect(manual?.source).toBe("MANUAL");

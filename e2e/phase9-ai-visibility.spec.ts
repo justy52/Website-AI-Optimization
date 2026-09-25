@@ -31,8 +31,15 @@ test("Phase 9 verified prompts, sampled fixture metrics, honest accounting and i
   await expect(fixture).toContainText("DIRECT_RECOMMENDATION"); await expect(fixture).toContainText("client citations 1"); await expect(fixture).toContainText("competitor citations 1"); await expect(fixture).toContainText("Mention rate 100.0%"); await expect(fixture).toContainText("Share of mentions 50.0%");
   await fixture.getByRole("link").first().click(); await expect(page.getByRole("heading", { name: "AI Visibility Observation", exact: true })).toBeVisible(); await expect(page.locator("main")).toContainText("ai-vis-parser-v1.1"); await expect(page.locator("main")).toContainText("Synthetic QA fixture"); const historyUrl = page.url();
   await page.goto(visibilityUrl); await visibilitySubmit(page, "Run deterministic QA fixture"); await expect(fixture).toHaveCount(1);
-  await visibilitySubmit(page, "Run API observations"); const api = page.getByTestId("visibility-run").filter({ has: page.getByRole("heading", { name: "Perplexity Agent API", exact: true }) });
-  await expect.poll(async () => { await page.reload({ waitUntil: "domcontentloaded" }); return api.textContent(); }, { timeout: 150000, intervals: [2000, 4000] }).toContain("UNAVAILABLE"); await expect(api).toContainText("0 of 0 sampled");
+  await expect(page.getByRole("button", { name: "Run API observations", exact: true })).toHaveCount(0);
+  await expect(page.locator("main")).toContainText("No API run or cadence window is reserved");
+  await expect(page.getByTestId("visibility-run").filter({ has: page.getByRole("heading", { name: "Perplexity Agent API", exact: true }) })).toHaveCount(0);
+  await page.getByLabel("Manual surface", { exact: true }).fill("QA manually reviewed consumer surface");
+  await page.getByLabel("Observed timestamp (UTC)").fill(new Date().toISOString().slice(0, 16));
+  await page.getByLabel("Captured answer").fill("Cedar Plumbing serves Denver.");
+  await page.getByLabel("Evidence reference and limitations").fill("Synthetic manual evidence; no provider request.");
+  await visibilitySubmit(page, "Record MANUAL observation");
+  await expect(page.getByTestId("visibility-run").filter({ has: page.getByRole("heading", { name: "QA manually reviewed consumer surface", exact: true }) })).toContainText("MANUAL");
   await page.goto("/monthly-cycles"); await page.getByLabel("Client").selectOption({ label: `${clientName} - GROWTH` }); await page.getByRole("button", { name: "Create cycle" }).click(); await expect(page.getByRole("heading", { name: "Monthly Fulfillment Cycle" })).toBeVisible();
   const deliverable = page.locator(".mx-check-row").filter({ hasText: "Observed AI Visibility" }).first(); await expect(deliverable).toContainText("UNAVAILABLE"); await expect(deliverable).toContainText("0/1"); await page.getByRole("button", { name: "Generate draft" }).click(); await expect(page.locator("main")).toContainText("No legitimate API visibility samples");
   await page.goto(clientUrl); await fact(page, "service_subtype", "drain cleaning"); await page.goto(visibilityUrl); await visibilitySubmit(page, "Generate versioned prompt set"); await expect(page.getByTestId("prompt-set")).toContainText("version 2"); await page.goto(historyUrl); await expect(page.locator("main")).toContainText("We recommend Cedar Plumbing");

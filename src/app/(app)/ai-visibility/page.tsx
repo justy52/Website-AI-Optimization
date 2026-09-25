@@ -25,7 +25,8 @@ export default async function VisibilityPage({ searchParams }: { searchParams: P
       {operation("generate", "Generate versioned prompt set")}
       {panel.sets[0] && <><p data-testid="prompt-set">{panel.sets[0].key} · version {panel.sets[0].version} · {panel.prompts.length} active prompts</p><ol>{panel.prompts.map(p => <li key={p.id}>{p.renderedPrompt}</li>)}</ol><details><summary>Approved alias snapshot and fact references</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(panel.sets[0].aliases, null, 2)}</pre></details></>}
     </Panel>
-    <Panel title="Surfaces"><p>{PERPLEXITY_SURFACE}: <strong>{panel.configured ? "CONFIGURED" : "UNAVAILABLE / PROVIDER NOT CONFIGURED"}</strong></p><p>OpenAI web-grounded API: disabled. Gemini API + Google Search grounding: disabled.</p>{panel.sets[0] && operation("run", "Run API observations")}
+    <Panel title="Surfaces"><p>{PERPLEXITY_SURFACE}: <strong>{panel.configured ? "CONFIGURED" : "UNAVAILABLE / PROVIDER NOT CONFIGURED"}</strong></p><p>OpenAI web-grounded API: disabled. Gemini API + Google Search grounding: disabled.</p>{panel.configured && panel.sets[0] && operation("run", "Run API observations")}
+      {!panel.configured && <p>An operator must configure the Perplexity Agent API credential before API observations can run. No API run or cadence window is reserved while the provider is unconfigured. Manual observations and eligible QA fixtures remain available.</p>}
       {panel.qa && panel.sets[0] && <><p>QA TEST FIXTURE — synthetic answers, zero API usage, no contractual completion.</p>{operation("fixture", "Run deterministic QA fixture")}</>}
     </Panel>
     <Panel title="Observation history"><p>Each run keeps its own surface, exact prompt set, sample window, and parser result. Raw captures expire after 90 days. Normalized history is retained.</p>

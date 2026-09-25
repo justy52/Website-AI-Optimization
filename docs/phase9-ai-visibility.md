@@ -52,9 +52,13 @@ recovery records UNAVAILABLE. This intentionally favors avoiding duplicate spend
 over automatically recovering a lost response. Workflow replay is safe.
 
 Paid run uniqueness is per workspace/site/surface/cadence window, even if the
-prompt set changes. An unavailable run also retains its window; activating a
-credential applies to the next window rather than silently retrying a potential
-paid attempt. Duplicate and concurrent requests return the same run.
+prompt set changes. When the provider is already unconfigured at request time,
+validation rejects before any transaction or run/call/observation/capture insert;
+the same window remains available when a credential is configured. The API-run
+button is absent while unconfigured; QA fixtures and manual evidence remain usable.
+A legitimately queued run retains its window even if the credential later disappears
+or a paid outcome is indeterminate. Duplicate and concurrent configured requests
+return the same run, without silently retrying a potential paid attempt.
 
 ## Fulfillment and reporting
 
