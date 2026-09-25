@@ -16,7 +16,7 @@ import { exportWorkspace, redactExport } from "./workspace-export";
 import { getOperationsPanel } from "./operations-dashboard";
 import { createBusinessFact } from "./agents";
 import { createRetentionQaFixture, createVisibilityPromptSet, getVisibilityPanel, observeVisibilityPrompt, recordManualVisibilityObservation, requestVisibilityRun, visibilityRunPromptIds } from "./ai-visibility";
-import { createScheduledMonthlyCycle } from "./monthly-cycles";
+import { createMonthlyCycle, createScheduledMonthlyCycle } from "./monthly-cycles";
 import { syncUsageLedger } from "./usage-ledger";
 const connectionString = process.env.OPTIQ_TEST_RUNNER_URL;
 const workspaceId = randomUUID(), otherWorkspace = "00000000-0000-4000-8000-0000000000a1";
@@ -53,6 +53,7 @@ describe.skipIf(!connectionString)("Phase 10 live operational controls / non-byp
   it.each(["PLATFORM","WORKSPACE"] as const)("%s pause blocks scheduled creation and resume restores eligibility",async scope=>{
     await setAutomationPause(c,{scope,category:"all",paused:true,reason:"Exercise pause"},database);
     await expect(createScheduledMonthlyCycle(workspaceId,clientId,{year:2026,month:9},database)).rejects.toMatchObject({code:"PAUSED"});
+    await expect(createMonthlyCycle(c,{clientId},database)).rejects.toMatchObject({code:"PAUSED"});
     await expect(checkMaterialStep(c,"prepare",database)).rejects.toMatchObject({code:"PAUSED"});
     expect((await exportWorkspace(c,workspaceId,database)).counts.clients).toBe(1);
     await setAutomationPause(c,{scope,category:"all",paused:false,reason:"Exercise resume"},database);

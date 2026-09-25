@@ -1,4 +1,4 @@
-import { assertAutomationAllowed, withOperationalContext, platformPauseState, filterUnpausedWorkspaceRefs } from "./operations";
+import { enforceActionRateLimit, assertAutomationAllowed, withOperationalContext, platformPauseState, filterUnpausedWorkspaceRefs } from "./operations";
 import { pauseApplies } from "@/domain/operations/policy";
 import { routePrepareOpportunity } from "@/domain/agents/routing";
 import { visibilityCycleSummary } from "./ai-visibility";
@@ -695,13 +695,15 @@ export async function createMonthlyCycle(
 ) {
   assertWorkspaceRole(context, ["OWNER", "ADMIN"]);
 
+  await enforceActionRateLimit(context,"monthly_cycle",database);
   const period =
     input.year && input.month
       ? monthlyPeriod(input.year, input.month)
       : monthlyPeriodForDate(now());
   const timezone = optionalString(input.timezone) ?? "America/Denver";
 
-  return withTenantContext(database, context, async (tx) => {
+  return withOperationalContext(database, context, async (tx) => {
+    await assertAutomationAllowed(tx,context,"monthly_cycle");
     const [client] = await tx
       .select()
       .from(clients)

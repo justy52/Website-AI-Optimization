@@ -20,10 +20,10 @@ test("deployment auth and Monthly Cycles session smoke", async ({ page }) => {
   await page.getByRole("button", { name: "Create workspace" }).click();
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await nav.getByRole("link", { name: "Monthly Cycles", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Monthly Cycles" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Monthly Cycles" })).toBeVisible();
   await nav.getByRole("link", { name: "Clients", exact: true }).click();
   await page.goto("/monthly-cycles");
-  await expect(page.getByRole("heading", { name: "Monthly Cycles" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Monthly Cycles" })).toBeVisible();
   const session = await page.request.get("/api/auth/get-session");
   expect((await session.json()).user.email).toBe(email);
   await page.getByRole("button", { name: "Sign out" }).click();
@@ -34,6 +34,6 @@ test("deployment auth and Monthly Cycles session smoke", async ({ page }) => {
   await expect(nav).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/monthly-cycles");
-  await expect(page.getByRole("heading", { name: "Monthly Cycles" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Monthly Cycles" })).toBeVisible();
   expect(originFailures).toEqual([]);
 });

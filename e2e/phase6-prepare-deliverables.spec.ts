@@ -42,11 +42,11 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await page.getByLabel("Contact email").fill(email);
   await page.getByLabel("Website URL").fill("https://example.com");
   await page.getByRole("button", { name: "Create lead" }).click();
-  await expect(page.getByRole("heading", { name: clientName })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: clientName })).toBeVisible();
   await page.getByLabel("Status").selectOption("QUALIFIED");
   await page.getByRole("button", { name: "Save lead" }).click();
   await page.getByRole("button", { name: "Convert to client" }).click();
-  await expect(page.getByRole("heading", { name: clientName })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: clientName })).toBeVisible();
   await page.getByLabel("Service plan").selectOption("GROWTH");
   await page.getByRole("button", { name: "Save client" }).click();
   const clientUrl = page.url();
@@ -68,7 +68,7 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await page.goto("/monthly-cycles");
   await page.getByLabel("Client").selectOption({ label: `${clientName} - GROWTH` });
   await page.getByRole("button", { name: "Create cycle" }).click();
-  await expect(page.getByRole("heading", { name: "Monthly Fulfillment Cycle" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Monthly Fulfillment Cycle" })).toBeVisible();
   const cycleUrl = page.url();
   const contentWork = page.locator(".mx-check-row").filter({ has: page.getByRole("button", { name: "Prepare Content Brief" }) }).first();
   await contentWork.getByRole("button", { name: "Prepare Content Brief" }).click();

@@ -25,7 +25,7 @@ async function signUp(page: Page) {
 
 async function ensureWorkspace(page: Page) {
   await expect(page).not.toHaveURL(/\/login/);
-  const workspaceForm = page.getByRole("heading", { name: "Create Workspace", exact: true });
+  const workspaceForm = page.getByRole("heading", { level: 1,  name: "Create Workspace", exact: true });
   await expect(workspaceForm.or(monthlyCyclesNavLink(page))).toBeVisible();
   if (await workspaceForm.isVisible()) {
     await page.getByLabel("Workspace name").fill(workspaceName);
@@ -44,12 +44,12 @@ async function createGrowthClientWithWebsite(page: Page) {
   await page.getByLabel("Website URL").fill("https://example.com");
   await page.getByLabel("Notes").fill("Disposable Phase 5 QA record.");
   await page.getByRole("button", { name: "Create lead" }).click();
-  await expect(page.getByRole("heading", { name: clientName })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: clientName })).toBeVisible();
 
   await page.getByLabel("Status").selectOption("QUALIFIED");
   await page.getByRole("button", { name: "Save lead" }).click();
   await page.getByRole("button", { name: "Convert to client" }).click();
-  await expect(page.getByRole("heading", { name: clientName })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: clientName })).toBeVisible();
   await page.getByLabel("Service plan").selectOption("GROWTH");
   await page.getByRole("button", { name: "Save client" }).click();
   await expect(page.getByLabel("Service plan")).toHaveValue("GROWTH");
@@ -61,7 +61,7 @@ async function createGrowthClientWithWebsite(page: Page) {
     .getByLabel("Authorization scope")
     .selectOption("PUBLIC_PAGES_ONLY");
   await page.getByRole("button", { name: "Add website" }).click();
-  await expect(page.getByRole("heading", { name: "Example" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Example" })).toBeVisible();
 }
 
 async function addBusinessFact(
@@ -172,7 +172,7 @@ async function waiveDeliverable(page: Page, title: string) {
 
 async function approveLatestPendingDraft(page: Page) {
   await page.getByRole("link", { name: "Approvals", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Approval Queue" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Approval Queue" })).toBeVisible();
   await page.locator("main a.mx-row", { hasText: clientName }).first().click();
   await expect(page.getByText("Pending")).toBeVisible();
   await page.getByLabel("Decision").selectOption("APPROVED_UNCHANGED");
@@ -203,11 +203,11 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await createAuditOpportunity(page);
 
   await monthlyCyclesNavLink(page).click();
-  await expect(page.getByRole("heading", { name: "Monthly Cycles" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Monthly Cycles" })).toBeVisible();
   await page.getByLabel("Client").selectOption({ label: `${clientName} - GROWTH` });
   await page.getByRole("button", { name: "Create cycle" }).click();
   await expect(
-    page.getByRole("heading", { name: "Monthly Fulfillment Cycle" }),
+    page.getByRole("heading", { level: 1,  name: "Monthly Fulfillment Cycle" }),
   ).toBeVisible();
   const firstCycleUrl = page.url();
 
@@ -246,8 +246,8 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(page.locator("main").getByRole("alert")).toContainText("Record an implementation");
   await page.getByRole("button", { name: "Generate draft" }).click();
   await page.waitForLoadState("networkidle");
-  const completedSection = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Completed", exact: true }) }).last();
-  const approvedSection = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Prepared / Approved", exact: true }) }).last();
+  const completedSection = page.locator("div").filter({ has: page.getByRole("heading", { level: 1,  name: "Work Completed", exact: true }) }).last();
+  const approvedSection = page.locator("div").filter({ has: page.getByRole("heading", { level: 1,  name: "Work Prepared / Approved", exact: true }) }).last();
   await expect(approvedSection).toContainText("APPROVED_FOR_MANUAL_IMPLEMENTATION");
   await expect(completedSection).not.toContainText("APPROVED_FOR_MANUAL_IMPLEMENTATION");
 
@@ -312,7 +312,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await page.getByLabel("Month").fill(String(nextMonth));
   await page.getByRole("button", { name: "Create cycle" }).click();
   await expect(
-    page.getByRole("heading", { name: "Monthly Fulfillment Cycle" }),
+    page.getByRole("heading", { level: 1,  name: "Monthly Fulfillment Cycle" }),
   ).toBeVisible();
   await expect(page.locator("main")).toContainText(clientName);
   await expect(page.locator("main")).toContainText("Growth");

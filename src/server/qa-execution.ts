@@ -217,7 +217,7 @@ export async function verifyQaExecution(c: WorkspaceContext, id: string, databas
 export async function requestQaRollback(c: WorkspaceContext, parentId: string, automatic = false, database = db, env: QaRuntime = serverEnv) {
   human(c); assertQaEnvironment(env);
   if (!automatic) await enforceActionRateLimit(c,"qa_execute",database);
-  return withTenantContext(database, c, async tx => {
+  return withOperationalContext(database, c, async tx => {
     await lockWorkspace(tx, c);
     const [parent] = await tx.select().from(executionRecords).where(scope(c.workspaceId, parentId)).limit(1).for("update");
     if (!parent || parent.kind !== "APPLY" || !parent.postChangeSnapshot || !parent.completedAt) throw new ExecutionValidationError("A completed QA change with an exact rollback snapshot is required.");
@@ -225,6 +225,7 @@ export async function requestQaRollback(c: WorkspaceContext, parentId: string, a
     const previous = await tx.select().from(executionRecords).where(and(eq(executionRecords.workspaceId, c.workspaceId), eq(executionRecords.parentExecutionId, parent.id))).orderBy(desc(executionRecords.createdAt));
     if (previous[0] && (previous[0].status !== "BLOCKED" || automatic)) return previous[0];
     const [approval] = await tx.select().from(executionApprovals).where(and(eq(executionApprovals.workspaceId, c.workspaceId), eq(executionApprovals.id, parent.approvalId))).limit(1);
+    await assertOperationalAdmission(tx,c,"qa_execute",{workflow:true});
     const id = randomUUID(); const run = await createRun(tx, c, approval, id, QA_AGENT);
     const [record] = await tx.insert(executionRecords).values({ id, workspaceId: c.workspaceId, clientId: parent.clientId, websiteId: parent.websiteId, opportunityId: parent.opportunityId, fixtureId: parent.fixtureId, implementationPackageId: parent.implementationPackageId, approvalId: parent.approvalId, agentRunId: run.id, actionKey: parent.actionKey, actionVersion: parent.actionVersion, target: parent.target, kind: "ROLLBACK", parentExecutionId: parent.id, actionSummary: parent.actionSummary, actionHash: parent.actionHash, preChangeSnapshot: parent.postChangeSnapshot, idempotencyKey: `rollback:${parent.id}:${previous.length + 1}`, actorUserId: c.userId!, trigger: automatic ? "AUTOMATIC_ROLLBACK" : "USER" }).returning();
     await event(tx, c, "execution.requested", id, { parentExecutionId: parent.id, rollback: true, automatic }); return record;

@@ -532,6 +532,15 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
     expect((await client.query("select revision,title from qa_execution_fixtures where id=$1",[q.fixtureId])).rows[0]).toEqual({revision:3,title:"Home"});
     expect((await getQaExecutionDetail(context,result.id,database))!.record.status).toBe("FAILED");
   });
+  it("Phase 10 rollback admission respects workspace pause and workflow ceiling",async()=>{
+    const q=await queuedQa();await processQaExecution(context,q.record.id,database,qaEnv,q.fetchOptions);
+    await setAutomationPause(context,{scope:"WORKSPACE",category:"execution",paused:true,reason:"Block rollback material work"},database);
+    await expect(requestQaRollback(context,q.record.id,false,database,qaEnv)).rejects.toMatchObject({code:"PAUSED"});
+    await setAutomationPause(context,{scope:"WORKSPACE",category:"execution",paused:false,reason:"Resume after inspection"},database);
+    await setWorkspaceBudgets(context,{monthlyCostUsd:"0",activeWorkflowLimit:0,aiCallLimit:100,visibilityCallLimit:100,crawlConcurrency:2},"Stop new workflows",database);
+    await expect(requestQaRollback(context,q.record.id,false,database,qaEnv)).rejects.toMatchObject({code:"BUDGET"});
+    expect((await getQaExecutionDetail(context,q.record.id,database))!.rollbacks).toHaveLength(0);
+  });
   it("Phase 8 manual rollback is authorized, idempotent and preserves the original success",async()=>{
     const q=await queuedQa();await processQaExecution(context,q.record.id,database,qaEnv,q.fetchOptions);
     await expect(requestQaRollback({...context,role:"ANALYST"},q.record.id,false,database,qaEnv)).rejects.toThrow("not allowed");

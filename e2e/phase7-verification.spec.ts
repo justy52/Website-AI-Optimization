@@ -42,7 +42,7 @@ async function prepareAndPackage(page: Page, cycleUrl: string, opportunityId: st
   await expect(page.getByText("APPROVED", { exact: true })).toBeVisible();
   await page.goto(artifactUrl);
   await page.getByRole("button", { name: "Create implementation package" }).click();
-  await expect(page.getByRole("heading", { name: "Implementation Package", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Implementation Package", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/implementation-packages\/[a-f0-9-]+$/);
   await expect(page.locator("main")).toContainText("Approved artifact v1");
   const packageId = new URL(page.url()).pathname.split("/").pop()!;
@@ -71,7 +71,7 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   await page.getByRole("link", { name: "Leads", exact: true }).click();
   await page.getByLabel("Company").fill(client); await page.getByLabel("Status").selectOption("NEW"); await page.getByLabel("Source").fill("Phase 7 QA");
   await page.getByLabel("Contact name").fill("QA Operator"); await page.getByLabel("Contact email").fill(email); await page.getByLabel("Website URL").fill("https://optiq-qa.vercel.app");
-  await page.getByRole("button", { name: "Create lead" }).click(); await expect(page.getByRole("heading", { name: client })).toBeVisible();
+  await page.getByRole("button", { name: "Create lead" }).click(); await expect(page.getByRole("heading", { level: 1,  name: client })).toBeVisible();
   await page.getByLabel("Status").selectOption("QUALIFIED"); await page.getByRole("button", { name: "Save lead" }).click(); await page.getByRole("button", { name: "Convert to client" }).click();
   await page.getByLabel("Service plan").selectOption("GROWTH"); await page.getByRole("button", { name: "Save client" }).click();
   await fact(page, "service", "Verification fixture"); await fact(page, "business_name", "OPTIQ QA Fixture");
@@ -93,7 +93,7 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   await expect(page).toHaveURL(/\/opportunities\/[a-f0-9-]+$/);
   const schemaId = new URL(page.url()).pathname.split("/").pop()!;
   await page.goto("/monthly-cycles"); await page.getByLabel("Client").selectOption({ label: `${client} - GROWTH` }); await page.getByRole("button", { name: "Create cycle" }).click();
-  await expect(page.getByRole("heading", { name: "Monthly Fulfillment Cycle" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1,  name: "Monthly Fulfillment Cycle" })).toBeVisible();
   await expect(page).toHaveURL(/\/monthly-cycles\/[a-f0-9-]+$/);
   const cycleUrl = page.url();
   const titlePackage = await prepareAndPackage(page, cycleUrl, titleId);
@@ -114,7 +114,7 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   await expect(page.getByRole("link", { name: "Verification VERIFIED", exact: true })).toHaveCount(2);
   await expect(page.getByRole("link", { name: "Verification VERIFICATION_FAILED", exact: true })).toHaveCount(1);
   await serverAction(page, page.getByRole("button", { name: "Generate draft" }));
-  const completed = page.locator("div").filter({ has: page.getByRole("heading", { name: "Work Completed", exact: true }) }).last();
+  const completed = page.locator("div").filter({ has: page.getByRole("heading", { level: 1,  name: "Work Completed", exact: true }) }).last();
   await expect(completed).toContainText("VERIFIED"); await expect(completed).not.toContainText("VERIFICATION_FAILED");
   await expect(page.locator(".mx-method").filter({ hasText: "Manual minutes" })).toContainText("10 /");
   await page.goto(`/implementation-packages/${titlePackage.packageId}`); await expect(page.locator("main")).toContainText("Approved artifact v1");
