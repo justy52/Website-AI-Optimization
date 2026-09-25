@@ -52,8 +52,12 @@ test("Phase 10 pilot operations, pause, budget, retention, export and accessibil
   for(const [key,rows]of Object.entries(data.data))expect(data.counts[key]).toBe((rows as unknown[]).length);
   expect(JSON.stringify(data)).not.toMatch(/integration_secrets|access_token|refresh_token|ciphertext|BETTER_AUTH_SECRET/);
   await expect(page.locator("main")).toContainText("PREPARE");await expect(page.locator("main")).toContainText("Production EXECUTE: DISABLED");
-  const statuses:number[]=[];
-  for(let n=0;n<13;n++){const response=await page.request.post("/api/agent-runs/prepare",{headers:{origin:new URL(page.url()).origin},data:{opportunityId}});statuses.push(response.status());}
+  // 25 simultaneous requests exceed a 12/minute limit even if the burst
+  // straddles one clock boundary. Existing pending approval keeps this free.
+  const statuses=await Promise.all(Array.from({length:25},async()=>{
+    const response=await page.request.post("/api/agent-runs/prepare",{headers:{origin:new URL(page.url()).origin},data:{opportunityId}});
+    return response.status();
+  }));
   expect(statuses).toContain(429);expect(statuses).not.toContain(500);
   for(const path of ["/","/clients","/websites","/audits","/opportunities","/monthly-cycles","/approvals","/ai-visibility","/operations","/qa-execution"]){
     await page.goto(path);await expect(page.locator("main")).toBeVisible();await expect(page.getByRole("heading",{level:1})).toHaveCount(1);

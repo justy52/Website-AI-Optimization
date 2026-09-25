@@ -114,7 +114,7 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   await expect(page.getByRole("link", { name: "Verification VERIFIED", exact: true })).toHaveCount(2);
   await expect(page.getByRole("link", { name: "Verification VERIFICATION_FAILED", exact: true })).toHaveCount(1);
   await serverAction(page, page.getByRole("button", { name: "Generate draft" }));
-  const completed = page.locator("div").filter({ has: page.getByRole("heading", { level: 1,  name: "Work Completed", exact: true }) }).last();
+  const completed = page.locator("div").filter({ has: page.getByRole("heading", { level: 3, name: "Work Completed", exact: true }) }).last();
   await expect(completed).toContainText("VERIFIED"); await expect(completed).not.toContainText("VERIFICATION_FAILED");
   await expect(page.locator(".mx-method").filter({ hasText: "Manual minutes" })).toContainText("10 /");
   await page.goto(`/implementation-packages/${titlePackage.packageId}`); await expect(page.locator("main")).toContainText("Approved artifact v1");

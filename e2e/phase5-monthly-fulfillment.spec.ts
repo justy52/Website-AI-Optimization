@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Locator } from "@playwright/test";
+﻿import { expect, test, type Page, type Locator } from "@playwright/test";
 
 const timestamp = Date.now();
 const runId = `${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
@@ -97,9 +97,9 @@ async function runMonitoringAndCompetitorObservation(page: Page) {
     .first();
   for (let expectedRuns = 1; expectedRuns <= 4; expectedRuns += 1) {
     await healthSchedule.getByRole("button", { name: "Run" }).click();
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await expect.poll(async () => {
-      await page.reload({ waitUntil: "networkidle" });
+      await page.reload({ waitUntil: "domcontentloaded" });
       return page.locator(".mx-row", { hasText: "website_health" }).filter({ has: page.locator(".mx-chip", { hasText: /^(SUCCEEDED|PARTIAL)$/ }) }).count();
     }, { timeout: 180_000, intervals: [3_000, 5_000, 10_000] }).toBeGreaterThanOrEqual(expectedRuns);
   }
@@ -121,7 +121,7 @@ async function runMonitoringAndCompetitorObservation(page: Page) {
   await expect
     .poll(
       async () => {
-        await page.reload({ waitUntil: "networkidle" });
+        await page.reload({ waitUntil: "domcontentloaded" });
         return (await page.locator("main").textContent()) ?? "";
       },
       { timeout: 120_000, intervals: [2_000, 5_000, 10_000] },
@@ -144,11 +144,11 @@ async function createAuditOpportunity(page: Page) {
 async function pollCycleFor(page: Page, text: string | RegExp) {
   // Await the initiating server action before reloading; reload can otherwise
   // cancel the POST before its workflow has been queued.
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await expect
     .poll(
       async () => {
-        await page.reload({ waitUntil: "networkidle" });
+        await page.reload({ waitUntil: "domcontentloaded" });
         return (await page.locator("main").textContent()) ?? "";
       },
       { timeout: 180_000, intervals: [3_000, 5_000, 10_000] },
@@ -164,7 +164,7 @@ async function waiveDeliverable(page: Page, title: string) {
   const row = deliverableRow(page, title);
   await row.getByPlaceholder("Waiver reason").fill(`${title} waived by Phase 5 E2E.`);
   await row.getByRole("button", { name: "Waive" }).click();
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await expect(deliverableRow(page, title).locator(".mx-chip").first()).toHaveText(
     "WAIVED",
   );
@@ -199,7 +199,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
     factType: "service",
     value: "Website optimization",
   });
-  await page.goto(websiteUrl, { waitUntil: "networkidle" });
+  await page.goto(websiteUrl, { waitUntil: "domcontentloaded" });
   await createAuditOpportunity(page);
 
   await monthlyCyclesNavLink(page).click();
@@ -235,7 +235,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await pollCycleFor(page, /Draft (DRAFT|AWAITING_APPROVAL|APPROVED)/);
 
   await approveLatestPendingDraft(page);
-  await page.goto(firstCycleUrl, { waitUntil: "networkidle" });
+  await page.goto(firstCycleUrl, { waitUntil: "domcontentloaded" });
   await pollCycleFor(page, /Approval APPROVED/);
   await expect(page.locator("main")).toContainText("Page optimizations");
   await expect(page.locator("main")).toContainText("0 / 1");
@@ -245,9 +245,9 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await selectedWork.getByRole("button", { name: "Record verification" }).click();
   await expect(page.locator("main").getByRole("alert")).toContainText("Record an implementation");
   await page.getByRole("button", { name: "Generate draft" }).click();
-  await page.waitForLoadState("networkidle");
-  const completedSection = page.locator("div").filter({ has: page.getByRole("heading", { level: 1,  name: "Work Completed", exact: true }) }).last();
-  const approvedSection = page.locator("div").filter({ has: page.getByRole("heading", { level: 1,  name: "Work Prepared / Approved", exact: true }) }).last();
+  await page.waitForLoadState("domcontentloaded");
+  const completedSection = page.locator("div").filter({ has: page.getByRole("heading", { level: 3, name: "Work Completed", exact: true }) }).last();
+  const approvedSection = page.locator("div").filter({ has: page.getByRole("heading", { level: 3, name: "Work Prepared / Approved", exact: true }) }).last();
   await expect(approvedSection).toContainText("APPROVED_FOR_MANUAL_IMPLEMENTATION");
   await expect(completedSection).not.toContainText("APPROVED_FOR_MANUAL_IMPLEMENTATION");
 
@@ -262,7 +262,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(page.locator("main")).toContainText("1 / 1");
 
   await page.getByRole("button", { name: "Generate draft" }).click();
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await expect(completedSection).toContainText("IMPLEMENTED_UNVERIFIED");
 
   const implementedWork = page
@@ -276,13 +276,13 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
   await expect(page.locator("main")).toContainText("VERIFIED");
 
   await page.getByRole("button", { name: "Generate draft" }).click();
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await expect(page.getByText(/Monthly Optimization Report/)).toBeVisible();
   await expect(page.locator("main")).toContainText("Limitations");
   await waiveDeliverable(page, "Weekly Search Console");
   await waiveDeliverable(page, "Major Content Asset");
   await page.getByRole("button", { name: "Generate draft" }).click();
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await page.getByRole("button", { name: "Finalize report" }).click();
   await expect(page.locator("main")).toContainText("FINALIZED");
   await expect(page.locator("main")).toContainText(/[a-f0-9]{64}/);

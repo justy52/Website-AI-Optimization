@@ -1,4 +1,13 @@
-import { expect, test, type Page } from "@playwright/test";
+﻿import { expect, test, type Page, type Locator } from "@playwright/test";
+
+async function serverAction(page: Page, button: Locator) {
+  const path = new URL(page.url()).pathname;
+  const [response] = await Promise.all([
+    page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === path, { timeout: 90_000 }),
+    button.click(),
+  ]);
+  expect(response.status()).toBeLessThan(400);
+}
 
 async function fact(page: Page, type: string, value: string) {
   const form = page.locator("form").filter({ hasText: "Fact type" }).last();
@@ -12,7 +21,7 @@ async function fact(page: Page, type: string, value: string) {
 }
 async function prepared(page: Page) {
   await expect.poll(async () => {
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     return page.getByRole("link", { name: "Review draft", exact: true }).count();
   }, { timeout: 120_000, intervals: [2_000, 4_000] }).toBeGreaterThan(0);
 }
@@ -71,7 +80,7 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1,  name: "Monthly Fulfillment Cycle" })).toBeVisible();
   const cycleUrl = page.url();
   const contentWork = page.locator(".mx-check-row").filter({ has: page.getByRole("button", { name: "Prepare Content Brief" }) }).first();
-  await contentWork.getByRole("button", { name: "Prepare Content Brief" }).click();
+  await serverAction(page, contentWork.getByRole("button", { name: "Prepare Content Brief" }));
   await prepared(page);
   await contentWork.getByRole("link", { name: "Review draft" }).click();
   await expect(page.locator("main")).toContainText("CONTENT_BRIEF");
@@ -88,9 +97,9 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await expect(contentWork).toContainText("APPROVED");
   await expect(contentWork).not.toContainText("IMPLEMENTED_UNVERIFIED");
   await page.goto(contentOpportunity);
-  await page.getByRole("button", { name: "Prepare Content Brief" }).click();
+  await serverAction(page, page.getByRole("button", { name: "Prepare Content Brief" }));
   await expect.poll(async () => {
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     const link = page.getByRole("link", { name: "Review draft", exact: true });
     return (await link.count()) > 0 && (await link.getAttribute("href")) !== new URL(firstArtifactUrl).pathname;
   }, { timeout: 120_000, intervals: [2_000, 4_000] }).toBe(true);
@@ -101,7 +110,7 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await expect(page.getByText("APPROVED", { exact: true })).toBeVisible();
 
   await openOpportunity(page, "seo.internal_links");
-  await page.getByRole("button", { name: "Prepare Internal Links" }).click();
+  await serverAction(page, page.getByRole("button", { name: "Prepare Internal Links" }));
   await prepared(page);
   await page.getByRole("link", { name: "Review draft", exact: true }).click();
   await expect(page.locator("main")).toContainText("INTERNAL_LINK_PROPOSAL");
@@ -114,7 +123,7 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await page.getByRole("button", { name: "Nominate Opportunity" }).click();
   await expect(page.getByRole("button", { name: "Prepare Schema" })).toBeVisible();
   const schemaOpportunity = page.url();
-  await page.getByRole("button", { name: "Prepare Schema" }).click();
+  await serverAction(page, page.getByRole("button", { name: "Prepare Schema" }));
   await prepared(page);
   await page.getByRole("link", { name: "Review draft", exact: true }).click();
   await expect(page.locator("main")).toContainText("SCHEMA_PROPOSAL");
@@ -128,9 +137,9 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await fact(page, "business_name", "Example Entity");
   await fact(page, "website_url", "https://example.com/");
   await page.goto(schemaOpportunity);
-  await page.getByRole("button", { name: "Prepare Schema" }).click();
+  await serverAction(page, page.getByRole("button", { name: "Prepare Schema" }));
   await expect.poll(async () => {
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     const link = page.getByRole("link", { name: "Review draft", exact: true });
     return (await link.count()) > 0 && (await link.getAttribute("href")) !== missingSchemaArtifact;
   }, { timeout: 120_000, intervals: [2_000, 4_000] }).toBe(true);
