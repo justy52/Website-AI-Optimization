@@ -1,4 +1,5 @@
 "use server";
+import { OperationsValidationError } from "@/domain/operations/policy";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { start } from "workflow/api";
@@ -25,7 +26,7 @@ export async function visibilityAction(data: FormData) {
       default: throw new VisibilityValidationError("Unknown visibility operation.");
     }
   } catch (error) {
-    if (!(error instanceof VisibilityValidationError) && !(error instanceof AuthorizationError)) throw error;
+    if (!(error instanceof VisibilityValidationError) && !(error instanceof OperationsValidationError || error instanceof AuthorizationError)) throw error;
     path += `&validation=${encodeURIComponent(error.message)}`;
   }
   revalidatePath("/ai-visibility"); redirect(path as never);

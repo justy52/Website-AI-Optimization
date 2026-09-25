@@ -133,7 +133,7 @@ async function runMonitoringAndCompetitorObservation(page: Page) {
 
 async function createAuditOpportunity(page: Page) {
   await page.getByRole("button", { name: "Start audit" }).click();
-  await expect(page.getByRole("heading", { name: /Audit/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Audit/, level: 1 })).toBeVisible();
   await expect(page.getByText("UNAVAILABLE").first()).toBeVisible();
   await page.getByRole("button", { name: "Finalize audit snapshot" }).click();
   await page.getByRole("button", { name: "Create report" }).click();

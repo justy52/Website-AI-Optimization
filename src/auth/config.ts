@@ -17,6 +17,9 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+  // Shared database storage preserves Better Auth's atomic special endpoint rules
+  // across serverless instances; origin/CSRF checks remain enabled.
+  rateLimit: { enabled: true, storage: "database" },
 });
 
 export type Auth = typeof auth;

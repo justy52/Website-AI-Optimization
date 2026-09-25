@@ -1,3 +1,6 @@
+import { OperationsValidationError } from "@/domain/operations/policy";
+import { assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext, platformPauseState, filterUnpausedWorkspaceRefs } from "./operations";
+import { pauseApplies } from "@/domain/operations/policy";
 import { createHash } from "node:crypto";
 
 import { and, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
@@ -255,9 +258,10 @@ export async function requestManualMonitoringRun(
   database = db,
 ) {
   assertWorkspaceRole(context, ["OWNER", "ADMIN", "ANALYST"]);
+  await enforceActionRateLimit(context, "monitor", database);
   await ensureMonitoringSchedulesForWebsite(context, websiteId, database);
 
-  return withTenantContext(database, context, async (tx) => {
+  return withOperationalContext(database, context, async (tx) => {
     const [schedule] = await tx
       .select()
       .from(monitoringSchedules)
@@ -276,6 +280,7 @@ export async function requestManualMonitoringRun(
       throw new Error("This monitor is not included in the current service plan.");
     }
 
+    await assertOperationalAdmission(tx, context, "monitor", { workflow: true, crawl: true });
     const [run] = await tx
       .insert(monitoringRuns)
       .values({
@@ -319,6 +324,7 @@ export async function recordMonitoringWorkflowRunId(
         and(
           eq(monitoringRuns.workspaceId, context.workspaceId),
           eq(monitoringRuns.id, monitoringRunId),
+          eq(monitoringRuns.status, "QUEUED"),
         ),
       ),
   );
@@ -405,13 +411,15 @@ export async function executeMonitoringRun(
       .returning();
 
     if (!row) {
-      throw new Error("Monitoring run was not found.");
+      return null;
     }
 
     return row;
   });
 
+  if (!run) return { status: "ALREADY_CLAIMED" as const };
   try {
+    await checkMaterialStep(context, "monitor", database);
     if (run.monitorKey === WEBSITE_HEALTH_MONITOR_KEY) {
       const audit = await startAuditForWebsite(context, run.websiteId, database);
       let finalStatus: "SUCCEEDED" | "PARTIAL" = "PARTIAL";
@@ -631,6 +639,7 @@ export async function executeMonitoringRun(
       );
     });
 
+    if (error instanceof OperationsValidationError) return { status: "FAILED" as const };
     throw error;
   }
 }
@@ -813,13 +822,13 @@ export async function listDueMonitoringScheduleRefs(
   limit = 25,
   database = db,
 ) {
+  if (pauseApplies(await platformPauseState(database), "monitor")) return [];
   const result = await database.execute(sql`
     select workspace_id, schedule_id
     from public.bootstrap_due_monitoring_schedules(${limit})
   `);
 
-  return (result as unknown as { rows?: { workspace_id: string; schedule_id: string }[] })
-    .rows ?? [];
+  return filterUnpausedWorkspaceRefs((result as unknown as { rows?: { workspace_id: string; schedule_id: string }[] }).rows ?? [], "monitor", database);
 }
 
 export async function requestScheduledMonitoringRun(
@@ -833,7 +842,7 @@ export async function requestScheduledMonitoringRun(
     role: "ADMIN",
   };
 
-  return withTenantContext(database, systemContext, async (tx) => {
+  return withOperationalContext(database, systemContext, async (tx) => {
     const [schedule] = await tx
       .select()
       .from(monitoringSchedules)
@@ -864,6 +873,7 @@ export async function requestScheduledMonitoringRun(
       return { monitoringRunId: existing.id, shouldStartWorkflow: false, context: systemContext };
     }
 
+    await assertOperationalAdmission(tx, systemContext, "monitor", { workflow: true, crawl: true });
     const [run] = await tx
       .insert(monitoringRuns)
       .values({

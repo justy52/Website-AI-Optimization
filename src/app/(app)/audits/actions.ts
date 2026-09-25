@@ -1,4 +1,5 @@
 "use server";
+import { OperationsValidationError } from "@/domain/operations/policy";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -16,6 +17,7 @@ function value(formData: FormData, key: string): string {
 }
 
 export async function startAuditAction(formData: FormData) {
+  try {
   const shell = await getWorkspaceShellContext();
   const audit = await startAuditForWebsite(
     shell.workspaceContext,
@@ -24,6 +26,10 @@ export async function startAuditAction(formData: FormData) {
 
   revalidatePath("/audits");
   redirect(`/audits/${audit.id}`);
+  } catch (error) {
+    if (error instanceof OperationsValidationError) redirect(`/operations?validation=${encodeURIComponent(error.message)}` as never);
+    throw error;
+  }
 }
 
 export async function finalizeAuditAction(formData: FormData) {

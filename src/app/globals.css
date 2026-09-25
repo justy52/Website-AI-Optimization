@@ -732,3 +732,7 @@ textarea.mx-input {
     color: #111111;
   }
 }
+
+.mx-skip-link { position: fixed; top: -100px; left: 1rem; z-index: 1000; background: #071510; color: #b4ffd4; padding: 1rem; }
+.mx-skip-link:focus { top: 1rem; }
+:focus-visible { outline: 2px solid #68e5a1; outline-offset: 3px; }

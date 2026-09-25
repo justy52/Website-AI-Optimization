@@ -36,6 +36,8 @@ const navItems = [
   { href: "/runs", label: "Runs", icon: Bot },
   { href: "/approvals", label: "Approvals", icon: ShieldCheck },
   { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/operations", label: "Operations", icon: Activity },
+  { href: "/ai-visibility", label: "AI Visibility", icon: Radar },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -48,6 +50,7 @@ export default async function AppLayout({
 
   return (
     <div className="mx-root">
+      <a className="mx-skip-link" href="#main-content">Skip to main content</a>
       <div className="mx-rain" aria-hidden />
       <div className="mx-scan" aria-hidden />
       <div className="mx-vignette" aria-hidden />
@@ -114,7 +117,7 @@ export default async function AppLayout({
               <SignOutButton />
             </div>
           </header>
-          <main className="mx-view">{children}</main>
+          <main id="main-content" tabIndex={-1} className="mx-view">{children}</main>
         </div>
       </div>
     </div>

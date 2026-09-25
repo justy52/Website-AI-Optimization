@@ -1,3 +1,4 @@
+import { assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext } from "./operations";
 import { createHash } from "node:crypto";
 
 import { and, asc, desc, eq } from "drizzle-orm";
@@ -226,7 +227,9 @@ export async function startAuditForWebsite(
   websiteId: string,
   database = db,
 ) {
-  const prepared = await withTenantContext(database, context, async (tx) => {
+  await enforceActionRateLimit(context, "audit", database);
+  const prepared = await withOperationalContext(database, context, async (tx) => {
+    await assertOperationalAdmission(tx, context, "audit", { workflow: true, crawl: true });
     const [website] = await tx
       .select()
       .from(websites)
@@ -267,6 +270,14 @@ export async function startAuditForWebsite(
     return { audit, run, website };
   });
 
+  try { await checkMaterialStep(context, "audit", database); }
+  catch (error) {
+    await withTenantContext(database, context, async tx => {
+      await tx.update(auditRuns).set({ status: "FAILED", completedAt: now() }).where(and(eq(auditRuns.workspaceId, context.workspaceId), eq(auditRuns.id, prepared.run.id)));
+      await tx.update(audits).set({ status: "FAILED" }).where(and(eq(audits.workspaceId, context.workspaceId), eq(audits.id, prepared.audit.id)));
+    });
+    throw error;
+  }
   const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl);
 
   await withTenantContext(database, context, async (tx) => {

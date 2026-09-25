@@ -1,3 +1,5 @@
+import { OperationsValidationError } from "@/domain/operations/policy";
+import { assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext } from "./operations";
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -55,7 +57,9 @@ export async function requestImplementationVerification(context: WorkspaceContex
   // Use the sensitive manual-implementation role boundary for this new action.
   // The existing human-verification role policy remains unchanged.
   assertWorkspaceRole(context, ["OWNER", "ADMIN"]);
-  return withTenantContext(database, context, async tx => {
+  await enforceActionRateLimit(context, "verification", database);
+  return withOperationalContext(database, context, async tx => {
+    await assertOperationalAdmission(tx, context, "verification", { workflow: true });
     const [implementation] = await tx.select().from(manualImplementationRecords).where(and(eq(manualImplementationRecords.workspaceId, context.workspaceId), eq(manualImplementationRecords.id, implementationId))).limit(1);
     if (!implementation?.implementationPackageId) throw new MonthlyCycleValidationError("Select an approved implementation package and record implementation before requesting verification.");
     const [cycle] = await tx.select().from(monthlyCycles).where(and(eq(monthlyCycles.workspaceId, context.workspaceId), eq(monthlyCycles.id, implementation.monthlyCycleId))).limit(1).for("update");
@@ -101,6 +105,7 @@ export async function executeImplementationVerification(context: WorkspaceContex
   });
   if (!prepared.pkg) return prepared.run;
   try {
+    await checkMaterialStep(context, "verification", database);
     const snapshot = packageSchema.parse(prepared.pkg.snapshot);
     const observation: VerificationObservation = prepared.run.deadlineAt && prepared.run.deadlineAt < new Date() ? { result: "UNAVAILABLE", rationale: "Verification deadline expired before observation.", methodVersion: VERIFICATION_METHOD_VERSION, targetUrl: snapshot.targetUrl, observedAt: new Date().toISOString(), comparisons: [], limitations: snapshot.limitations, evidenceBytes: 0 } : await observeImplementation(snapshot, fetchOptions);
     assertWithinBudget(prepared.run.budgetSnapshot as AgentRunBudgetSnapshot, { toolCalls: 3, modelCalls: 0, evidenceBytes: observation.evidenceBytes, inputBytes: byteLength(JSON.stringify(snapshot)), outputBytes: byteLength(JSON.stringify(observation)), costCents: 0 });
@@ -123,9 +128,10 @@ export async function executeImplementationVerification(context: WorkspaceContex
     });
   } catch (error) {
     await withTenantContext(database, context, async tx => {
-      await tx.update(agentRuns).set({ status: "FAILED", errorSummary: "Unexpected verification failure; inspect server logs and retry.", completedAt: new Date() }).where(scoped(context.workspaceId, runId));
+      await tx.update(agentRuns).set({ status: "FAILED", errorSummary: error instanceof OperationsValidationError ? error.message : "Unexpected verification failure; inspect server logs and retry.", completedAt: new Date() }).where(scoped(context.workspaceId, runId));
       await tx.insert(activityEvents).values({ workspaceId: context.workspaceId, actorType: context.actorType, actorUserId: context.userId, action: "agent_run.failed", resourceType: "agent_run", resourceId: runId, summary: { agentKey: "verification" } });
     });
+    if (error instanceof OperationsValidationError) return { ...prepared.run, status: "FAILED" as const };
     throw error;
   }
 }

@@ -1,3 +1,4 @@
+import { setAutomationPause, setWorkspaceBudgets } from "./operations";
 import { createQaExecutionFixture, setQaExecutionFlag, requestQaExecutionApproval, decideQaExecutionApproval, requestQaExecution, applyQaExecution, processQaExecution, requestQaRollback, getQaExecutionDetail } from "./qa-execution";
 import { fixtureUrl, renderQaFixture, QA_WORKSPACE_FLAG, QA_ACTION_FLAG } from "@/domain/execution/qa-execution";
 import { requestPrepareDraftForOpportunity, executePrepareDraftAgentRun, decideApprovalRequest, getDraftArtifact, createBusinessFact } from "./agents";
@@ -48,6 +49,16 @@ describe.skipIf(!connectionString)("Phase 5 live server and RLS proof", () => {
   });
   afterEach(async () => { await client.query("rollback"); });
   afterAll(async () => { client?.release(); await pool?.end(); });
+
+  it("Phase 10 PREPARE request is blocked by pause and budget before creating a run", async () => {
+    const before=(await client.query("select count(*)::int n from agent_runs where workspace_id=$1",[b])).rows[0].n;
+    await setAutomationPause(context,{scope:"WORKSPACE",category:"ai",paused:true,reason:"Live PREPARE request proof"},database);
+    await expect(requestPrepareDraftForOpportunity(context,"80000000-0000-4000-8000-0000000000b1",database)).rejects.toMatchObject({code:"PAUSED"});
+    await setAutomationPause(context,{scope:"WORKSPACE",category:"ai",paused:false,reason:"Resume live proof"},database);
+    await setWorkspaceBudgets(context,{monthlyCostUsd:"0",activeWorkflowLimit:0,aiCallLimit:100,visibilityCallLimit:100,crawlConcurrency:2},"Deny new workflow",database);
+    await expect(requestPrepareDraftForOpportunity(context,"80000000-0000-4000-8000-0000000000b1",database)).rejects.toMatchObject({code:"BUDGET"});
+    expect((await client.query("select count(*)::int n from agent_runs where workspace_id=$1",[b])).rows[0].n).toBe(before);
+  });
 
   async function clearImplementation() {
     expect((await client.query("select count(*)::int n from implementation_verification_records where monthly_cycle_id=$1", [cycleId])).rows[0].n).toBe(0);

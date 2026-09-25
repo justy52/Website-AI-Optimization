@@ -19,7 +19,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
-  projects: [
+  projects: process.env.OPTIQ_E2E_BROWSER === "firefox" ? [{ name: "firefox", use: { ...devices["Desktop Firefox"] } }] : [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },

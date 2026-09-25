@@ -33,6 +33,7 @@ describe.skipIf(!connectionString)("Phase 9 live visibility and non-bypass RLS",
     await client.query("select set_config('app.workspace_id',$1,true),set_config('app.user_id','rls-user-b',true)", [workspaceId]);
     await client.query("insert into workspaces(id,name,slug) values($1,'Phase 9 isolated disposable tenant',$2)", [workspaceId, `phase9-${workspaceId}`]);
     await client.query("insert into workspace_memberships(workspace_id,user_id,role) values($1,'rls-user-b','OWNER')", [workspaceId]);
+    await client.query("insert into workspace_operations(workspace_id,monthly_cost_usd,active_workflow_limit) values($1,100,20)", [workspaceId]);
     clientId = (await client.query("insert into clients(workspace_id,name,service_plan) values($1,'Visibility disposable client','GROWTH') returning id", [workspaceId])).rows[0].id;
     websiteId = (await client.query("insert into websites(workspace_id,client_id,display_name,domain,canonical_url) values($1,$2,'Visibility disposable website','cedar.example','https://cedar.example') returning id", [workspaceId, clientId])).rows[0].id;
     for (const [factType, value] of [["business_name", "Cedar Plumbing"], ["canonical_domain", "cedar.example"], ["service", "plumbing"], ["location", "Denver"]]) await createBusinessFact(context, clientId, { factType, value, sourceReference: "Human reviewed disposable fixture", verificationStatus: "VERIFIED", sensitivity: "PUBLIC" }, database);

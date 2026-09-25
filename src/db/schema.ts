@@ -1,11 +1,13 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  bigint,
   check,
   date,
   foreignKey,
   index,
   integer,
+  numeric,
   jsonb,
   pgEnum,
   pgTable,
@@ -491,11 +493,17 @@ export const verification = pgTable("verification", {
   updatedAt: updatedAt(),
 });
 
+export const authRateLimits = pgTable("auth_rate_limits", {
+  id: text("id").primaryKey(), key: text("key").notNull().unique(),
+  count: integer("count").notNull(), lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+});
+
 export const authSchema = {
   user,
   session,
   account,
   verification,
+  rateLimit: authRateLimits,
 };
 
 export const workspaces = pgTable(
@@ -3276,6 +3284,7 @@ export const aiVisibilityRuns = pgTable("ai_visibility_runs", {
   actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "restrict" }),
   startedAt: timestamp("started_at", { withTimezone: true }), completedAt: timestamp("completed_at", { withTimezone: true }), createdAt: createdAt(),
 }, t => [
+  uniqueIndex("ai_vis_runs_workspace_id").on(t.workspaceId, t.id),
   uniqueIndex("ai_vis_runs_binding").on(t.workspaceId, t.promptSetId, t.id),
   uniqueIndex("ai_vis_runs_idempotency").on(t.workspaceId, t.idempotencyKey),
   // A changed prompt-set version cannot bypass a paid cadence window.
@@ -3320,3 +3329,70 @@ export const aiVisibilityCaptures = pgTable("ai_visibility_captures", {
   foreignKey({ columns: [t.workspaceId, t.observationId], foreignColumns: [aiVisibilityObservations.workspaceId, aiVisibilityObservations.id], name: "ai_vis_capture_observation_fk" }).onDelete("restrict"),
   check("ai_vis_capture_bounds", sql`length(${t.answer})<=100000 and ${t.expiresAt}>${t.createdAt}`),
 ]).enableRLS();
+
+// Internal operating controls. These are not service-plan or subscription billing.
+export const workspaceOperations = pgTable("workspace_operations", {
+  workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "restrict" }),
+  pausedAll: boolean("paused_all").notNull().default(false),
+  pausedMonitoring: boolean("paused_monitoring").notNull().default(false),
+  pausedAi: boolean("paused_ai").notNull().default(false),
+  pausedExecution: boolean("paused_execution").notNull().default(false),
+  monthlyCostUsd: numeric("monthly_cost_usd", { precision: 14, scale: 6 }).notNull().default("0"),
+  activeWorkflowLimit: integer("active_workflow_limit").notNull().default(5),
+  aiCallLimit: integer("ai_call_limit").notNull().default(100),
+  visibilityCallLimit: integer("visibility_call_limit").notNull().default(100),
+  crawlConcurrency: integer("crawl_concurrency").notNull().default(2),
+  reason: text("reason"), actorUserId: text("actor_user_id").references(() => user.id),
+  pausedAt: timestamp("paused_at", { withTimezone: true }),
+  resumedAt: timestamp("resumed_at", { withTimezone: true }), resumedBy: text("resumed_by").references(() => user.id),
+  updatedAt: updatedAt(),
+}, t => [check("workspace_operations_bounds", sql`${t.monthlyCostUsd} between 0 and 10000 and ${t.activeWorkflowLimit} between 0 and 20 and ${t.aiCallLimit} between 0 and 10000 and ${t.visibilityCallLimit} between 0 and 10000 and ${t.crawlConcurrency} between 0 and 5`)]).enableRLS();
+
+// Non-tenant platform singleton. Only server-authorized platform operators may write.
+export const platformOperations = pgTable("platform_operations", {
+  id: text("id").primaryKey().default("global"), pausedAll: boolean("paused_all").notNull().default(false),
+  pausedMonitoring: boolean("paused_monitoring").notNull().default(false), pausedAi: boolean("paused_ai").notNull().default(false),
+  pausedExecution: boolean("paused_execution").notNull().default(false),
+  reason: text("reason"), actorUserId: text("actor_user_id").references(() => user.id),
+  pausedAt: timestamp("paused_at", { withTimezone: true }), resumedAt: timestamp("resumed_at", { withTimezone: true }),
+  resumedBy: text("resumed_by").references(() => user.id), updatedAt: updatedAt(),
+}, t => [check("platform_operations_singleton", sql`${t.id}='global'`)]).enableRLS();
+
+export const usageLedger = pgTable("usage_ledger", {
+  id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+  clientId: uuid("client_id"), websiteId: uuid("website_id"),
+  agentRunId: uuid("agent_run_id"), monitoringRunId: uuid("monitoring_run_id"), visibilityRunId: uuid("visibility_run_id"), auditRunId: uuid("audit_run_id"),
+  sourceKey: text("source_key").notNull(), provider: text("provider").notNull(), category: text("category").notNull(),
+  units: integer("units").notNull().default(1), calls: integer("calls"), toolCalls: integer("tool_calls"),
+  inputTokens: integer("input_tokens"), outputTokens: integer("output_tokens"),
+  estimatedCostUsd: numeric("estimated_cost_usd", { precision: 14, scale: 6 }), actualCostUsd: numeric("actual_cost_usd", { precision: 14, scale: 6 }),
+  currency: text("currency").notNull().default("USD"),
+  reservedCostUsd: numeric("reserved_cost_usd", { precision: 14, scale: 6 }).notNull().default("0"), reservedCalls: integer("reserved_calls").notNull().default(0),
+  state: text("state").notNull().default("RESERVED"), outcome: text("outcome").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(), measurementWindow: text("measurement_window").notNull(),
+  sourceVersion: text("source_version").notNull(), metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: createdAt(), updatedAt: updatedAt(),
+}, t => [
+  uniqueIndex("usage_ledger_source_unique").on(t.workspaceId, t.sourceKey), index("usage_ledger_window").on(t.workspaceId, t.measurementWindow),
+  foreignKey({ columns: [t.workspaceId, t.clientId], foreignColumns: [clients.workspaceId, clients.id], name: "usage_client_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.clientId, t.websiteId], foreignColumns: [websites.workspaceId, websites.clientId, websites.id], name: "usage_site_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.agentRunId], foreignColumns: [agentRuns.workspaceId, agentRuns.id], name: "usage_agent_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.monitoringRunId], foreignColumns: [monitoringRuns.workspaceId, monitoringRuns.id], name: "usage_monitor_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.visibilityRunId], foreignColumns: [aiVisibilityRuns.workspaceId, aiVisibilityRuns.id], name: "usage_visibility_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.auditRunId], foreignColumns: [auditRuns.workspaceId, auditRuns.id], name: "usage_audit_fk" }).onDelete("restrict"),
+  check("usage_source_exactly_one", sql`num_nonnulls(${t.agentRunId},${t.monitoringRunId},${t.visibilityRunId},${t.auditRunId})=1`),
+  check("usage_bounds", sql`${t.units}>=0 and ${t.calls}>=0 and ${t.toolCalls}>=0 and ${t.inputTokens}>=0 and ${t.outputTokens}>=0 and ${t.estimatedCostUsd}>=0 and ${t.actualCostUsd}>=0 and ${t.reservedCostUsd}>=0 and ${t.reservedCalls}>=0 and ${t.currency}='USD' and ${t.state} in ('RESERVED','RECORDED')`),
+]).enableRLS();
+
+export const operationRateLimits = pgTable("operation_rate_limits", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  actorKey: text("actor_key").notNull(), action: text("action").notNull(), windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull().default(0),
+}, t => [primaryKey({ columns: [t.workspaceId, t.actorKey, t.action, t.windowStart] }), check("operation_rate_count", sql`${t.count}>=0`)]).enableRLS();
+
+export const retentionCleanupRuns = pgTable("retention_cleanup_runs", {
+  id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+  status: text("status").notNull(), dryRun: boolean("dry_run").notNull(), eligibleCount: integer("eligible_count").notNull(), deletedCount: integer("deleted_count").notNull(),
+  batchSize: integer("batch_size").notNull(), actorUserId: text("actor_user_id").references(() => user.id),
+  errorCode: text("error_code"), startedAt: timestamp("started_at", { withTimezone: true }).notNull(), completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+}, t => [check("retention_cleanup_bounds", sql`${t.batchSize} between 1 and 100 and ${t.deletedCount} between 0 and ${t.batchSize} and ${t.eligibleCount}>=0 and ${t.status} in ('SUCCEEDED','FAILED')`)]).enableRLS();

@@ -53,6 +53,8 @@ const rawEnvSchema = z.object({
   CRON_SECRET: optionalNonEmpty,
   QA_EXECUTE_ENABLED: z.enum(["true", "false"]).optional().transform(value => value === "true"),
   PERPLEXITY_API_KEY: optionalNonEmpty,
+  PLATFORM_OPERATOR_USER_IDS: optionalNonEmpty,
+  AUTOMATION_EMERGENCY_STOP: z.enum(["true", "false"]).optional().transform(value => value === "true"),
   GEMINI_API_KEY: optionalNonEmpty,
 });
 

@@ -1,3 +1,6 @@
+import { assertOperationalAdmission, assertAutomationAllowed, enforceActionRateLimit, operationalUsage, operationalEvent, OperationsValidationError, withOperationalContext, platformPauseState, filterUnpausedWorkspaceRefs } from "./operations";
+import { reserveUsage } from "./usage-ledger";
+import { pauseApplies } from "@/domain/operations/policy";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -77,7 +80,8 @@ export async function requestVisibilityRun(context: WorkspaceContext, websiteId:
   // Missing configuration is not a paid attempt and must not occupy a cadence window.
   // Once queued, the durable call reservations and fail-closed recovery still apply.
   if (source === "API" && !serverEnv.PERPLEXITY_API_KEY) throw new VisibilityValidationError("Perplexity Agent API is not configured for this environment.");
-  return withTenantContext(database, context, async tx => {
+  await enforceActionRateLimit(context, "visibility", database);
+  return withOperationalContext(database, context, async tx => {
     await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, context.workspaceId)).for("update");
     const data = await sourceData(tx, context, websiteId);
     const [set] = await tx.select().from(aiVisibilityPromptSets).where(and(eq(aiVisibilityPromptSets.workspaceId, context.workspaceId), eq(aiVisibilityPromptSets.websiteId, websiteId))).orderBy(desc(aiVisibilityPromptSets.version)).limit(1);
@@ -90,7 +94,9 @@ export async function requestVisibilityRun(context: WorkspaceContext, websiteId:
     if (prior) return prior;
     const [active] = await tx.select({ id: aiVisibilityRuns.id }).from(aiVisibilityRuns).where(and(scoped(context.workspaceId), inArray(aiVisibilityRuns.status, ["QUEUED", "RUNNING"]))).limit(1);
     if (active) throw new VisibilityValidationError("A visibility workflow is already active in this workspace.");
+    await assertOperationalAdmission(tx, context, "visibility", { workflow: true, costUsd: source === "API" ? VISIBILITY_BUDGET.maxEstimatedCostUsd : 0, visibilityCalls: source === "API" ? data.prompts.length : 0 });
     const [run] = await tx.insert(aiVisibilityRuns).values({ workspaceId: context.workspaceId, clientId: data.client.id, websiteId, promptSetId: set.id, promptSetVersion: set.version, source, surface, adapterVersion: source === "API" ? PERPLEXITY_ADAPTER_VERSION : "qa-visibility-fixture-v1.0", model: source === "API" ? PERPLEXITY_MODEL : "deterministic-test-fixture", trigger: context.actorType === "SYSTEM" ? "SCHEDULED" : "USER", window, idempotencyKey, context: { localization: "Exact prompt location only", personalization: "NONE", aliases: set.aliases, factHash: set.contentHash }, budget: { ...VISIBILITY_BUDGET, maxPrompts: data.prompts.length, maxCalls: data.prompts.length }, promptCount: data.prompts.length, actorUserId: context.userId, status: "QUEUED" }).returning();
+    await reserveUsage(tx, context, { visibilityRunId: run.id, clientId: run.clientId, websiteId: run.websiteId, sourceKey: `visibility:${run.id}`, provider: source === "API" ? "perplexity" : "deterministic", category: "AI_VISIBILITY", outcome: run.status, reservedCostUsd: String(source === "API" ? VISIBILITY_BUDGET.maxEstimatedCostUsd : 0), reservedCalls: source === "API" ? data.prompts.length : 0, sourceVersion: run.adapterVersion });
     await activity(tx, context, "ai_visibility.run_queued", run.id);
     return run;
   });
@@ -105,10 +111,10 @@ function fixtureProvider(set: typeof aiVisibilityPromptSets.$inferSelect): Visib
   } };
 }
 
-async function persistObservation(tx: Tx, context: WorkspaceContext, run: typeof aiVisibilityRuns.$inferSelect, set: typeof aiVisibilityPromptSets.$inferSelect, prompt: typeof aiVisibilityPrompts.$inferSelect, callId: string, response: ProviderResult, observedAt = new Date()) {
+async function persistObservation(tx: Tx, context: WorkspaceContext, run: typeof aiVisibilityRuns.$inferSelect, set: typeof aiVisibilityPromptSets.$inferSelect, prompt: typeof aiVisibilityPrompts.$inferSelect, callId: string, response: ProviderResult, observedAt = new Date(), captureCreatedAt = new Date()) {
   const parsed = response.status === "SUCCEEDED" && response.answer ? parseVisibilityAnswer(response.answer, response.citations, set.aliases) : null;
   const [observation] = await tx.insert(aiVisibilityObservations).values({ workspaceId: context.workspaceId, promptSetId: set.id, runId: run.id, promptId: prompt.id, callId, source: run.source, surface: run.surface, model: response.model, status: response.status, renderedPrompt: prompt.renderedPrompt, promptHash: prompt.promptHash, answerHash: response.answer ? visibilityHash(response.answer) : null, providerResponseId: response.providerResponseId, parsed, parserVersion: PARSER_VERSION, usage: { inputTokens: response.inputTokens, outputTokens: response.outputTokens, costUsd: response.costUsd, retryable: response.retryable, retryAfterSeconds: response.retryAfterSeconds }, limitations: [...response.limitations, ...(parsed?.limitations ?? [])], observedAt, recordedByUserId: run.actorUserId }).onConflictDoNothing().returning();
-  if (observation && response.answer) await tx.insert(aiVisibilityCaptures).values({ workspaceId: context.workspaceId, observationId: observation.id, answer: response.answer, providerData: response.raw ?? { source: run.source }, expiresAt: new Date(Date.now() + 90 * 86400_000) });
+  if (observation && response.answer) await tx.insert(aiVisibilityCaptures).values({ workspaceId: context.workspaceId, observationId: observation.id, answer: response.answer, providerData: response.raw ?? { source: run.source }, createdAt: captureCreatedAt, expiresAt: new Date(captureCreatedAt.getTime() + 90 * 86400_000) });
   return observation;
 }
 
@@ -117,6 +123,7 @@ async function persistObservation(tx: Tx, context: WorkspaceContext, run: typeof
 export async function observeVisibilityPrompt(context: WorkspaceContext, runId: string, promptId: string, database = db, testProvider?: VisibilityProvider) {
   requireId(runId); requireId(promptId);
   const prepared = await withTenantContext(database, context, async tx => {
+    await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, context.workspaceId)).for("update");
     const [run] = await tx.select().from(aiVisibilityRuns).where(and(scoped(context.workspaceId), eq(aiVisibilityRuns.id, runId))).for("update");
     if (!run || run.completedAt) return null;
     const [set] = await tx.select().from(aiVisibilityPromptSets).where(and(eq(aiVisibilityPromptSets.workspaceId, context.workspaceId), eq(aiVisibilityPromptSets.id, run.promptSetId)));
@@ -136,6 +143,17 @@ export async function observeVisibilityPrompt(context: WorkspaceContext, runId: 
       limit 1`);
     if (pending.rows.length) return null;
     let unavailable: string | null = null;
+    try {
+      const limits = await assertAutomationAllowed(tx, context, "visibility");
+      if (run.source === "API") {
+        const usage = await operationalUsage(tx, context);
+        if (run.createdAt.toISOString().slice(0, 7) !== new Date().toISOString().slice(0, 7) || usage.committedCostUsd > Number(limits.monthlyCostUsd) || usage.visibilityCalls > limits.visibilityCallLimit) throw new OperationsValidationError("Workspace visibility budget changed after queueing.", "BUDGET");
+      }
+    } catch (error) {
+      if (!(error instanceof OperationsValidationError)) throw error;
+      unavailable = "WORKSPACE_AUTOMATION_BLOCKED";
+      await operationalEvent(tx, context, `operations.${error.code.toLowerCase()}`, { runId, reason: error.message });
+    }
     try { const current = await sourceData(tx, context, run.websiteId); if (current.contentHash !== set.contentHash || current.limits.prompts < run.promptCount || !current.limits.surfaces) unavailable = "FACTS_OR_ENTITLEMENTS_CHANGED"; }
     catch (error) { if (error instanceof VisibilityValidationError) unavailable = "VERIFIED_FACTS_UNAVAILABLE"; else throw error; }
     if (run.source === "QA_FIXTURE" && serverEnv.APP_ENV !== "qa") unavailable = "QA_FIXTURE_DISABLED";
@@ -233,13 +251,14 @@ export async function visibilityCycleSummary(tx: Tx, workspaceId: string, client
 
 export async function listVisibilityScheduleRefs() {
   if (!serverEnv.PERPLEXITY_API_KEY) return [];
+  if (pauseApplies(await platformPauseState(), "visibility")) return [];
   const rows = await db.execute(sql`select * from public.list_ai_visibility_site_refs(100)`);
-  return rows.rows as { workspace_id: string; website_id: string }[];
+  return filterUnpausedWorkspaceRefs(rows.rows as { workspace_id: string; website_id: string }[], "visibility");
 }
 export async function prepareScheduledVisibility(workspaceId: string, websiteId: string) {
   const context: WorkspaceContext = { workspaceId, actorType: "SYSTEM", role: "OWNER", correlationId: randomUUID() };
   try { return { context, run: await requestVisibilityRun(context, websiteId) }; }
-  catch (error) { if (error instanceof VisibilityValidationError) return null; throw error; }
+  catch (error) { if (error instanceof VisibilityValidationError || error instanceof OperationsValidationError) return null; throw error; }
 }
 
 export async function getVisibilityDashboard(context: WorkspaceContext, database = db) {
@@ -255,5 +274,28 @@ export async function getVisibilityDashboard(context: WorkspaceContext, database
       return { ...target, factStatus: ready ? "Verified prompt facts available" : "Missing verified prompt facts", ready, due: ready && !runs.some(r => r.websiteId === target.id && r.window === currentWindow && r.status === "SUCCEEDED") };
     });
     return { sites, due: serverEnv.PERPLEXITY_API_KEY ? sites.filter(s => s.due).length : 0, failed: runs.filter(r => r.status === "FAILED" || r.status === "PARTIAL").length, missingFacts: new Set(sites.filter(s => !s.ready).map(s => s.clientId)).size, unavailable: serverEnv.PERPLEXITY_API_KEY ? 0 : new Set(sites.map(s => s.clientId)).size, review: reviews.n };
+  });
+}
+
+// Explicit QA-only retention exercise; never provider evidence or API cadence.
+export async function createRetentionQaFixture(context: WorkspaceContext, websiteId: string, database = db) {
+  human(context); assertWorkspaceRole(context,["OWNER"]);
+  if (serverEnv.APP_ENV !== "qa") throw new VisibilityValidationError("Retention fixtures are QA-only.");
+  requireId(websiteId);
+  await enforceActionRateLimit(context,"visibility",database);
+  return withTenantContext(database,context,async tx=>{
+    const target=await site(tx,context,websiteId);
+    const [set]=await tx.select().from(aiVisibilityPromptSets).where(and(eq(aiVisibilityPromptSets.workspaceId,context.workspaceId),eq(aiVisibilityPromptSets.websiteId,websiteId))).orderBy(desc(aiVisibilityPromptSets.version)).limit(1);
+    if(!set) throw new VisibilityValidationError("Generate a QA website prompt set first.");
+    const [prompt]=await tx.select().from(aiVisibilityPrompts).where(and(eq(aiVisibilityPrompts.workspaceId,context.workspaceId),eq(aiVisibilityPrompts.promptSetId,set.id))).limit(1);
+    for(const expired of [true,false]) {
+      const captureAt=new Date(Date.now()-(expired ? 91 : 0)*86400_000);
+      const [run]=await tx.insert(aiVisibilityRuns).values({workspaceId:context.workspaceId,clientId:target.client.id,websiteId,promptSetId:set.id,promptSetVersion:set.version,source:"QA_FIXTURE",surface:"QA retention fixture (not provider evidence)",model:"deterministic-test-fixture",adapterVersion:"qa-retention-v1",trigger:"USER",window:"QA_RETENTION",idempotencyKey:randomUUID(),context:{fixture:true,expired},budget:{maxCalls:0},promptCount:1,actorUserId:context.userId}).returning();
+      const [call]=await tx.insert(aiVisibilityCalls).values({workspaceId:context.workspaceId,promptSetId:set.id,runId:run.id,promptId:prompt.id}).returning();
+      await tx.update(aiVisibilityRuns).set({status:"RUNNING",startedAt:new Date()}).where(and(scoped(context.workspaceId),eq(aiVisibilityRuns.id,run.id)));
+      await persistObservation(tx,context,run,set,prompt,call.id,{...unavailableProviderResult(),status:"SUCCEEDED",answer:"Synthetic retention exercise. No provider request.",model:run.model,costUsd:0,limitations:["QA RETENTION FIXTURE; no contractual completion or measured visibility"]},captureAt,captureAt);
+      await tx.update(aiVisibilityRuns).set({status:"SUCCEEDED",successCount:1,completedAt:new Date()}).where(and(scoped(context.workspaceId),eq(aiVisibilityRuns.id,run.id)));
+    }
+    await activity(tx,context,"operations.retention_fixture_created",websiteId);
   });
 }

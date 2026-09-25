@@ -1,4 +1,5 @@
 "use server";
+import { OperationsValidationError } from "@/domain/operations/policy";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -84,6 +85,7 @@ export async function ensureMonitoringSchedulesAction(formData: FormData) {
 }
 
 export async function requestMonitoringRunAction(formData: FormData) {
+  try {
   const shell = await getWorkspaceShellContext();
   const websiteId = value(formData, "websiteId");
   const monitorKey = value(formData, "monitorKey");
@@ -113,6 +115,10 @@ export async function requestMonitoringRunAction(formData: FormData) {
   revalidatePath(`/websites/${websiteId}`);
   revalidatePath("/monitoring");
   redirect(`/websites/${websiteId}`);
+  } catch (error) {
+    if (error instanceof OperationsValidationError) redirect(`/operations?validation=${encodeURIComponent(error.message)}` as never);
+    throw error;
+  }
 }
 
 export async function beginSearchConsoleOAuthAction(formData: FormData) {

@@ -223,7 +223,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await page.getByRole("link", { name: "Websites", exact: true }).click();
   await page.getByText("example.com").first().click();
   await page.getByRole("button", { name: "Start audit" }).click();
-  await expect(page.getByRole("heading", { name: /Audit/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Audit/, level: 1 })).toBeVisible();
   await expect(page.getByText("UNAVAILABLE").first()).toBeVisible();
   await page.getByRole("button", { name: "Finalize audit snapshot" }).click();
   await page.getByRole("button", { name: "Create report" }).click();
@@ -234,7 +234,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await page.getByRole("link", { name: "Opportunities", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Opportunities" })).toBeVisible();
   await page.locator("main a.mx-row").filter({ hasText: /seo.title|seo.meta_description|seo.heading_structure|conv.primary_cta/ }).first().click();
-  await expect(page.getByRole("heading")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   const opportunityUrl = page.url();
   await expect(page.getByText("Priority explanation")).toBeVisible();
   await submit(page, page.getByRole("button", { name: "Prepare Page Optimization" }));

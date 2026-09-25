@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { lockOperationalWorkspace, assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext } from "./operations";
+import { reserveUsage, recordPrepareUsage } from "./usage-ledger";
 import { createHash } from "node:crypto";
 
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -204,7 +207,9 @@ export async function requestPrepareDraftForOpportunity(
 ): Promise<PrepareDraftRequestResult> {
   assertWorkspaceRole(context, ["OWNER", "ADMIN", "ANALYST"]);
 
-  return withTenantContext(database, context, async (tx) => {
+  await enforceActionRateLimit(context, "prepare", database);
+  return withOperationalContext(database, context, async (tx) => {
+    await lockOperationalWorkspace(tx, context);
     const [opportunity] = await tx
       .select({
         id: opportunities.id,
@@ -314,6 +319,8 @@ export async function requestPrepareDraftForOpportunity(
       .limit(1);
 
     const persistedDefinition = requirePersistedAgentDefinition(agent, definitionRecord);
+    const paid = agent.key === "existing-page-optimization" && serverEnv.AGENT_PROVIDER === "ai_gateway" && !!serverEnv.AI_GATEWAY_MODEL;
+    await assertOperationalAdmission(tx, context, "prepare", { workflow: true, costUsd: paid ? budget.maxCostCents / 100 : 0, aiCalls: paid ? 1 : 0 });
     const [run] = await tx
       .insert(agentRuns)
       .values({
@@ -352,11 +359,12 @@ export async function requestPrepareDraftForOpportunity(
         outputSchemaVersion: agent.outputSchemaVersion,
         estimatedToolCalls: allowedTools.length,
         estimatedModelCalls: 1,
-        idempotencyKey: `prepare:${opportunity.id}:${agent.version}:v${nextVersion}`,
+        idempotencyKey: `prepare:${opportunity.id}:${agent.version}:v${nextVersion}:${randomUUID()}`,
         createdByUserId: context.userId,
       })
       .returning();
 
+    await reserveUsage(tx, context, { agentRunId: run.id, clientId: run.clientId, websiteId: run.websiteId, sourceKey: `agent:${run.id}`, provider: run.provider, category: "PREPARE", outcome: run.status, reservedCostUsd: String(paid ? budget.maxCostCents / 100 : 0), reservedCalls: paid ? 1 : 0, sourceVersion: run.agentVersion });
     await recordActivity(tx, context, "agent_run.queued", "agent_run", run.id, {
       opportunityId: opportunity.id,
       agentKey: agent.key,
@@ -703,7 +711,9 @@ export async function executePrepareDraftAgentRun(
       runId,
       providerOverride,
     ) : (providerOverride ?? createDeterministicDeliverableProvider());
+    await checkMaterialStep(context, "prepare", database, provider.provider === "deterministic" ? undefined : runId);
     const generated = await provider.generate(prepared.loaded.input);
+    await recordPrepareUsage(context, runId, provider.provider, generated.usage, database);
     const output = (route.agentKey === "existing-page-optimization" ? assertPrepareOutputPolicy : assertDeliverablePolicy)(
       generated.output,
       prepared.loaded.input,

@@ -1,4 +1,5 @@
 "use server";
+import { OperationsValidationError } from "@/domain/operations/policy";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -59,6 +60,7 @@ export async function updateOpportunityAction(formData: FormData) {
 }
 
 export async function requestPrepareDraftAction(formData: FormData) {
+  try {
   const shell = await getWorkspaceShellContext();
   const opportunityId = value(formData, "opportunityId");
   const prepared = await requestPrepareDraftForOpportunity(
@@ -83,4 +85,8 @@ export async function requestPrepareDraftAction(formData: FormData) {
   revalidatePath("/runs");
   revalidatePath("/approvals");
   redirect(`/opportunities/${opportunityId}` as never);
+  } catch (error) {
+    if (error instanceof OperationsValidationError) redirect(`/operations?validation=${encodeURIComponent(error.message)}` as never);
+    throw error;
+  }
 }

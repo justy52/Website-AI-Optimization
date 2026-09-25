@@ -80,7 +80,7 @@ test("Phase 7 exact packages, independent pass/fail/retry and immutable history"
   expect(await (await request.get(target)).text()).toContain("<title>Home</title>");
   await page.getByLabel("Display name").fill("Public read-only verification fixture"); await page.getByLabel("Canonical URL").fill(target); await page.getByLabel("Domain").fill("optiq-qa.vercel.app");
   await page.getByLabel("Authorization scope").selectOption("PUBLIC_PAGES_ONLY"); await page.getByRole("button", { name: "Add website" }).click();
-  await page.getByRole("button", { name: "Start audit" }).click(); await expect(page.getByRole("heading", { name: /Audit/ })).toBeVisible(); await page.getByRole("button", { name: "Finalize audit snapshot" }).click();
+  await page.getByRole("button", { name: "Start audit" }).click(); await expect(page.getByRole("heading", { name: /Audit/, level: 1 })).toBeVisible(); await page.getByRole("button", { name: "Finalize audit snapshot" }).click();
   await page.goto("/opportunities");
   const titleId = (await page.locator("main a.mx-row").filter({ hasText: "seo.title" }).first().getAttribute("href"))!.split("/").pop()!;
   // Lesser audit warnings are intentionally not auto-created. Use the existing

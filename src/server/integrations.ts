@@ -1,3 +1,4 @@
+import { checkMaterialStep } from "./operations";
 import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/db/client";
@@ -790,6 +791,7 @@ export async function syncSearchConsoleObservations(
 
     return row;
   });
+  await checkMaterialStep(context, "monitor", database);
   const accessToken = await getSearchConsoleAccessToken(
     context,
     property.integrationConnectionId,

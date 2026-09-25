@@ -1,4 +1,5 @@
 "use server";
+import { OperationsValidationError } from "@/domain/operations/policy";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { start } from "workflow/api";
@@ -16,7 +17,7 @@ export async function createImplementationPackageAction(data: FormData) {
   const artifactId = field(data, "artifactId");
   try { id = (await createImplementationPackage(shell.workspaceContext, artifactId)).id; }
   catch (error) {
-    if (error instanceof MonthlyCycleValidationError || error instanceof AuthorizationError) redirect(`/drafts/${encodeURIComponent(artifactId)}?validation=${encodeURIComponent(error.message)}` as never);
+    if (error instanceof MonthlyCycleValidationError || error instanceof OperationsValidationError || error instanceof AuthorizationError) redirect(`/drafts/${encodeURIComponent(artifactId)}?validation=${encodeURIComponent(error.message)}` as never);
     throw error;
   }
   revalidatePath("/monthly-cycles");
@@ -32,7 +33,7 @@ export async function verifyImplementationAction(data: FormData) {
       await recordWorkflowRunId(shell.workspaceContext, result.agentRunId, workflow.runId);
     }
   } catch (error) {
-    if (error instanceof MonthlyCycleValidationError || error instanceof AuthorizationError) redirect(`${path}?validation=${encodeURIComponent(error.message)}` as never);
+    if (error instanceof MonthlyCycleValidationError || error instanceof OperationsValidationError || error instanceof AuthorizationError) redirect(`${path}?validation=${encodeURIComponent(error.message)}` as never);
     throw error;
   }
   revalidatePath(path); revalidatePath("/"); revalidatePath("/runs");

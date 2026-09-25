@@ -57,7 +57,7 @@ test("Phase 6 governed content, links and schema PREPARE", async ({ page }) => {
   await page.getByLabel("Authorization scope").selectOption("PUBLIC_PAGES_ONLY");
   await page.getByRole("button", { name: "Add website" }).click();
   await page.getByRole("button", { name: "Start audit" }).click();
-  await expect(page.getByRole("heading", { name: /Audit/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Audit/, level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Finalize audit snapshot" }).click();
   await page.goto("/opportunities");
   await page.getByLabel("Proposed topic").fill("Guide to website optimization");

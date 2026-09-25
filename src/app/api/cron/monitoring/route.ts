@@ -1,3 +1,4 @@
+import { OperationsValidationError } from "@/domain/operations/policy";
 import { NextResponse } from "next/server";
 import { start } from "workflow/api";
 
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
     const prepared = await requestScheduledMonitoringRun(
       ref.workspace_id,
       ref.schedule_id,
-    );
+    ).catch(error => { if (error instanceof OperationsValidationError) return null; throw error; });
 
     if (prepared?.shouldStartWorkflow) {
       const run = await start(monitoringRunWorkflow, [

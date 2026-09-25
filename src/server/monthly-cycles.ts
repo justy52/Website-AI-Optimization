@@ -1,3 +1,5 @@
+import { assertAutomationAllowed, withOperationalContext, platformPauseState, filterUnpausedWorkspaceRefs } from "./operations";
+import { pauseApplies } from "@/domain/operations/policy";
 import { routePrepareOpportunity } from "@/domain/agents/routing";
 import { visibilityCycleSummary } from "./ai-visibility";
 import { serverEnv } from "@/lib/env";
@@ -810,7 +812,8 @@ export async function createScheduledMonthlyCycle(
       ? monthlyPeriod(input.year, input.month)
       : monthlyPeriodForDate(now());
 
-  return withTenantContext(database, context, async (tx) => {
+  return withOperationalContext(database, context, async (tx) => {
+    await assertAutomationAllowed(tx, context, "monthly_cycle");
     const [client] = await tx
       .select()
       .from(clients)
@@ -2739,12 +2742,13 @@ export async function listDueMonthlyCycleClientRefs(
   limit = 50,
   database = db,
 ) {
+  if (pauseApplies(await platformPauseState(database), "monthly_cycle")) return [];
   const result = await database.execute(sql`
     select workspace_id, client_id, cycle_year, cycle_month
     from public.bootstrap_due_monthly_cycle_clients(${limit})
   `);
 
-  return (
+  return filterUnpausedWorkspaceRefs((
     result as unknown as {
       rows?: {
         workspace_id: string;
@@ -2753,7 +2757,7 @@ export async function listDueMonthlyCycleClientRefs(
         cycle_month: number;
       }[];
     }
-  ).rows ?? [];
+  ).rows ?? [], "monthly_cycle", database);
 }
 
 export function monthlyCycleCloseReadiness(input: {

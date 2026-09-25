@@ -20,6 +20,7 @@ describe("Better Auth foundation", () => {
   it("keeps the Better Auth schema tables explicit", () => {
     expect(Object.keys(authSchema).sort()).toEqual([
       "account",
+      "rateLimit",
       "session",
       "user",
       "verification",

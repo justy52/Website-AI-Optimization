@@ -1,3 +1,4 @@
+import { assertOperationalAdmission, assertAutomationAllowed, enforceActionRateLimit, withOperationalContext, OperationsValidationError } from "./operations";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -110,7 +111,8 @@ async function createRun(tx: Tx, c: WorkspaceContext, approval: typeof execution
 }
 export async function requestQaExecution(c: WorkspaceContext, approvalId: string, database = db, env: QaRuntime = serverEnv) {
   human(c); assertQaEnvironment(env);
-  return withTenantContext(database, c, async tx => {
+  await enforceActionRateLimit(c, "qa_execute", database);
+  return withOperationalContext(database, c, async tx => {
     await lockWorkspace(tx, c);
     const [approval] = await tx.select().from(executionApprovals).where(and(eq(executionApprovals.workspaceId, c.workspaceId), eq(executionApprovals.id, approvalId))).limit(1).for("update");
     if (!approval || approval.status !== "APPROVED") throw new ExecutionValidationError("Separate approved execution approval is required; artifact approval is insufficient.");
@@ -118,6 +120,7 @@ export async function requestQaExecution(c: WorkspaceContext, approvalId: string
     const idempotencyKey = `apply:${approval.actionHash}`;
     const [existing] = await tx.select().from(executionRecords).where(and(eq(executionRecords.workspaceId, c.workspaceId), eq(executionRecords.idempotencyKey, idempotencyKey))).limit(1);
     if (existing) return existing;
+    await assertOperationalAdmission(tx, c, "qa_execute", { workflow: true });
     const id = randomUUID(); const run = await createRun(tx, c, approval, id, QA_AGENT);
     const [record] = await tx.insert(executionRecords).values({ id, workspaceId: c.workspaceId, clientId: approval.clientId, websiteId: approval.websiteId, opportunityId: approval.opportunityId, fixtureId: approval.fixtureId, implementationPackageId: approval.implementationPackageId, approvalId: approval.id, agentRunId: run.id, actionKey: action.actionKey, actionVersion: action.version, target: action.target, kind: "APPLY", actionSummary: action, actionHash: approval.actionHash, preChangeSnapshot: action.before, idempotencyKey, actorUserId: c.userId!, trigger: "USER" }).returning();
     return record;
@@ -138,6 +141,7 @@ export async function applyQaExecution(c: WorkspaceContext, id: string, database
     const [run] = await tx.select().from(agentRuns).where(and(eq(agentRuns.workspaceId, c.workspaceId), eq(agentRuns.id, record.agentRunId))).limit(1);
     let after;
     try {
+      await assertAutomationAllowed(tx, c, "qa_execute");
       const agent = getEnabledAgentDefinition(QA_AGENT); const tool = getAgentToolDefinition(QA_TOOL);
       const action = assertQaExecutionGates({ env, ...await flags(tx, c), role: await currentRole(tx, c), agentKey: run.agentKey, agentVersion: run.agentVersion, agentEnabled: agent.enabled, toolKey: tool.key, permission: run.permissionLevel, approvalStatus: approval.status, action: record.actionSummary, hash: record.actionHash });
       if (tool.requiredPermission !== "EXECUTE" || tool.resourceScope !== "qa/exact-fixture" || agent.allowedToolKeys.length !== 1 || agent.allowedToolKeys[0] !== tool.key) throw new ExecutionValidationError("Execution tool scope mismatch.");
@@ -153,7 +157,7 @@ export async function applyQaExecution(c: WorkspaceContext, id: string, database
       tool.inputSchema.parse({ workspaceId: c.workspaceId, executionRecordId: record.id, actionHash: record.actionHash });
       assertWithinBudget(run.budgetSnapshot as AgentRunBudgetSnapshot, { toolCalls: 1, modelCalls: 0, evidenceBytes: 0, inputBytes: byteLength(JSON.stringify(action)), outputBytes: 1000, costCents: 0 });
     } catch (error) {
-      if (!(error instanceof ExecutionValidationError)) throw error;
+      if (!(error instanceof ExecutionValidationError) && !(error instanceof OperationsValidationError)) throw error;
       const [blocked] = await tx.update(executionRecords).set({ status: "BLOCKED", errorSummary: error.message, completedAt: new Date() }).where(scope(c.workspaceId, id)).returning();
       await tx.update(agentRuns).set({ status: "CANCELED", completedAt: new Date(), errorSummary: error.message }).where(and(eq(agentRuns.workspaceId, c.workspaceId), eq(agentRuns.id, run.id)));
       await executeAudit(tx, c, blocked, "SKIPPED", error.message); await event(tx, c, "execution.blocked", id, { reason: error.message }); return blocked;
@@ -212,6 +216,7 @@ export async function verifyQaExecution(c: WorkspaceContext, id: string, databas
 }
 export async function requestQaRollback(c: WorkspaceContext, parentId: string, automatic = false, database = db, env: QaRuntime = serverEnv) {
   human(c); assertQaEnvironment(env);
+  if (!automatic) await enforceActionRateLimit(c,"qa_execute",database);
   return withTenantContext(database, c, async tx => {
     await lockWorkspace(tx, c);
     const [parent] = await tx.select().from(executionRecords).where(scope(c.workspaceId, parentId)).limit(1).for("update");

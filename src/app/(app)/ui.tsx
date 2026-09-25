@@ -35,7 +35,7 @@ export function Panel({
     <section className="mx-panel">
       {title || right ? (
         <div className="mx-panel-title">
-          {title ? <b>{title}</b> : <span />}
+          {title ? <h2 style={{ fontSize: "inherit", fontWeight: 700, margin: 0 }}>{title}</h2> : <span />}
           {right}
         </div>
       ) : null}

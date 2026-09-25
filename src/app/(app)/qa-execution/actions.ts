@@ -1,4 +1,5 @@
 "use server";
+import { OperationsValidationError } from "@/domain/operations/policy";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { start } from "workflow/api";
@@ -26,7 +27,7 @@ export async function qaExecutionAction(data:FormData) {
    default: throw new ExecutionValidationError("Unknown QA operation.");
   }
  } catch(error) {
-  if(error instanceof ExecutionValidationError || error instanceof AuthorizationError) redirect(("/qa-execution?validation="+encodeURIComponent(error.message)) as never);
+  if(error instanceof ExecutionValidationError || error instanceof OperationsValidationError || error instanceof AuthorizationError) redirect(("/qa-execution?validation="+encodeURIComponent(error.message)) as never);
   throw error;
  }
  revalidatePath("/qa-execution"); revalidatePath(path); redirect(path as never);

@@ -1,4 +1,5 @@
 "use server";
+import { OperationsValidationError } from "@/domain/operations/policy";
 
 import { MonthlyCycleValidationError } from "@/domain/monthly-cycles/validation";
 import { AuthorizationError } from "@/domain/tenancy/context";
@@ -273,7 +274,7 @@ async function runMonthlyAction(operation: () => Promise<void>, formData: FormDa
   try {
     await operation();
   } catch (error) {
-    if (!(error instanceof MonthlyCycleValidationError) && !(error instanceof AuthorizationError)) throw error;
+    if (!(error instanceof MonthlyCycleValidationError) && !(error instanceof OperationsValidationError || error instanceof AuthorizationError)) throw error;
     message = error.message;
   }
   if (message) {

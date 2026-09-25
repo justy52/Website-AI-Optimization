@@ -1,3 +1,4 @@
+import { OperationsValidationError } from "@/domain/operations/policy";
 import { NextResponse } from "next/server";
 import { start } from "workflow/api";
 
@@ -9,6 +10,8 @@ import { getWorkspaceShellContext } from "@/server/auth";
 import { prepareOpportunityDraftWorkflow } from "@/workflows/prepare-draft";
 
 export async function POST(request: Request) {
+  if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({ error: "Same-origin request required." }, { status: 403 });
+  try {
   const shell = await getWorkspaceShellContext();
   const body = (await request.json()) as { opportunityId?: string };
 
@@ -37,4 +40,8 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(prepared);
+  } catch (error) {
+    if (error instanceof OperationsValidationError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "RATE_LIMIT" ? 429 : 400 });
+    throw error;
+  }
 }
