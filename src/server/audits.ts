@@ -1,4 +1,4 @@
-import { assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext } from "./operations";
+import { assertAutomationAllowed, assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext } from "./operations";
 import { createHash } from "node:crypto";
 
 import { and, asc, desc, eq } from "drizzle-orm";
@@ -14,6 +14,7 @@ import {
   audits,
   auditSnapshots,
   reports,
+  monitoringRuns,
   websites,
 } from "@/db/schema";
 import { withTenantContext } from "@/db/tenant";
@@ -226,10 +227,15 @@ export async function startAuditForWebsite(
   context: WorkspaceContext,
   websiteId: string,
   database = db,
+  parentMonitoringRunId?: string,
 ) {
-  await enforceActionRateLimit(context, "audit", database);
+  if (!parentMonitoringRunId) await enforceActionRateLimit(context, "audit", database);
   const prepared = await withOperationalContext(database, context, async (tx) => {
-    await assertOperationalAdmission(tx, context, "audit", { workflow: true, crawl: true });
+    if (parentMonitoringRunId) {
+      await assertAutomationAllowed(tx,context,"audit");
+      const [parent]=await tx.select().from(monitoringRuns).where(and(eq(monitoringRuns.workspaceId,context.workspaceId),eq(monitoringRuns.id,parentMonitoringRunId),eq(monitoringRuns.websiteId,websiteId),eq(monitoringRuns.status,"RUNNING"))).limit(1);
+      if (!parent || parent.auditRunId) throw new Error("An active unclaimed parent monitoring run is required.");
+    } else await assertOperationalAdmission(tx, context, "audit", { workflow: true, crawl: true });
     const [website] = await tx
       .select()
       .from(websites)
@@ -262,6 +268,7 @@ export async function startAuditForWebsite(
       })
       .returning();
 
+    if (parentMonitoringRunId) await tx.update(monitoringRuns).set({auditId:audit.id,auditRunId:run.id}).where(and(eq(monitoringRuns.workspaceId,context.workspaceId),eq(monitoringRuns.id,parentMonitoringRunId)));
     await recordActivity(tx, context, "audit.started", "audit", audit.id, {
       websiteId: website.id,
       domain: website.domain,

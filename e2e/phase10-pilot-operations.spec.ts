@@ -32,11 +32,11 @@ test("Phase 10 pilot operations, pause, budget, retention, export and accessibil
   await page.goto("/operations");await expect(page.getByRole("heading",{name:"Operations",exact:true,level:1})).toBeVisible();
   const pause=page.locator("form").filter({has:page.getByRole("button",{name:"Update workspace pause"})});
   await pause.getByLabel("Reason",{exact:true}).fill("QA pause exercise");await pause.getByRole("button").click();await expect(page.locator("main")).toContainText("AUTOMATION PAUSED");
-  await page.goto(opportunityUrl);await page.getByRole("button",{name:"Prepare Page Optimization"}).click();await expect(page.getByRole("alert")).toContainText("Automation is paused");
+  await page.goto(opportunityUrl);await page.getByRole("button",{name:"Prepare Page Optimization"}).click();await expect(page.locator("main").getByRole("alert")).toContainText("Automation is paused");
   await pause.getByLabel("Change",{exact:true}).selectOption("false");await pause.getByLabel("Reason",{exact:true}).fill("QA resume exercise");await pause.getByRole("button").click();await expect(page.getByRole("status")).toContainText("Operation completed");
   const budget=page.locator("form").filter({has:page.getByRole("button",{name:"Save workspace budgets"})});
   await budget.getByLabel("Active workflow ceiling",{exact:true}).fill("0");await budget.getByLabel("Budget-change reason").fill("QA zero active workflow ceiling");await budget.getByRole("button").click();await expect(page.getByRole("status")).toBeVisible();
-  await page.goto(opportunityUrl);await page.getByRole("button",{name:"Prepare Page Optimization"}).click();await expect(page.getByRole("alert")).toContainText("active workflow ceiling");
+  await page.goto(opportunityUrl);await page.getByRole("button",{name:"Prepare Page Optimization"}).click();await expect(page.locator("main").getByRole("alert")).toContainText("active workflow ceiling");
   await budget.getByLabel("Active workflow ceiling",{exact:true}).fill("5");await budget.getByLabel("Budget-change reason").fill("QA restore conservative ceiling");await budget.getByRole("button").click();await expect(page.getByRole("status")).toBeVisible();
   await page.goto(opportunityUrl);await page.getByRole("button",{name:"Prepare Page Optimization"}).click();
   await expect.poll(async()=>{await page.reload({waitUntil:"domcontentloaded"});return page.getByRole("link",{name:"Review draft",exact:true}).count()},{timeout:150000,intervals:[2000,4000]}).toBe(1);

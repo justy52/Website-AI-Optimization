@@ -1,3 +1,4 @@
+import { requestManualMonitoringRun, executeMonitoringRun } from "./monitoring";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { randomUUID } from "node:crypto";
@@ -70,6 +71,14 @@ describe.skipIf(!connectionString)("Phase 10 live operational controls / non-byp
     expect((await client.query("select count(*)::int n from ai_visibility_captures where workspace_id=$1",[workspaceId])).rows[0].n).toBe(1);
     expect((await client.query("select count(*)::int n from ai_visibility_observations where workspace_id=$1",[workspaceId])).rows[0].n).toBe(2);
     serverEnv.APP_ENV="production";await expect(createRetentionQaFixture(c,websiteId,database)).rejects.toThrow("QA-only");
+  });
+  it("a monitor and its child audit use one admitted concurrency slot",async()=>{
+    await setWorkspaceBudgets(c,{monthlyCostUsd:"0",activeWorkflowLimit:1,aiCallLimit:100,visibilityCallLimit:100,crawlConcurrency:1},"Single monitoring slot",database);
+    const run=await requestManualMonitoringRun(c,websiteId,"website_health",database);
+    const result=await executeMonitoringRun(c,run.monitoringRunId,database);
+    expect(["SUCCEEDED","PARTIAL"]).toContain(result.status);
+    expect((await client.query("select count(*)::int n from audit_runs where workspace_id=$1",[workspaceId])).rows[0].n).toBe(1);
+    expect((await getOperationsPanel(c,database)).usage.active).toBe(0);
   });
   it("budget denial precedes visibility run/call insertion and preserves same window",async()=>{
     await facts();await expect(requestVisibilityRun(c,websiteId,"API",database)).rejects.toMatchObject({code:"BUDGET"});

@@ -61,7 +61,7 @@ export async function operationalUsage(tx: OperationsTx, c: WorkspaceContext, at
     (select count(*) from agent_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING'))+
     (select count(*) from monitoring_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING'))+
     (select count(*) from ai_visibility_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING'))+
-    (select count(*) from audit_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING')) as active,
+    (select count(*) from audit_runs a where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING') and not exists(select 1 from monitoring_runs m where m.workspace_id=a.workspace_id and m.audit_run_id=a.id and m.status='RUNNING')) as active,
     (select count(*) from monitoring_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING'))+
     (select count(*) from audit_runs a where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING') and not exists(select 1 from monitoring_runs m where m.workspace_id=a.workspace_id and m.audit_run_id=a.id and m.status='RUNNING')) as crawls`);
   const row = result.rows[0], a = active.rows[0];

@@ -421,7 +421,7 @@ export async function executeMonitoringRun(
   try {
     await checkMaterialStep(context, "monitor", database);
     if (run.monitorKey === WEBSITE_HEALTH_MONITOR_KEY) {
-      const audit = await startAuditForWebsite(context, run.websiteId, database);
+      const audit = await startAuditForWebsite(context, run.websiteId, database, run.id);
       let finalStatus: "SUCCEEDED" | "PARTIAL" = "PARTIAL";
 
       await withTenantContext(database, context, async (tx) => {
