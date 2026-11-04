@@ -1,8 +1,8 @@
 export class OperationsValidationError extends Error {
   constructor(message: string, public readonly code: "PAUSED" | "BUDGET" | "RATE_LIMIT" | "VALIDATION" | "MANUAL_REVIEW" = "VALIDATION") { super(message); this.name = "OperationsValidationError"; }
 }
-export type OperationAction = "audit" | "monitor" | "prepare" | "verification" | "visibility" | "qa_execute" | "monthly_cycle" | "export" | "cleanup" | "recovery";
-export const RATE_LIMITS: Record<OperationAction, number> = { audit: 6, monitor: 10, prepare: 12, verification: 12, visibility: 6, qa_execute: 6, monthly_cycle: 10, export: 2, cleanup: 4, recovery: 4 };
+export type OperationAction = "audit" | "monitor" | "prepare" | "verification" | "visibility" | "qa_execute" | "monthly_cycle" | "export" | "cleanup" | "recovery" | "service_payment";
+export const RATE_LIMITS: Record<OperationAction, number> = { audit: 6, monitor: 10, prepare: 12, verification: 12, visibility: 6, qa_execute: 6, monthly_cycle: 10, export: 2, cleanup: 4, recovery: 4, service_payment: 10 };
 export const DEFAULT_BUDGETS = { monthlyCostUsd: "0", activeWorkflowLimit: 5, aiCallLimit: 100, visibilityCallLimit: 100, crawlConcurrency: 2 };
 export type PauseState = { pausedAll: boolean; pausedMonitoring: boolean; pausedAi: boolean; pausedExecution: boolean };
 export const UNPAUSED: PauseState = { pausedAll: false, pausedMonitoring: false, pausedAi: false, pausedExecution: false };

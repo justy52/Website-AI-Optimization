@@ -33,11 +33,13 @@
     "parse5": "8.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "stripe": "^23.1.0",
     "tailwind-merge": "^3.6.0",
     "workflow": "^4.8.5",
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.4.1",

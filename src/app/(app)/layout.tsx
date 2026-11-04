@@ -27,6 +27,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", icon: Radar },
   { href: "/clients", label: "Clients", icon: Users },
+  { href: "/service-orders", label: "Service orders", icon: FileText },
   { href: "/websites", label: "Websites", icon: Globe2 },
   { href: "/audits", label: "Audits", icon: Radar },
   { href: "/opportunities", label: "Opportunities", icon: ListChecks },
