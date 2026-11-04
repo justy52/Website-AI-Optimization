@@ -57,5 +57,5 @@ export async function createWorkspaceAction(formData: FormData) {
     workspaceCookieOptions(),
   );
 
-  redirect("/");
+  redirect("/dashboard");
 }

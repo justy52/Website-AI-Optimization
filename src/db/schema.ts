@@ -34,6 +34,40 @@ const workflowDispatchColumns = () => ({
 
 export type ExecutionStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "ROLLED_BACK" | "ROLLBACK_FAILED" | "BLOCKED" | "VERIFYING" | "VERIFIED";
 
+// Anonymous intake is separate from the tenant's sales pipeline. Only a reviewed
+// request can be imported by an authenticated owner/admin.
+export const publicAuditRequests = pgTable("public_audit_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  nonceHash: text("nonce_hash").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  emailHash: text("email_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  retentionUntil: timestamp("retention_until", { withTimezone: true }).default(sql`now() + interval '90 days'`).notNull(),
+  state: text("state").default("RECEIVED").notNull(),
+  reviewedBy: text("reviewed_by").references(() => user.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  leadId: uuid("lead_id"),
+}, table => [
+  uniqueIndex("public_audit_requests_nonce_unique").on(table.nonceHash),
+  uniqueIndex("public_audit_requests_lead_unique").on(table.leadId),
+  index("public_audit_requests_queue").on(table.workspaceId, table.createdAt),
+  check("public_audit_requests_state", sql`${table.state} in ('RECEIVED','IMPORTED','DISMISSED')`),
+  foreignKey({ columns: [table.workspaceId, table.leadId], foreignColumns: [leads.workspaceId, leads.id], name: "public_audit_requests_tenant_lead_fk" }),
+]);
+
+export const publicIntakeDestination = pgTable("public_intake_destination", {
+  singleton: boolean("singleton").primaryKey().default(true),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+}, table => [check("public_intake_singleton", sql`${table.singleton} = true`)]);
+
+export const publicIntakeLimits = pgTable("public_intake_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull(),
+});
+
 export const workspaceRoleEnum = pgEnum("workspace_role", [
   "OWNER",
   "ADMIN",

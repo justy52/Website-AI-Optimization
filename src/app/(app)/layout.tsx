@@ -21,9 +21,10 @@ import { switchWorkspaceAction } from "@/app/workspace-actions";
 import { getWorkspaceShellContext } from "@/server/auth";
 
 import { SignOutButton } from "./sign-out-button";
+import { getIntakeConfig } from "@/server/intake-config";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", icon: Radar },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/websites", label: "Websites", icon: Globe2 },
@@ -56,7 +57,7 @@ export default async function AppLayout({
       <div className="mx-vignette" aria-hidden />
       <div className="mx-shell">
         <aside className="mx-rail">
-          <Link className="mx-brand" href="/">
+          <Link className="mx-brand" href="/dashboard">
             <Image src="/virelantic-logo.svg" alt="Virelantic" width={188} height={51} priority />
           </Link>
           <nav className="mx-nav" aria-label="Main navigation">
@@ -70,6 +71,7 @@ export default async function AppLayout({
                 </a>
               );
             })}
+          {getIntakeConfig(process.env, false)?.PUBLIC_INTAKE_WORKSPACE_ID === shell.workspaceContext.workspaceId && ["OWNER", "ADMIN"].includes(shell.workspaceContext.role) ? <Link className="mx-nav-item" href="/intake">Audit requests</Link> : null}
           {serverEnv.APP_ENV === "qa" ? <a className="mx-nav-item" href="/qa-execution">QA Execution</a> : null}
           </nav>
           <div className="mx-rail-foot">

@@ -1,4 +1,4 @@
-﻿import { expect, test, type Page, type Locator } from "@playwright/test";
+import { expect, test, type Page, type Locator } from "@playwright/test";
 
 const timestamp = Date.now();
 const runId = `${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
@@ -326,7 +326,7 @@ test("Phase 5 monthly fulfillment workflow on QA", async ({ page }) => {
     expect(carriedIds).toEqual(expect.arrayContaining([...new Set(unresolvedIds)]));
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/dashboard");
   await expect(monthlyCyclesNavLink(page)).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();

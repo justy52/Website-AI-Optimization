@@ -59,7 +59,7 @@ test("Phase 10 pilot operations, pause, budget, retention, export and accessibil
     return response.status();
   }));
   expect(statuses).toContain(429);expect(statuses).not.toContain(500);
-  for(const path of ["/","/clients","/websites","/audits","/opportunities","/monthly-cycles","/approvals","/ai-visibility","/operations","/qa-execution"]){
+  for(const path of ["/dashboard","/clients","/websites","/audits","/opportunities","/monthly-cycles","/approvals","/ai-visibility","/operations","/qa-execution"]){
     await page.goto(path);await expect(page.locator("main")).toBeVisible();await expect(page.getByRole("heading",{level:1})).toHaveCount(1);
     const missing=await page.locator('main input:not([type="hidden"]), main select, main textarea').evaluateAll(elements=>elements.filter(el=>!(el as HTMLInputElement).labels?.length&&!el.getAttribute("aria-label")&&!el.getAttribute("aria-labelledby")).map(el=>el.getAttribute("name")));
     expect(missing,`Unlabeled controls at ${path}`).toEqual([]);

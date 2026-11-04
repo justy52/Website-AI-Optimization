@@ -33,6 +33,6 @@ export async function verifyImplementationAction(data: FormData) {
     if (error instanceof MonthlyCycleValidationError || error instanceof OperationsValidationError || error instanceof AuthorizationError) redirect(`${path}?validation=${encodeURIComponent(error.message)}` as never);
     throw error;
   }
-  revalidatePath(path); revalidatePath("/"); revalidatePath("/runs");
+  revalidatePath(path); revalidatePath("/dashboard"); revalidatePath("/runs");
   redirect(path as never);
 }

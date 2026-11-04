@@ -8,7 +8,7 @@ export default async function LoginPage() {
   const user = await getOptionalAuthenticatedUser();
 
   if (user) {
-    redirect("/");
+    redirect("/dashboard");
   }
 
   return (

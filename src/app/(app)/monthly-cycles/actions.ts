@@ -54,7 +54,7 @@ async function createMonthlyCycleActionImpl(formData: FormData) {
     notes: value(formData, "notes"),
   });
 
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/clients");
   revalidatePath("/monthly-cycles");
   redirect(cyclePath(cycle.id) as never);
@@ -65,7 +65,7 @@ async function selectMonthlyCycleWorkActionImpl(formData: FormData) {
   const cycleId = value(formData, "monthlyCycleId");
 
   await selectMonthlyCycleWork(shell.workspaceContext, cycleId);
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);
@@ -79,7 +79,7 @@ async function addOpportunityToMonthlyCycleActionImpl(formData: FormData) {
     opportunityId: value(formData, "opportunityId"),
     reason: value(formData, "reason"),
   });
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);
@@ -94,7 +94,7 @@ async function removeOpportunityFromMonthlyCycleActionImpl(formData: FormData) {
     value(formData, "cycleWorkItemId"),
     { reason: value(formData, "reason") },
   );
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);
@@ -137,7 +137,7 @@ async function recordManualImplementationActionImpl(formData: FormData) {
       implementationPackageId: value(formData, "implementationPackageId"),
     },
   );
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);
@@ -166,7 +166,7 @@ async function recordImplementationVerificationActionImpl(formData: FormData) {
       limitations: value(formData, "limitations"),
     },
   );
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);
@@ -177,7 +177,7 @@ async function generateMonthlyReportDraftActionImpl(formData: FormData) {
   const cycleId = value(formData, "monthlyCycleId");
 
   await generateMonthlyReportDraft(shell.workspaceContext, cycleId);
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/reports");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
@@ -192,7 +192,7 @@ async function finalizeMonthlyReportActionImpl(formData: FormData) {
     shell.workspaceContext,
     value(formData, "monthlyReportId"),
   );
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/reports");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
@@ -226,7 +226,7 @@ async function updateMonthlyDeliverableStatusActionImpl(formData: FormData) {
       limitations: value(formData, "limitations"),
     },
   );
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);
@@ -241,7 +241,7 @@ async function waiveMonthlyDeliverableActionImpl(formData: FormData) {
     value(formData, "deliverableId"),
     { reason: value(formData, "reason") },
   );
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);
@@ -253,7 +253,7 @@ async function closeMonthlyCycleActionImpl(formData: FormData) {
 
   const result = await closeMonthlyCycle(shell.workspaceContext, cycleId);
   if ("error" in result) redirect(`${cyclePath(cycleId)}?validation=${encodeURIComponent(result.error!)}` as never);
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/monthly-cycles");
   revalidatePath(cyclePath(cycleId));
   redirect(cyclePath(cycleId) as never);

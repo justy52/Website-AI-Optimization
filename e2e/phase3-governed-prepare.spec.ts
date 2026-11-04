@@ -295,7 +295,7 @@ test("Phase 3 governed prepare workflow on QA", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1,  name: "Approval Queue" })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/dashboard");
   await expect(
     page.getByRole("link", { name: "Opportunities", exact: true }),
   ).toBeVisible();

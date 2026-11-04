@@ -23,7 +23,7 @@ import { getDashboardSummary } from "@/server/revenue";
 import { getVerificationDashboard } from "@/server/verification";
 import { getVisibilityDashboard } from "@/server/ai-visibility";
 
-import { EmptyState, PageHeader, Panel, RowLink, StatusChip } from "./ui";
+import { EmptyState, PageHeader, Panel, RowLink, StatusChip } from "../ui";
 
 const statCards = [
   { key: "activeLeads", label: "Active leads", href: "/leads", icon: Radar },

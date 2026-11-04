@@ -9,7 +9,7 @@ export default async function WorkspaceSetupPage() {
   const memberships = await listActiveWorkspaceMembershipsForUser(user.id);
 
   if (memberships.length > 0) {
-    redirect("/");
+    redirect("/dashboard");
   }
 
   return (

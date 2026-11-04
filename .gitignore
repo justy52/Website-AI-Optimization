@@ -51,5 +51,6 @@ drizzle/.snapshot/
 
 # Local scratch
 /tmp/
+/.intake-preview-operator.local.json
 scratch/
 /.swc
