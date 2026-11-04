@@ -12,15 +12,21 @@ const localDatabaseUrl = [
   "@localhost:5432/optiq",
 ].join("");
 
+// Owner credentials belong only in the migration job, never DATABASE_URL.
+const migrationUrl = process.env.MIGRATION_DATABASE_URL;
+if (process.argv.includes("migrate")) {
+  if (!migrationUrl) throw new Error("MIGRATION_DATABASE_URL is required for migrations.");
+  if (new URL(migrationUrl).hostname.includes("-pooler.")) {
+    throw new Error("Migrations require a direct, non-pooled owner connection.");
+  }
+}
+
 export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url:
-      process.env.DATABASE_URL_UNPOOLED ??
-      process.env.DATABASE_URL ??
-      localDatabaseUrl,
+    url: migrationUrl ?? localDatabaseUrl,
   },
   strict: true,
   verbose: true,
