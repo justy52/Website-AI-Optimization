@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OPTIQ",
+  title: "Virelantic",
   description: "Website and AI optimization operating system.",
 };
 

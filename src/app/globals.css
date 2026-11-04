@@ -143,6 +143,12 @@ a {
   padding: 0;
 }
 
+.mx-brand img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
 .mx-nav {
   display: flex;
   flex: 1;

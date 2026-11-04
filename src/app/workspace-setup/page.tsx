@@ -21,14 +21,14 @@ export default async function WorkspaceSetupPage() {
         <h1 className="mx-title">Create Workspace</h1>
         <p className="mx-muted">
           This creates the first active owner membership for your authenticated
-          OPTIQ account.
+          Virelantic account.
         </p>
         <form action={createWorkspaceAction} className="mx-form">
           <label>
             Workspace name
             <input
               className="mx-input"
-              defaultValue="OPTIQ Workspace"
+              defaultValue="Virelantic Workspace"
               name="name"
               required
               type="text"

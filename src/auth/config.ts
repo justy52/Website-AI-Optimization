@@ -7,7 +7,7 @@ import { serverEnv } from "@/lib/env";
 import { authOriginOptions } from "./origins";
 
 export const auth = betterAuth({
-  appName: "OPTIQ",
+  appName: "Virelantic",
   ...authOriginOptions(serverEnv),
   secret: serverEnv.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {
