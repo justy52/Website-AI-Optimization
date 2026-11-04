@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "release/virelantic-integrated-20261104": false
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/public-intake-retention",
