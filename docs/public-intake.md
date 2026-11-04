@@ -15,7 +15,7 @@ The form preserves fields on failure, announces errors, supports correction and 
 
 ## Persistence capability
 
-Migrations `0018_public_audit_intake`, `0019_public_intake_capability`, and `0020_intake_relationships` add the request queue, singleton destination and shared fixed-window limits. Request-to-lead mappings are unique and have a composite tenant foreign key. No public table is exposed through an anonymous GET route.
+Migrations `0020_public_audit_intake`, `0021_public_intake_capability`, and `0022_intake_relationships` add the request queue, singleton destination and shared fixed-window limits. Request-to-lead mappings are unique and have a composite tenant foreign key. No public table is exposed through an anonymous GET route.
 
 Use a separate LOGIN role named `virelantic_intake_<label>submit`, NOINHERIT/NOBYPASSRLS, with USAGE on public and EXECUTE only on `submit_public_audit_request`. It must not have table grants, privileged role membership, or inherited PUBLIC table/CREATE grants. The general runtime credential is never a fallback. The migration owner owns a fixed-search-path SECURITY DEFINER function that can write only a pending request to the configured singleton destination; its result is an outcome string, never lead data. The queue enables RLS; the function owner intentionally has owner bypass for this new table only. Runtime tenant reads additionally use explicit workspace predicates.
 

@@ -16,13 +16,13 @@ try {
   const exists = await owner.query("select 1 from information_schema.columns where table_name='agent_runs' and column_name='dispatch_attempts'");
   if (!exists.rows.length) {
     await owner.query("begin");
-    await owner.query(readFileSync("drizzle/0018_durable_workflow_dispatch.sql", "utf8"));
+    await owner.query(readFileSync("drizzle/0019_durable_workflow_dispatch.sql", "utf8"));
     await owner.query("commit");
     console.log("migration_0018_applied_on_isolated_branch");
   } else {
     // This private proof branch is manually migrated. Refresh only this
     // not-yet-shared function while iterating the review candidate.
-    const migration = readFileSync("drizzle/0018_durable_workflow_dispatch.sql", "utf8");
+    const migration = readFileSync("drizzle/0019_durable_workflow_dispatch.sql", "utf8");
     await owner.query(migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.list_queued_dispatch_refs")));
   }
   await owner.query("GRANT EXECUTE ON FUNCTION public.list_queued_dispatch_refs(integer) TO optiq_phase1_rls_runner");

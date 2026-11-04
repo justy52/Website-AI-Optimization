@@ -21,16 +21,19 @@ import { dispatchQueuedRun } from "./workflow-dispatch";
 const connectionString=process.env.DISPATCH_TEST_RUNNER_URL;
 describe.skipIf(!connectionString)("isolated PostgreSQL dispatch crash/race recovery",{timeout:30_000},()=>{
   let pool:Pool, database:Db, c:WorkspaceContext, clientId:string, websiteId:string, opportunityId:string;
+  const proofUserId=randomUUID();
   const original={env:serverEnv.APP_ENV,provider:serverEnv.AGENT_PROVIDER,model:serverEnv.AI_GATEWAY_MODEL,key:serverEnv.PERPLEXITY_API_KEY};
   beforeAll(async()=>{
     const url=new URL(connectionString!);
-    if(url.hostname!=="ep-ancient-block-arf2ydag.c-4.us-west-2.aws.neon.tech"||url.pathname!=="/optiq_phase5_review_final_20260922") throw new Error("Dedicated dispatch proof branch required");
+    const isolated=(url.hostname==="ep-ancient-block-arf2ydag.c-4.us-west-2.aws.neon.tech"&&url.pathname==="/optiq_phase5_review_final_20260922") || (url.hostname==="ep-odd-violet-arabm5ch.c-4.us-west-2.aws.neon.tech"&&url.pathname==="/virelantic_preview");
+    if(!isolated) throw new Error("Dedicated dispatch proof branch required");
     pool=new Pool({connectionString,max:8}); database=drizzle({client:pool,schema});
     expect((await pool.query("select rolsuper,rolbypassrls from pg_roles where rolname=current_user")).rows[0]).toEqual({rolsuper:false,rolbypassrls:false});
+    await pool.query('insert into "user"(id,name,email) values($1,$1,$2)',[proofUserId,`${proofUserId}@example.test`]);
   });
   beforeEach(async()=>{
     serverEnv.APP_ENV="qa";serverEnv.AGENT_PROVIDER="deterministic";serverEnv.PERPLEXITY_API_KEY="synthetic-no-network";
-    c={workspaceId:randomUUID(),actorType:"USER",role:"OWNER",userId:"rls-user-b"};
+    c={workspaceId:randomUUID(),actorType:"USER",role:"OWNER",userId:proofUserId};
     await withTenantContext(database,c,async tx=>{
       await tx.insert(schema.workspaces).values({id:c.workspaceId,name:"Dispatch proof only",slug:`dispatch-${c.workspaceId}`});
       await tx.insert(schema.workspaceMemberships).values({workspaceId:c.workspaceId,userId:c.userId!,role:"OWNER"});
@@ -121,7 +124,11 @@ describe.skipIf(!connectionString)("isolated PostgreSQL dispatch crash/race reco
     const run=await paidRun();await setAutomationPause(c,{scope:"WORKSPACE",category:"ai",paused:true,reason:"Incident"},database);
     await expect(claimQueuedDispatch(c,"prepare",run.agentRunId,database)).rejects.toMatchObject({code:"PAUSED"});
     expect((await listQueuedDispatchRefs(100,database)).some(r=>r.run_id===run.agentRunId)).toBe(false);
-    const other={...c,workspaceId:"00000000-0000-4000-8000-0000000000a1"};
+    const other={...c,workspaceId:randomUUID()};
+    await withTenantContext(database,other,async tx=>{
+      await tx.insert(schema.workspaces).values({id:other.workspaceId,name:"Other isolated tenant",slug:`other-${other.workspaceId}`});
+      await tx.insert(schema.workspaceMemberships).values({workspaceId:other.workspaceId,userId:proofUserId,role:"OWNER"});
+    });
     expect(await claimQueuedDispatch(other,"prepare",run.agentRunId,database)).toBeNull();
     await expect(recoverInternalRun(other,{kind:"prepare",id:run.agentRunId,mode:"retry",reason:"Cross tenant"},database)).rejects.toThrow("not found");
     await setAutomationPause(c,{scope:"WORKSPACE",category:"ai",paused:false,reason:"Resume"},database);

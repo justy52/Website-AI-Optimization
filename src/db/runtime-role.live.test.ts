@@ -56,6 +56,10 @@ describe.skipIf(!runtimeUrl || !ownerUrl)("live restricted runtime role", () => 
       for (const table of tables) {
         expect(table.relrowsecurity && table.relforcerowsecurity).toBe(true);
         const name = '"' + table.relname.replaceAll('"', '""') + '"';
+        if (table.relname === "public_intake_destination") {
+          await denied(`select * from ${name}`, "42501");
+          continue;
+        }
         expect((await client.query(`select count(*)::int as count from ${name} where workspace_id<>$1`, [a])).rows[0].count).toBe(0);
       }
       expect((await client.query("update leads set company_name='wrong' where workspace_id=$1 returning id", [b])).rowCount).toBe(0);
@@ -78,7 +82,8 @@ describe.skipIf(!runtimeUrl || !ownerUrl)("live restricted runtime role", () => 
       await denied("alter table leads disable row level security", "42501");
       await denied("create table public.runtime_should_not_create(id integer)", "42501");
       await denied('select * from drizzle.__drizzle_migrations', "42501");
-      await denied('set role optiq_qa_owner', "42501");
+      const ownerRole = decodeURIComponent(new URL(ownerUrl!).username).replaceAll('"', '""');
+      await denied(`set role "${ownerRole}"`, "42501");
       expect((await client.query("update platform_operations set reason='must not update' returning id")).rowCount).toBe(0);
       await client.query("select set_config('app.platform_operator','true',true)");
       expect((await client.query("update platform_operations set reason='isolated rollback proof' returning id")).rowCount).toBe(1);

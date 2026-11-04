@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import {config} from 'dotenv';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';
+import {randomBytes,createHash} from 'node:crypto';
+import {Pool} from '@neondatabase/serverless';
+import {drizzle} from 'drizzle-orm/neon-serverless';
+import {migrate} from 'drizzle-orm/neon-serverless/migrator';
+config({path:'.env.release.local',quiet:true});
+const target=new URL(process.env.MIGRATION_DATABASE_URL);target.hostname=target.hostname.replace('-pooler.','.');
+assert.equal(target.hostname,'ep-odd-violet-arabm5ch.c-4.us-west-2.aws.neon.tech');
+assert.equal(target.pathname,'/virelantic_preview');
+const upgrade=new Pool({connectionString:target.toString()});
+const journal=JSON.parse(readFileSync('drizzle/meta/_journal.json'));
+const initial=(await upgrade.query('select id,hash,created_at from drizzle.__drizzle_migrations order by id')).rows;
+assert.ok([18,25,26].includes(initial.length),'Unexpected isolated migration baseline');
+for(let i=0;i<18;i++){
+ const source=readFileSync(`drizzle/${journal.entries[i].tag}.sql`,'utf8');
+ const hashes=[source,source.replaceAll('\r\n','\n'),source.replaceAll('\r\n','\n').replaceAll('\n','\r\n')].map(s=>createHash('sha256').update(s).digest('hex'));
+ assert.ok(hashes.includes(initial[i].hash),`Historical SQL differs at migration ${i}`);
+}
+const counts=(await upgrade.query('select (select count(*) from workspaces)::int workspaces,(select count(*) from clients)::int clients,(select count(*) from reports)::int reports')).rows[0];
+await migrate(drizzle(upgrade),{migrationsFolder:'drizzle'});
+assert.deepEqual((await upgrade.query('select (select count(*) from workspaces)::int workspaces,(select count(*) from clients)::int clients,(select count(*) from reports)::int reports')).rows[0],counts);
+await migrate(drizzle(upgrade),{migrationsFolder:'drizzle'});
+assert.equal((await upgrade.query('select count(*)::int n from drizzle.__drizzle_migrations')).rows[0].n,26);
+console.log('upgrade_0017_to_0025_ok; existing_synthetic_rows_preserved; migrator_rerun_noop');
+const freshName='virelantic_release_fresh_v2';
+assert.equal((await upgrade.query('select count(*)::int n from pg_database where datname=$1',[freshName])).rows[0].n,0,'Fresh proof database must not exist');
+await upgrade.query(`create database ${freshName}`);
+const freshUrl=new URL(target);freshUrl.pathname='/'+freshName;
+const fresh=new Pool({connectionString:freshUrl.toString()});
+await migrate(drizzle(fresh),{migrationsFolder:'drizzle'});
+assert.equal((await fresh.query('select count(*)::int n from drizzle.__drizzle_migrations')).rows[0].n,26);
+console.log('fresh_drizzle_migrator_0000_to_0025_ok');
+for(const pool of [upgrade,fresh]){
+ const db=(await pool.query('select current_database() name')).rows[0].name;
+ await pool.query(`revoke create on database "${db}" from public`);
+ await pool.query('revoke create on schema public from public');
+ assert.equal((await pool.query("select count(*)::int n from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and (c.relname='workspaces' or exists(select from pg_attribute a where a.attrelid=c.oid and a.attname='workspace_id' and not a.attisdropped)) and (not c.relrowsecurity or not c.relforcerowsecurity)")).rows[0].n,0);
+}
+const password=randomBytes(32).toString('hex');
+await upgrade.query(`alter role virelantic_runtime login password '${password}'`);
+const runtime=new URL(target);runtime.username='virelantic_runtime';runtime.password=password;
+const workspace=(await upgrade.query('select id from workspaces limit 1')).rows[0].id;
+const operator=(await upgrade.query('select id from public."user" limit 1')).rows[0].id;
+const env={APP_ENV:'local',DATABASE_URL:runtime.toString(),DATABASE_URL_UNPOOLED:target.toString(),MIGRATION_DATABASE_URL:target.toString(),BETTER_AUTH_URL:'http://localhost:3117',BETTER_AUTH_SECRET:randomBytes(32).toString('hex'),CREDENTIAL_ENCRYPTION_KEY:randomBytes(32).toString('hex'),CRON_SECRET:randomBytes(32).toString('hex'),AGENT_PROVIDER:'deterministic',QA_EXECUTE_ENABLED:'false',AUTOMATION_EMERGENCY_STOP:'false',PUBLIC_INTAKE_WORKSPACE_ID:workspace,PUBLIC_INTAKE_ORIGIN:'https://virelantic-release-preview.vercel.app',PUBLIC_BUSINESS_NAME:'Virelantic — isolated test configuration',PUBLIC_CONTACT_EMAIL:'preview@example.com',SERVICE_PAYMENTS_MODE:'disabled',PLATFORM_OPERATOR_USER_IDS:operator,RUNTIME_ROLE_TARGET_HOST:target.hostname,RUNTIME_ROLE_TARGET_DATABASE:'virelantic_preview',OPTIQ_RUNTIME_TEST_URL:runtime.toString(),OPTIQ_RUNTIME_OWNER_TEST_URL:target.toString()};
+assert.equal(existsSync('.env.local'),false);
+writeFileSync('.env.local',Object.entries(env).map(([k,v])=>`${k}=${JSON.stringify(v)}`).join('\n')+'\n',{flag:'wx'});
+writeFileSync('.intake-preview-operator.local.json',JSON.stringify({userId:operator,workspaceId:workspace}),{flag:'wx'});
+writeFileSync('../../migration-evidence.json',JSON.stringify({upgradedFrom:'0017',migrations:26,freshDatabase:freshName,upgradeDatabase:'virelantic_preview',preservedCounts:counts,forcedRls:true},null,2));
+await Promise.all([upgrade.end(),fresh.end()]);
+console.log('runtime_login_ready; private_environment_written; forced_rls_verified');

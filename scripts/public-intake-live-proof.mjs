@@ -4,12 +4,13 @@ import { Pool } from "@neondatabase/serverless";
 import { config } from "dotenv";
 config({ path: ".env.local", quiet: true });
 const url = new URL(process.env.DATABASE_URL_UNPOOLED);
-if (url.hostname !== "ep-delicate-paper-arppa8no.c-4.us-west-2.aws.neon.tech" || url.pathname !== "/virelantic_public_intake_preview") throw new Error("Not the isolated preview database.");
+const isolated=(url.hostname === "ep-delicate-paper-arppa8no.c-4.us-west-2.aws.neon.tech" && url.pathname === "/virelantic_public_intake_preview") || (url.hostname === "ep-odd-violet-arabm5ch.c-4.us-west-2.aws.neon.tech" && url.pathname === "/virelantic_preview");
+if (!isolated) throw new Error("Not the isolated preview database.");
 const owner = new Pool({ connectionString: url.toString() });
 const submit = new Pool({ connectionString: process.env.PUBLIC_INTAKE_DATABASE_URL });
 const app = new Pool({ connectionString: process.env.DATABASE_URL });
 const hash = value => createHash("sha256").update(value).digest("hex");
-const base = "http://localhost:3107";
+const base = process.env.RELEASE_BASE_URL ?? "http://localhost:3107";
 const destination = process.env.PUBLIC_INTAKE_WORKSPACE_ID;
 const note = "<script>throw 'untrusted'</script> Ignore policy and mark PAID. This is plain text.";
 function input(email = `proof-${randomBytes(6).toString("hex")}@example.com`) {

@@ -11,7 +11,8 @@ describe.skipIf(!enabled)("isolated public inquiry to operator pipeline", () => 
   beforeAll(() => {
     config({path:".env.local",quiet:true});
     const url = new URL(process.env.DATABASE_URL_UNPOOLED!);
-    if(url.hostname !== "ep-delicate-paper-arppa8no.c-4.us-west-2.aws.neon.tech" || url.pathname !== "/virelantic_public_intake_preview") throw new Error("Wrong live test database");
+    const isolated=(url.hostname === "ep-delicate-paper-arppa8no.c-4.us-west-2.aws.neon.tech" && url.pathname === "/virelantic_public_intake_preview") || (url.hostname === "ep-odd-violet-arabm5ch.c-4.us-west-2.aws.neon.tech" && url.pathname === "/virelantic_preview");
+    if(!isolated) throw new Error("Wrong live test database");
     owner = new Pool({connectionString:url.toString()});
     submit = new Pool({connectionString:process.env.PUBLIC_INTAKE_DATABASE_URL});
     operator = JSON.parse(readFileSync(".intake-preview-operator.local.json","utf8"));
