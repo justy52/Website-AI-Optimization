@@ -21,9 +21,9 @@ You do **not** need every key on day one. Phase 0 and Phase 1 need application, 
 
 ```
 # --- Database (Neon) ---
-# Pooled connection string.
+# Pooled connection string for the restricted virelantic_runtime login.
 DATABASE_URL=
-# Direct connection string for migrations.
+# Optional direct connection string for the SAME runtime login (not an owner).
 DATABASE_URL_UNPOOLED=
 
 # --- Auth (self-hosted Better Auth) ---
@@ -66,6 +66,8 @@ GEMINI_API_KEY=
 ```
 
 ## Rules (from docs/22 and docs/25)
+
+- Follow [runtime database role rollout](docs/runtime-database-role.md) before deploying migration 0018. Runtime connections reject owner/bypass roles. Keep `MIGRATION_DATABASE_URL` in the separate migration job only; `db:migrate` no longer falls back to runtime credentials.
 
 - Secrets are server-side only. Never expose them to the browser or put them in `NEXT_PUBLIC_*`.
 - Never log access tokens, refresh tokens, API keys, or full authorization headers.

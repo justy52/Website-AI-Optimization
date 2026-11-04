@@ -60,7 +60,6 @@ const rawEnvSchema = z.object({
 
 const deployedRequiredKeys = [
   "DATABASE_URL",
-  "DATABASE_URL_UNPOOLED",
   "BETTER_AUTH_SECRET",
   "BETTER_AUTH_URL",
   "CREDENTIAL_ENCRYPTION_KEY",
@@ -173,6 +172,7 @@ export function getServerEnv(source: EnvSource = process.env): ServerEnv {
     throw new Error(z.prettifyError(parsed.error));
   }
 
+  parsed.data.DATABASE_URL_UNPOOLED ??= parsed.data.DATABASE_URL;
   assertRequiredValues(parsed.data, appEnv);
 
   return {
