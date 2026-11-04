@@ -1,0 +1,227 @@
+{
+  "preparedAt": "2026-11-04",
+  "status": "HOLD_FOR_DATABASE_COST_APPROVAL_AND_RELEASE_INTEGRATION",
+  "customerTrafficEnabled": false,
+  "vercel": {
+    "teamId": "team_eaVnYao7XXkEsmOQxiH7NzL9",
+    "teamSlug": "justinfuchs52-8677s-projects",
+    "projectId": "prj_1lVQiKdnM7RuTtipyY9X0JfNyAvO",
+    "projectName": "virelantic-production",
+    "existingPlan": "Pro",
+    "nodeVersion": "24.x",
+    "region": "pdx1",
+    "deploymentCount": 0,
+    "gitConnected": false,
+    "customCustomerDomains": [],
+    "reservedDefaultDomain": "virelantic-production.vercel.app",
+    "protection": "all_except_custom_domains",
+    "autoAssignCustomDomains": false,
+    "previewDeploymentsDisabled": true,
+    "oidcEnabled": false,
+    "projectPause": "not applicable before first production deployment; pause API returned invalid_deployment",
+    "observability": "existing team Observability Plus includes project; no new paid addon enabled"
+  },
+  "environmentInventory": [
+    {
+      "key": "MONITORING_SECRET",
+      "type": "sensitive",
+      "target": [
+        "production"
+      ],
+      "visibility": "secret"
+    },
+    {
+      "key": "APP_ENV",
+      "type": "plain",
+      "target": [
+        "production"
+      ],
+      "visibility": null
+    },
+    {
+      "key": "AGENT_PROVIDER",
+      "type": "plain",
+      "target": [
+        "production"
+      ],
+      "visibility": null
+    },
+    {
+      "key": "QA_EXECUTE_ENABLED",
+      "type": "plain",
+      "target": [
+        "production"
+      ],
+      "visibility": null
+    },
+    {
+      "key": "AUTOMATION_EMERGENCY_STOP",
+      "type": "plain",
+      "target": [
+        "production"
+      ],
+      "visibility": null
+    },
+    {
+      "key": "CREDENTIAL_KEY_VERSION",
+      "type": "plain",
+      "target": [
+        "production"
+      ],
+      "visibility": null
+    },
+    {
+      "key": "BETTER_AUTH_URL",
+      "type": "plain",
+      "target": [
+        "production"
+      ],
+      "visibility": null
+    },
+    {
+      "key": "CRON_SECRET",
+      "type": "sensitive",
+      "target": [
+        "production"
+      ],
+      "visibility": "secret"
+    },
+    {
+      "key": "BETTER_AUTH_SECRET",
+      "type": "sensitive",
+      "target": [
+        "production"
+      ],
+      "visibility": "secret"
+    },
+    {
+      "key": "CREDENTIAL_ENCRYPTION_KEY",
+      "type": "sensitive",
+      "target": [
+        "production"
+      ],
+      "visibility": "secret"
+    }
+  ],
+  "nonSecretValues": {
+    "APP_ENV": "production",
+    "AGENT_PROVIDER": "deterministic",
+    "QA_EXECUTE_ENABLED": "false",
+    "AUTOMATION_EMERGENCY_STOP": "true",
+    "CREDENTIAL_KEY_VERSION": "1",
+    "BETTER_AUTH_URL": "https://virelantic-production.vercel.app"
+  },
+  "neon": {
+    "status": "NOT_CREATED_COST_APPROVAL_REQUIRED",
+    "organizationId": "org-long-shape-53168257",
+    "existingPlan": "launch",
+    "proposedCreateProject": {
+      "name": "virelantic-production",
+      "org_id": "org-long-shape-53168257",
+      "region_id": "aws-us-west-2",
+      "pg_version": 17,
+      "branch": {
+        "name": "production",
+        "database_name": "virelantic_production",
+        "role_name": "virelantic_migrator"
+      },
+      "default_endpoint_settings": {
+        "autoscaling_limit_min_cu": 0.25,
+        "autoscaling_limit_max_cu": 0.25,
+        "suspend_timeout_seconds": 300
+      },
+      "history_retention_seconds": 604800,
+      "store_passwords": true
+    },
+    "postCreateProtection": {
+      "protected": true
+    },
+    "runtimeRole": "virelantic_runtime",
+    "runtimeSecret": "DATABASE_URL pooled restricted login",
+    "migrationSecret": "MIGRATION_DATABASE_URL direct owner; isolated migration process only, absent from Vercel project env",
+    "proposedSnapshotSchedule": [
+      {
+        "frequency": "daily",
+        "hour": 9,
+        "retention_seconds": 2592000
+      }
+    ],
+    "restoreTest": "Create an isolated restore branch from a real production-project snapshot; never finalize onto production or reassign its compute"
+  },
+  "costs": {
+    "currency": "USD",
+    "approved": false,
+    "neonComputePerCuHour": 0.106,
+    "neonStoragePerGbMonth": 0.35,
+    "neonHistoryPerGbMonth": 0.2,
+    "neonSnapshotsPerGbMonth": 0.09,
+    "computeContinuous31DayEstimate": 19.716,
+    "monthlyDatabasePlanningTarget": 25,
+    "hardFinancialCap": false,
+    "assumptions": "Fixed 0.25 CU, 744 active hours at most for primary compute in 31 days. Additional restore-test compute and all storage/history/snapshots/network transfer are additional. Scale-to-zero reduces active time. No plan upgrade, addon, AI credit purchase or subscription was made."
+  },
+  "cron": {
+    "status": "NOT_DEPLOYED_NOT_ACTIVE",
+    "activationRequires": "Workflow recovery integration, zero unauthenticated dispatch, idempotency tests, project-level cron disable/enable verification, monitoring ownership",
+    "utcJobs": [
+      {
+        "path": "/api/cron/monitoring",
+        "schedule": "0 10 * * *"
+      },
+      {
+        "path": "/api/cron/monthly-cycles",
+        "schedule": "15 10 * * *"
+      },
+      {
+        "path": "/api/cron/ai-visibility",
+        "schedule": "30 10 * * *"
+      },
+      {
+        "path": "/api/cron/retention",
+        "schedule": "45 10 * * *"
+      }
+    ],
+    "recoveryJob": "Adopt final path and frequency from workflow recovery branch after integration; not yet fixed here"
+  },
+  "providerSpend": {
+    "enabled": false,
+    "workspaceMonthlyUsdDefault": 0,
+    "aiGateway": "no key/model; OIDC disabled",
+    "perplexity": "no key",
+    "gemini": "no key",
+    "googleOAuth": "not provisioned",
+    "blob": "not provisioned"
+  },
+  "monitoring": {
+    "probe": "/api/health/ready",
+    "auth": "Authorization: Bearer MONITORING_SECRET (separate from cron)",
+    "codeStatus": "LOCAL_BRANCH_TESTED_NOT_DEPLOYED",
+    "testsPassed": 13,
+    "externalAlertDestination": null,
+    "incidentOperator": null,
+    "backupOperator": null,
+    "scheduleFreshnessMonitor": "NOT_IMPLEMENTED_OR_CONNECTED",
+    "notificationsSent": 0
+  },
+  "untouched": {
+    "qaProject": "prj_ITKbMFri0O2WYQ9Ibqn8UnrSNNxA",
+    "previewProject": "prj_HmGEJ620JQTnEsxgOmbAkKXjJwek",
+    "qaLatestDeployment": "dpl_JCEJhUgUXydAjiJTSJ1B7uQHnajY",
+    "previewLatestDeployment": "dpl_DN2R9Gm5cZWgwNYyRGBVxnWXgK6m"
+  },
+  "requiredReleaseGates": [
+    "Approve Neon usage costs",
+    "Create separate project and protect root branch",
+    "Integrate tenant security and workflow recovery changes; resolve migration-number conflicts",
+    "Run migrations separately using direct MIGRATION_DATABASE_URL",
+    "Provision login for restricted runtime role and set production-only DATABASE_URL",
+    "Escrow encryption key ring independently of database and local Windows account",
+    "Prove real snapshot restore into isolated branch",
+    "Name incident and backup operators and configure PLATFORM_OPERATOR_USER_IDS",
+    "Configure and test alert delivery with owner approval; monitor missed schedules, stale jobs, PARTIAL runs and budget blocks",
+    "Verify exact staged production SHA: authentication, tenant isolation, audit/report, workflow, export and compatible rollback",
+    "Verify no unauthorized signup/console access and public payment/intake scope",
+    "Remove emergency stop only after gates pass; enable schedules deliberately",
+    "Separately authorize customer domain/public launch"
+  ]
+}

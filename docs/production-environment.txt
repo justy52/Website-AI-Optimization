@@ -1,0 +1,101 @@
+Virelantic production environment handoff
+Prepared November 4, 2026
+
+Current status
+
+The isolated hosting project exists. Production is not deployed and cannot accept customers. A separate paid database, automated backups and incident alert delivery remain unconfigured. Do not describe the environment as launch ready.
+
+Hosting project
+
+Team: justinfuchs52-8677s-projects
+Project: virelantic-production
+ID: prj_1lVQiKdnM7RuTtipyY9X0JfNyAvO
+Dashboard: https://vercel.com/justinfuchs52-8677s-projects/virelantic-production
+Node 24, pdx1 function region, basic fixed build machine, no elastic concurrency.
+Vercel Authentication: all_except_custom_domains. No custom customer domain is attached. The reserved Vercel domain is virelantic-production.vercel.app; no deployment serves it.
+Automatic custom-domain assignment is disabled. Preview deployments are disabled. No Git repository is connected. Public source and directory listing are disabled; protected source maps are enabled. Runtime OIDC issuance is disabled.
+Pausing an empty project returned invalid_deployment because it has no production deployment. The verified hold is zero deployments, no Git connection and no customer domain; the project is not marked paused.
+
+Production-only configuration
+
+APP_ENV=production
+AGENT_PROVIDER=deterministic
+QA_EXECUTE_ENABLED=false
+AUTOMATION_EMERGENCY_STOP=true
+CREDENTIAL_KEY_VERSION=1
+BETTER_AUTH_URL=https://virelantic-production.vercel.app
+
+Fresh 32-byte random BETTER_AUTH_SECRET, CREDENTIAL_ENCRYPTION_KEY, CRON_SECRET and MONITORING_SECRET are installed as Vercel Secret values, scoped only to Production. Values were withheld from reports. Preview and Development have no production credentials.
+DATABASE_URL, migration credentials, operator IDs, provider keys, OAuth credentials and object storage credentials have not been installed.
+
+An encrypted local recovery copy of the four generated secrets is in work/production-secrets.dpapi under this chat's directory, outside the Git checkout. A decryption round trip passed without printing values. Windows DPAPI binds it to this Windows user and machine. It is not a portable or independent disaster recovery backup. Before storing customer integration tokens, the owner must escrow the credential key and every retained key version in an approved password manager or equivalent independent secret store. Do not put plaintext keys in this report, Git, tickets or logs.
+
+Database proposal awaiting cost approval
+
+Use the existing Neon Launch organization org-long-shape-53168257. Create a fresh project named virelantic-production in aws-us-west-2 on PostgreSQL 17; do not branch or copy QA customer/test data. Root branch production; database virelantic_production; migration owner virelantic_migrator. Fix compute at 0.25 CU and suspend after 300 seconds idle. Set 604800 seconds of restore history (7 days) and protect the production root branch. Do not enable extra services or upgrade the organization.
+
+Published Launch prices checked November 4: compute $0.106/CU-hour; database storage $0.35/GB-month; restore history $0.20/GB-month; snapshot storage $0.09/GB-month. Primary compute at 0.25 CU for all 744 hours of a 31-day month is $19.716, before storage/history/snapshots/egress and separate restore-test computes. Idle suspension should reduce compute. A $25/month database planning target is not an enforceable all-in financial ceiling. Do not promise it as a guaranteed maximum.
+Sources: https://neon.com/docs/introduction/plans and https://neon.com/docs/guides/backup-restore
+
+Daily snapshots proposed at 09:00 UTC, retained for 30 days. The API payload is recorded in virelantic-production-plan.json. This is a proposed policy, not an active backup. Create an initial snapshot after schema and restricted-role provisioning, before any synthetic workflow tests. Snapshot storage is billable, including retained manual snapshots.
+
+Runtime and migration isolation
+
+Integrate the tenant-security task before provisioning the runtime. Its in-progress change uses a restricted role named virelantic_runtime and MIGRATION_DATABASE_URL for migrations. Confirm its final implementation and migration journal; do not blindly apply an unfinished copy. That role must be NOSUPERUSER, NOBYPASSRLS, NOCREATEROLE, NOCREATEDB, NOREPLICATION and NOINHERIT, own no application objects, have no privileged memberships, and have no CREATE privilege on the database or public schema.
+Use the security migration's reviewed explicit grants, including only bounded scheduler functions and necessary authentication tables. Grant LOGIN with a fresh password only after migration verification. Do not use a Console/API-created admin role as the app login.
+Put only the pooled restricted-runtime connection in production DATABASE_URL. MIGRATION_DATABASE_URL is a direct, non-pooled migration-owner connection used only in an isolated migration job/process. It must not be present in the Vercel project environment or runtime bundles. The security change removes the runtime requirement for DATABASE_URL_UNPOOLED; verify that integration before deploying.
+Keep the Vercel build command as corepack pnpm build. Do not prepend migrations to a Vercel build; it exposes migration-owner credentials to deployment code. Run reviewed migrations separately and confirm the destination project, branch, endpoint, database, role and committed migration hashes first.
+
+Recovery verification after approval
+
+1. Apply the complete integrated migration chain to the new database. Record exact release SHA and migration tip. Verify zero customer records and restricted login properties.
+2. Write only labeled synthetic records through the application in this new production project while public traffic and cron remain closed. Retain pauses for provider/execution actions.
+3. Create a real snapshot and record ID, timestamp, retention and checksums/counts of representative synthetic records. Restore it into a NEW isolated recovery branch. Do not finalize over production, swap branch names, move its compute or delete the source branch.
+4. Compare authentication tables, migration journal, representative records, tenant RLS and an encrypted synthetic credential. Prove decryption with the independently retained key ring. Confirm runtime grants/password handling and inspect the restored branch's scheduler/service state before connecting an app.
+5. Connect an isolated protected deployment to the restored branch. Test sign-in, tenant reads and sanitized export, with schedules/providers/customer domains disabled. Record elapsed recovery time and actual recoverable timestamp. The provisional target is recovery within four hours and no more than 24 hours of loss from daily snapshots; these are targets until the drill proves them. PITR can support more recent recovery within the confirmed seven-day history window.
+6. Retain original production state and bounded restore evidence. Cleanup or source-changing restore actions require their normal authorization. Vercel application rollback does not reverse database migrations.
+
+Cron activation
+
+No production cron is active because nothing is deployed. CRON_SECRET is prepared; it does not create a schedule by itself. Before staging the first production deployment, disable cron for this new project in Vercel Settings > Cron Jobs and verify the project-level switch. That switch persists across promotions/rollbacks. Keep it disabled during validation. Removing vercel.json temporarily is not a durable safety control.
+
+Existing repo schedules, all UTC:
+10:00 /api/cron/monitoring
+10:15 /api/cron/monthly-cycles
+10:30 /api/cron/ai-visibility
+10:45 /api/cron/retention
+These correspond to 03:00, 03:15, 03:30 and 03:45 America/Denver on November 4 (MST); use UTC as the source of truth across daylight saving changes.
+Adopt the workflow-recovery task's final reconciliation route and frequency after integration and idempotency testing. Do not invent a second dispatcher. Vercel may deliver duplicates and does not automatically retry failed cron requests; verify atomic claims, leases/reconciliation and exclusion of indeterminate paid attempts.
+Every cron route must reject a missing/wrong bearer secret before selecting work. Test correct authorization only in the isolated project. Retention/recovery can be exempt from the application's normal automation pause; the project-level cron hold is therefore necessary even while AUTOMATION_EMERGENCY_STOP=true.
+Source: https://vercel.com/docs/cron-jobs/manage-cron-jobs
+
+Provider and infrastructure spending
+
+Paid AI is off: deterministic provider, no AI model/key, no Perplexity/Gemini keys, OIDC disabled, and default workspace monthly provider cost is zero. Keep those controls until the SDK retry accounting fix is integrated and tested. Do not replenish AI credits, enable auto-reload, connect paid integrations or set nonzero provider budgets without the approved limit.
+The existing Vercel Pro team has a $200 on-demand budget with automatic pause OFF and no budget webhook. It spans other projects. AI Gateway balance showed $5 and auto-reload OFF. These shared settings were left unchanged to avoid impacting QA or other applications. Existing Observability Plus includes the new project; no new paid add-on was enabled. Usage and retained deployments can still add metered costs after deployment.
+Vercel's team pause is delayed, does not stop AI Gateway key usage and does not stop storage charges. It is not a hard financial cap. Obtain a Virelantic spending owner and decision on team-wide impact or a separate team before relying on an automatic infrastructure stop. Creating another paid team/seat or enabling a paid add-on requires approval.
+Source: https://vercel.com/docs/spend-management
+
+Monitoring implementation and remaining connection
+
+The local ops/production-environment branch adds GET /api/health/ready. It requires a separate MONITORING_SECRET bearer credential, refuses unconfigured/short credentials, returns 401 before querying, and exposes only bounded readiness flags. It checks the database connection, restricted runtime identity/privileges, forced tenant policies, platform-control singleton, operator allowlist, production environment and emergency pause. Database statements have a five-second server timeout. Dependency exceptions are withheld. Status is 503 held until all checks pass and automation is resumed. The existing /api/health remains a liveness response.
+Thirteen focused tests, TypeScript and targeted lint pass. Live SQL execution, cloud build and deployed monitoring remain pending the approved database and integrated release. This probe does not prove complete workflow correctness, scheduler freshness, migration compatibility or customer readiness.
+External alert delivery is NOT connected. The user must name an incident operator, backup operator and destination. Do not send test notifications without authorization. Configure an external dependency probe at a bounded interval (proposed five minutes), with separate protection-aware access and MONITORING_SECRET stored privately. Do not share CRON_SECRET or put secrets in URLs.
+Add independent missed-schedule detection after 30 minutes beyond each expected daily dispatch, stale queued work after ten minutes, stale running work according to workflow deadlines, PARTIAL/never-successful integrations, budget blocks and failed backups. Monitor aggregate status only; alert payloads must omit customer records and credentials. Approve a delivery test to the chosen destination before claiming alerts work. No incident notifications were sent by this task.
+
+Exact integration sequence
+
+1. Approve the proposed database/backup usage costs and identify operators. Provision only the new Neon project.
+2. Combine the final tenant-security, workflow-recovery, public-intake and payment branches with ops/production-environment in a release branch. Resolve migration-number/journal collisions. Run full verification and relevant non-bypass live suites on an isolated test branch.
+3. Confirm enrollment restrictions, privileged account recovery, authenticated console access and truthful public payment/intake behavior. The current base commit is not sufficient for customers.
+4. Run migrations separately, provision runtime login, set DATABASE_URL as a Production Secret, and configure real PLATFORM_OPERATOR_USER_IDS after deliberate enrollment. Keep migration credentials and all production secrets out of preview environments.
+5. Complete independent key escrow and real snapshot-restore drill. Save sanitized evidence, not secrets.
+6. Disable project cron, keep custom domains absent and standard protection enabled; stage the exact integrated production commit without domain assignment. Keep the current production-only secret scope. Do not promote a preview that used another database/configuration.
+7. Verify exact SHA through sign-in/session, two-tenant denial, lead-to-client, website/audit/report, queued-dispatch failure/recovery, PREPARE with deterministic provider, pause/budget denial, export, mobile view and compatible rollback. Validate that provider keys remain absent. Check logs on that deployment.
+8. Connect and approve a monitoring delivery test; verify missed-schedule and stale-job detection. Check backup schedule and retention readback.
+9. With all release gates recorded, deliberately remove emergency stop in a NEW production deployment, enable only approved schedules, and verify readiness/unauthorized access. Keep paid providers and production customer-site EXECUTE disabled until separately authorized and verified.
+10. Customer domain assignment, public access, live payments and customer traffic require the final launch decision after security/workflow/payment gates pass. Do not alter the existing QA or private preview aliases.
+
+Preservation evidence
+
+The QA and preview project settings/latest deployment identifiers remained unchanged during this task. No Neon resource was mutated. No messages, notifications, credit purchases, plan upgrades or customer-facing deployment were sent or made. See the JSON manifest for exact IDs and proposed API inputs.
