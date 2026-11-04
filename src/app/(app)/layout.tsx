@@ -1,5 +1,6 @@
 import { serverEnv } from "@/lib/env";
 import Link from "next/link";
+import Image from "next/image";
 
 import {
   Activity,
@@ -13,7 +14,6 @@ import {
   Radar,
   Settings,
   ShieldCheck,
-  Terminal,
   Users,
 } from "lucide-react";
 
@@ -57,8 +57,7 @@ export default async function AppLayout({
       <div className="mx-shell">
         <aside className="mx-rail">
           <Link className="mx-brand" href="/">
-            <Terminal aria-hidden size={18} />
-            <span>OPTIQ</span>
+            <Image src="/virelantic-logo.svg" alt="Virelantic" width={188} height={51} priority />
           </Link>
           <nav className="mx-nav" aria-label="Main navigation">
             {navItems.map((item) => {

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-import { Power, Terminal } from "lucide-react";
+import { Power } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 type Mode = "sign-in" | "sign-up";
@@ -26,7 +27,7 @@ export function LoginForm() {
       body: JSON.stringify({
         email: String(formData.get("email") ?? ""),
         password: String(formData.get("password") ?? ""),
-        name: String(formData.get("name") ?? "OPTIQ Operator"),
+        name: String(formData.get("name") ?? "Virelantic Operator"),
       }),
     });
 
@@ -44,11 +45,10 @@ export function LoginForm() {
   return (
     <div className="mx-auth-panel">
       <div className="mx-brand mx-auth-brand">
-        <Terminal aria-hidden size={18} />
-        <span>OPTIQ</span>
+        <Image src="/virelantic-logo.svg" alt="Virelantic" width={220} height={59} priority />
       </div>
       <div className="mx-eyebrow">Operator access</div>
-      <h1 className="mx-title">Revenue Loop Console</h1>
+      <h1 className="mx-title">Website & AI Optimization</h1>
       <div className="mx-segment">
         <button
           className={mode === "sign-in" ? "is-active" : ""}
