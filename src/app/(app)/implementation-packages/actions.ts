@@ -2,13 +2,11 @@
 import { OperationsValidationError } from "@/domain/operations/policy";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 import { MonthlyCycleValidationError } from "@/domain/monthly-cycles/validation";
 import { AuthorizationError } from "@/domain/tenancy/context";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { createImplementationPackage, requestImplementationVerification } from "@/server/verification";
-import { recordWorkflowRunId } from "@/server/agents";
-import { verifyImplementationWorkflow } from "@/workflows/verify-implementation";
 
 const field = (data: FormData, key: string) => String(data.get(key) ?? "");
 export async function createImplementationPackageAction(data: FormData) {
@@ -29,8 +27,7 @@ export async function verifyImplementationAction(data: FormData) {
   try {
     const result = await requestImplementationVerification(shell.workspaceContext, field(data, "implementationId"));
     if (result.shouldStartWorkflow) {
-      const workflow = await start(verifyImplementationWorkflow, [result.agentRunId, shell.workspaceContext]);
-      await recordWorkflowRunId(shell.workspaceContext, result.agentRunId, workflow.runId);
+      await dispatchQueuedRun(shell.workspaceContext, "verification", result.agentRunId);
     }
   } catch (error) {
     if (error instanceof MonthlyCycleValidationError || error instanceof OperationsValidationError || error instanceof AuthorizationError) redirect(`${path}?validation=${encodeURIComponent(error.message)}` as never);

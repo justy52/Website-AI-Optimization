@@ -3,7 +3,7 @@ import { OperationsValidationError } from "@/domain/operations/policy";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 
 import {
   archiveCompetitorTarget,
@@ -19,7 +19,6 @@ import {
 } from "@/server/integrations";
 import {
   ensureMonitoringSchedulesForWebsite,
-  recordMonitoringWorkflowRunId,
   requestManualMonitoringRun,
 } from "@/server/monitoring";
 import {
@@ -27,7 +26,6 @@ import {
   createWebsite,
   updateWebsite,
 } from "@/server/revenue";
-import { monitoringRunWorkflow } from "@/workflows/monitoring";
 
 function value(formData: FormData, key: string): string {
   const item = formData.get(key);
@@ -101,15 +99,7 @@ export async function requestMonitoringRunAction(formData: FormData) {
   );
 
   if (prepared.shouldStartWorkflow) {
-    const run = await start(monitoringRunWorkflow, [
-      prepared.monitoringRunId,
-      shell.workspaceContext,
-    ]);
-    await recordMonitoringWorkflowRunId(
-      shell.workspaceContext,
-      prepared.monitoringRunId,
-      run.runId,
-    );
+    await dispatchQueuedRun(shell.workspaceContext, "monitor", prepared.monitoringRunId);
   }
 
   revalidatePath(`/websites/${websiteId}`);

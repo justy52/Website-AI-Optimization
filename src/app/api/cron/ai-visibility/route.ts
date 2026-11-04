@@ -1,7 +1,6 @@
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 import { serverEnv } from "@/lib/env";
 import { listVisibilityScheduleRefs, prepareScheduledVisibility } from "@/server/ai-visibility";
-import { aiVisibilityWorkflow } from "@/workflows/ai-visibility";
 
 export async function GET(request: Request) {
   if (!serverEnv.CRON_SECRET) return Response.json({ error: "Cron is not configured." }, { status: 503 });
@@ -9,7 +8,7 @@ export async function GET(request: Request) {
   const refs = await listVisibilityScheduleRefs(); let queued = 0;
   for (const ref of refs) {
     const prepared = await prepareScheduledVisibility(ref.workspace_id, ref.website_id);
-    if (prepared && !prepared.run.completedAt) { await start(aiVisibilityWorkflow, [prepared.run.id, prepared.context]); queued++; }
+    if (prepared && !prepared.run.completedAt) { await dispatchQueuedRun(prepared.context, "visibility", prepared.run.id); queued++; }
   }
   return Response.json({ queued });
 }

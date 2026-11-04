@@ -2,12 +2,11 @@
 import { OperationsValidationError } from "@/domain/operations/policy";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { approveVisibilityCompetitorAliases, createVisibilityPromptSet, recordManualVisibilityObservation, requestVisibilityRun } from "@/server/ai-visibility";
 import { VisibilityValidationError } from "@/domain/ai-visibility/model";
 import { AuthorizationError } from "@/domain/tenancy/context";
-import { aiVisibilityWorkflow } from "@/workflows/ai-visibility";
 const field = (data: FormData, key: string) => String(data.get(key) ?? "");
 export async function visibilityAction(data: FormData) {
   const { workspaceContext: context } = await getWorkspaceShellContext();
@@ -19,7 +18,7 @@ export async function visibilityAction(data: FormData) {
       case "aliases": await approveVisibilityCompetitorAliases(context, websiteId); break;
       case "run": case "fixture": {
         const run = await requestVisibilityRun(context, websiteId, field(data, "operation") === "fixture" ? "QA_FIXTURE" : "API");
-        if (!run.completedAt) await start(aiVisibilityWorkflow, [run.id, context]);
+        if (!run.completedAt) await dispatchQueuedRun(context, "visibility", run.id);
         break;
       }
       case "manual": await recordManualVisibilityObservation(context, websiteId, { promptId: field(data, "promptId"), surface: field(data, "surface"), answer: field(data, "answer"), observedAt: field(data, "observedAt"), limitations: field(data, "limitations") }); break;

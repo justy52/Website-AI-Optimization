@@ -1,13 +1,11 @@
 import { OperationsValidationError } from "@/domain/operations/policy";
 import { NextResponse } from "next/server";
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 
 import {
-  recordWorkflowRunId,
   requestPrepareDraftForOpportunity,
 } from "@/server/agents";
 import { getWorkspaceShellContext } from "@/server/auth";
-import { prepareOpportunityDraftWorkflow } from "@/workflows/prepare-draft";
 
 export async function POST(request: Request) {
   if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({ error: "Same-origin request required." }, { status: 403 });
@@ -28,15 +26,7 @@ export async function POST(request: Request) {
   );
 
   if (prepared.shouldStartWorkflow) {
-    const run = await start(prepareOpportunityDraftWorkflow, [
-      prepared.agentRunId,
-      shell.workspaceContext,
-    ]);
-    await recordWorkflowRunId(
-      shell.workspaceContext,
-      prepared.agentRunId,
-      run.runId,
-    );
+    await dispatchQueuedRun(shell.workspaceContext, "prepare", prepared.agentRunId);
   }
 
   return NextResponse.json(prepared);

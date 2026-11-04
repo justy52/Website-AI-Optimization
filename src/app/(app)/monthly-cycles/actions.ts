@@ -6,10 +6,9 @@ import { AuthorizationError } from "@/domain/tenancy/context";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 
 import {
-  recordWorkflowRunId,
   requestPrepareDraftForOpportunity,
 } from "@/server/agents";
 import { getWorkspaceShellContext } from "@/server/auth";
@@ -27,7 +26,6 @@ import {
   updateMonthlyDeliverableStatus,
   waiveMonthlyDeliverable,
 } from "@/server/monthly-cycles";
-import { prepareOpportunityDraftWorkflow } from "@/workflows/prepare-draft";
 
 function value(formData: FormData, key: string): string {
   const item = formData.get(key);
@@ -113,15 +111,7 @@ async function requestMonthlyPrepareDraftActionImpl(formData: FormData) {
   );
 
   if (prepared.shouldStartWorkflow) {
-    const run = await start(prepareOpportunityDraftWorkflow, [
-      prepared.agentRunId,
-      shell.workspaceContext,
-    ]);
-    await recordWorkflowRunId(
-      shell.workspaceContext,
-      prepared.agentRunId,
-      run.runId,
-    );
+    await dispatchQueuedRun(shell.workspaceContext, "prepare", prepared.agentRunId);
   }
 
   revalidatePath("/runs");

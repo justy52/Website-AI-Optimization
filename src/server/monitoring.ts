@@ -406,6 +406,9 @@ export async function executeMonitoringRun(
         and(
           eq(monitoringRuns.workspaceId, context.workspaceId),
           eq(monitoringRuns.id, monitoringRunId),
+          eq(monitoringRuns.status, "QUEUED"),
+          isNull(monitoringRuns.startedAt),
+          isNull(monitoringRuns.completedAt),
         ),
       )
       .returning();

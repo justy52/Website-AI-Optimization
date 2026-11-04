@@ -23,6 +23,15 @@ import { PRIORITY_DEFINITION_VERSION } from "@/domain/opportunities/priority";
 import { SERVICE_PLAN_DEFINITION_VERSION } from "@/domain/service-plans";
 import type { AliasSnapshot, ParsedObservation, ObservationSource } from "@/domain/ai-visibility/model";
 
+// Queued rows are durable dispatch intents; a lease never authorizes execution.
+const workflowDispatchColumns = () => ({
+  dispatchAttempts: integer("dispatch_attempts").notNull().default(0),
+  dispatchLeaseToken: uuid("dispatch_lease_token"),
+  dispatchLeaseUntil: timestamp("dispatch_lease_until", { withTimezone: true }),
+  dispatchNextAttemptAt: timestamp("dispatch_next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  dispatchErrorCode: text("dispatch_error_code"),
+});
+
 export type ExecutionStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "ROLLED_BACK" | "ROLLBACK_FAILED" | "BLOCKED" | "VERIFYING" | "VERIFIED";
 
 export const workspaceRoleEnum = pgEnum("workspace_role", [
@@ -1383,6 +1392,7 @@ export const agentRuns = pgTable(
     retryCount: integer("retry_count").notNull().default(0),
     idempotencyKey: text("idempotency_key").notNull(),
     workflowRunId: text("workflow_run_id"),
+    ...workflowDispatchColumns(),
     createdByUserId: text("created_by_user_id").references(() => user.id, {
       onDelete: "set null",
     }),
@@ -1392,6 +1402,7 @@ export const agentRuns = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
+    index("agent_runs_dispatch_due").on(table.dispatchNextAttemptAt, table.createdAt).where(sql`${table.status}='QUEUED' and ${table.startedAt} is null and ${table.completedAt} is null`),
     uniqueIndex("agent_runs_workspace_id_id_unique").on(
       table.workspaceId,
       table.id,
@@ -2281,6 +2292,7 @@ export const monitoringRuns = pgTable(
     retryCount: integer("retry_count").notNull().default(0),
     idempotencyKey: text("idempotency_key").notNull(),
     workflowRunId: text("workflow_run_id"),
+    ...workflowDispatchColumns(),
     costCents: integer("cost_cents").notNull().default(0),
     createdByUserId: text("created_by_user_id").references(() => user.id, {
       onDelete: "set null",
@@ -2291,6 +2303,7 @@ export const monitoringRuns = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
+    index("monitoring_runs_dispatch_due").on(table.dispatchNextAttemptAt, table.createdAt).where(sql`${table.status}='QUEUED' and ${table.startedAt} is null and ${table.completedAt} is null`),
     uniqueIndex("monitoring_runs_workspace_id_id_unique").on(
       table.workspaceId,
       table.id,
@@ -3273,6 +3286,8 @@ export const aiVisibilityPrompts = pgTable("ai_visibility_prompts", {
 ]).enableRLS();
 
 export const aiVisibilityRuns = pgTable("ai_visibility_runs", {
+  workflowRunId: text("workflow_run_id"),
+  ...workflowDispatchColumns(),
   id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   clientId: uuid("client_id").notNull(), websiteId: uuid("website_id").notNull(), promptSetId: uuid("prompt_set_id").notNull(), promptSetVersion: integer("prompt_set_version").notNull(),
   source: text("source").$type<ObservationSource>().notNull(), surface: text("surface").notNull(), adapterVersion: text("adapter_version").notNull(), model: text("model").notNull(),
@@ -3284,6 +3299,7 @@ export const aiVisibilityRuns = pgTable("ai_visibility_runs", {
   actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "restrict" }),
   startedAt: timestamp("started_at", { withTimezone: true }), completedAt: timestamp("completed_at", { withTimezone: true }), createdAt: createdAt(),
 }, t => [
+  index("ai_visibility_runs_dispatch_due").on(t.dispatchNextAttemptAt, t.createdAt).where(sql`${t.status}='QUEUED' and ${t.startedAt} is null and ${t.completedAt} is null`),
   uniqueIndex("ai_vis_runs_workspace_id").on(t.workspaceId, t.id),
   uniqueIndex("ai_vis_runs_binding").on(t.workspaceId, t.promptSetId, t.id),
   uniqueIndex("ai_vis_runs_idempotency").on(t.workspaceId, t.idempotencyKey),

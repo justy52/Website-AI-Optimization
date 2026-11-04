@@ -38,3 +38,15 @@ The guarded `scripts/fresh-disposable-proof.mjs --reset-reviewed-disposable --re
 ## Resume checklist
 
 Verify health/auth, RLS, representative data, approvals, execution/verification history, normalized visibility and unknown-cost reservations. Review cleanup counts before enabling deletion. Check no paid/indeterminate attempt is scheduled for replay. Confirm the chosen SHA's runtime logs, migration compatibility and operator access. Record incident resolution and resume actor/time/reason. Follow up on backup-window or storage gaps before calling the pilot launch-ready.
+
+## Queued workflow dispatch recovery (migration 0018)
+
+Unstarted QUEUED runs now act as durable dispatch intents. The authenticated
+`/api/cron/workflow-dispatch` sweep and Operations queued recovery redispatch the
+same run after a short lease/backoff, including when a start response or its
+receipt was lost. Never create a substitute paid attempt or reset its ledger.
+PREPARE and monitoring claim execution once; started/indeterminate work remains
+manual review. See [dispatch design, proof and rollout](durable-workflow-dispatch.md)
+for the runtime-role function grant, scheduler plan requirement, legacy queued
+review, and isolated crash/race evidence. The PREPARE execution deadline starts
+on its first execution claim; QA approval expiry is unchanged.

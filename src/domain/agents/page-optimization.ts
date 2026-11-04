@@ -1083,6 +1083,9 @@ export function createAiGatewayPrepareProvider(options: {
 
       const result = await generateText({
         model: gateway(options.model),
+        // A single durable spend reservation authorizes one request. A timeout
+        // may hide a successful generation, so the SDK must not retry it.
+        maxRetries: 0,
         output: Output.object({
           schema: existingPageOptimizationOutputSchema,
           name: "ExistingPageOptimizationProposal",

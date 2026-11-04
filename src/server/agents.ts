@@ -621,25 +621,31 @@ export async function executePrepareDraftAgentRun(
   database = db,
   providerOverride?: PrepareModelProvider,
 ) {
+  let claimed = false;
   try {
     const existing = await withTenantContext(database, context, async tx => {
       const [result] = await tx.select({ artifact: draftArtifacts, approval: approvalRequests }).from(draftArtifacts).innerJoin(approvalRequests, and(eq(approvalRequests.workspaceId, draftArtifacts.workspaceId), eq(approvalRequests.targetArtifactId, draftArtifacts.id))).where(and(eq(draftArtifacts.workspaceId, context.workspaceId), eq(draftArtifacts.preparedByAgentRunId, runId))).limit(1);
       return result;
     });
     if (existing) return { ...existing, output: existing.artifact.structuredProposal as ExistingPageOptimizationOutput };
+    const owner = await withTenantContext(database, context, async tx => {
+      // Commit a single execution owner before any provider work. A duplicate or
+      // SDK replay must not restart a RUNNING/terminal (possibly paid) attempt.
+      const [owner] = await tx.update(agentRuns)
+        .set({ status: "RUNNING", startedAt: now(), updatedAt: now(),
+          deadlineAt: sql`now() + ${agentRuns.timeoutSeconds} * interval '1 second'` })
+        .where(and(eq(agentRuns.workspaceId, context.workspaceId), eq(agentRuns.id, runId),
+          eq(agentRuns.status, "QUEUED"), eq(agentRuns.permissionLevel, "PREPARE"),
+          isNull(agentRuns.startedAt), isNull(agentRuns.completedAt)))
+        .returning({ id: agentRuns.id });
+      return owner;
+    });
+    if (!owner) return { artifact: null, approval: null, output: null };
+    claimed = true;
     const prepared = await withTenantContext(database, context, async (tx) => {
       const loaded = await loadPrepareInput(tx, context, runId);
       const budget = loaded.run.budgetSnapshot as AgentRunBudgetSnapshot;
 
-      await tx
-        .update(agentRuns)
-        .set({ status: "RUNNING", startedAt: now(), updatedAt: now() })
-        .where(
-          and(
-            eq(agentRuns.workspaceId, context.workspaceId),
-            eq(agentRuns.id, runId),
-          ),
-        );
       await recordToolCall(tx, context, {
         agentRunId: runId,
         toolKey: "read.opportunity.v1",
@@ -716,6 +722,13 @@ export async function executePrepareDraftAgentRun(
       runId,
       providerOverride,
     ) : (providerOverride ?? createDeterministicDeliverableProvider());
+    if (prepared.loaded.run.provider !== provider.provider ||
+        (provider.provider !== "deterministic" && prepared.loaded.run.model !== provider.model)) {
+      throw new OperationsValidationError("Queued provider configuration changed; manual review is required.", "MANUAL_REVIEW");
+    }
+    if (prepared.loaded.run.deadlineAt && prepared.loaded.run.deadlineAt < now()) {
+      throw new OperationsValidationError("Queued PREPARE deadline expired before provider work.");
+    }
     await checkMaterialStep(context, "prepare", database, provider.provider === "deterministic" ? undefined : runId);
     const generated = await provider.generate(prepared.loaded.input);
     await recordPrepareUsage(context, runId, provider.provider, generated.usage, database);
@@ -921,6 +934,7 @@ export async function executePrepareDraftAgentRun(
       return { artifact, approval, output };
     });
   } catch (error) {
+    if (!claimed) throw error;
     if (error instanceof AgentBudgetError) {
       await markRunBudgetLimited(context, runId, error, database);
       return { artifact: null, approval: null, output: null };

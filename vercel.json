@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/retention",
       "schedule": "45 10 * * *"
+    },
+    {
+      "path": "/api/cron/workflow-dispatch",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

@@ -1,13 +1,11 @@
 import { OperationsValidationError } from "@/domain/operations/policy";
 import { NextResponse } from "next/server";
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 
 import {
   listDueMonitoringScheduleRefs,
-  recordMonitoringWorkflowRunId,
   requestScheduledMonitoringRun,
 } from "@/server/monitoring";
-import { monitoringRunWorkflow } from "@/workflows/monitoring";
 import { serverEnv } from "@/lib/env";
 
 export async function GET(request: Request) {
@@ -31,15 +29,7 @@ export async function GET(request: Request) {
     ).catch(error => { if (error instanceof OperationsValidationError) return null; throw error; });
 
     if (prepared?.shouldStartWorkflow) {
-      const run = await start(monitoringRunWorkflow, [
-        prepared.monitoringRunId,
-        prepared.context,
-      ]);
-      await recordMonitoringWorkflowRunId(
-        prepared.context,
-        prepared.monitoringRunId,
-        run.runId,
-      );
+      await dispatchQueuedRun(prepared.context, "monitor", prepared.monitoringRunId);
       queued += 1;
     }
   }

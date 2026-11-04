@@ -3,15 +3,13 @@ import { OperationsValidationError } from "@/domain/operations/policy";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 
 import {
-  recordWorkflowRunId,
   requestPrepareDraftForOpportunity,
 } from "@/server/agents";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { updateOpportunity } from "@/server/opportunities";
-import { prepareOpportunityDraftWorkflow } from "@/workflows/prepare-draft";
 import { ContentOpportunityValidationError, nominateContentOpportunity } from "@/server/content-opportunities";
 
 export async function nominateContentOpportunityAction(formData: FormData) {
@@ -69,15 +67,7 @@ export async function requestPrepareDraftAction(formData: FormData) {
   );
 
   if (prepared.shouldStartWorkflow) {
-    const run = await start(prepareOpportunityDraftWorkflow, [
-      prepared.agentRunId,
-      shell.workspaceContext,
-    ]);
-    await recordWorkflowRunId(
-      shell.workspaceContext,
-      prepared.agentRunId,
-      run.runId,
-    );
+    await dispatchQueuedRun(shell.workspaceContext, "prepare", prepared.agentRunId);
   }
 
   revalidatePath("/opportunities");

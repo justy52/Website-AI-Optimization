@@ -1,7 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { start } from "workflow/api";
+import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { OperationsValidationError, setAutomationPause, setWorkspaceBudgets } from "@/server/operations";
 import { AuthorizationError } from "@/domain/tenancy/context";
@@ -9,11 +9,6 @@ import { createRetentionQaFixture } from "@/server/ai-visibility";
 import { VisibilityValidationError } from "@/domain/ai-visibility/model";
 import { cleanupWorkspace } from "@/server/retention";
 import { recoverInternalRun } from "@/server/recovery";
-import { prepareOpportunityDraftWorkflow } from "@/workflows/prepare-draft";
-import { monitoringRunWorkflow } from "@/workflows/monitoring";
-import { verifyImplementationWorkflow } from "@/workflows/verify-implementation";
-import { recordWorkflowRunId } from "@/server/agents";
-import { recordMonitoringWorkflowRunId } from "@/server/monitoring";
 const field = (d: FormData, key: string) => String(d.get(key) ?? "");
 export async function operationsAction(d: FormData) {
   const { workspaceContext: c } = await getWorkspaceShellContext();
@@ -37,8 +32,7 @@ export async function operationsAction(d: FormData) {
       if (!["prepare","monitor","verification","visibility"].includes(kind) || !["retry","review"].includes(mode)) throw new OperationsValidationError("Invalid recovery action.");
       const result = await recoverInternalRun(c, { kind: kind as "prepare" | "monitor" | "verification" | "visibility", mode: mode as "retry" | "review", id: field(d,"id"), reason: field(d,"reason") });
       if (result.kind !== "review" && result.shouldStartWorkflow) {
-        if (result.kind === "monitor") { const run = await start(monitoringRunWorkflow, [result.id,c]); await recordMonitoringWorkflowRunId(c,result.id,run.runId); }
-        else { const run = result.kind === "prepare" ? await start(prepareOpportunityDraftWorkflow,[result.id,c]) : await start(verifyImplementationWorkflow,[result.id,c]); await recordWorkflowRunId(c,result.id,run.runId); }
+        await dispatchQueuedRun(c, result.kind, result.id);
       }
     } else throw new OperationsValidationError("Unknown operation.");
   } catch (error) {
