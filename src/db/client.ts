@@ -1,12 +1,12 @@
-import { Pool } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
 
 import { serverEnv } from "@/lib/env";
 
 import * as schema from "./schema";
+import { createRuntimePool } from "./runtime-role";
 
 export function createDb(connectionString = serverEnv.DATABASE_URL) {
-  const client = new Pool({ connectionString });
+  const client = createRuntimePool(connectionString);
 
   return drizzle({
     client,

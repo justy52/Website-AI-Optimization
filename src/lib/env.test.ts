@@ -49,6 +49,17 @@ describe("server environment validation", () => {
     expect(env.BLOB_READ_WRITE_TOKEN).toBeUndefined();
   });
 
+  it("does not require an owner/direct database secret in the deployed runtime", () => {
+    const env = getServerEnv({
+      APP_ENV: "qa",
+      DATABASE_URL: "postgres://virelantic_runtime@example.invalid/app",
+      BETTER_AUTH_SECRET: "qa-secret-with-enough-length-for-better-auth",
+      BETTER_AUTH_URL: "https://qa.example.invalid",
+      CREDENTIAL_ENCRYPTION_KEY: "qa-credential-key-with-enough-length",
+    });
+    expect(env.DATABASE_URL_UNPOOLED).toBe(env.DATABASE_URL);
+  });
+
   it("uses deterministic governed PREPARE unless AI Gateway is configured", () => {
     const deterministic = getServerEnv({
       APP_ENV: "qa",
