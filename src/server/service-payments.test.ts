@@ -22,7 +22,6 @@ describe.sequential("Service orders with isolated Postgres and non-bypass RLS", 
     pg = new PGlite();
     await pg.exec("CREATE ROLE virelantic_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT");
     for (const file of readdirSync("drizzle").filter(f => /^\d+.*\.sql$/.test(f)).sort()) await pg.exec(readFileSync(`drizzle/${file}`, "utf8"));
-    await pg.exec("CREATE ROLE payment_test NOSUPERUSER NOBYPASSRLS; GRANT USAGE ON SCHEMA public TO payment_test; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO payment_test;");
     database = drizzle(pg, { schema }) as unknown as Db;
   }, 60000);
   beforeEach(async () => {
@@ -50,7 +49,7 @@ describe.sequential("Service orders with isolated Postgres and non-bypass RLS", 
       retrieveCheckout: vi.fn(async id => structuredClone(sessions.get(id)!)),
       paymentIdForCharge: vi.fn(async () => [...sessions.values()][0]?.metadata?.service_payment_id),
     };
-    await pg.exec("SET ROLE payment_test");
+    await pg.exec("SET ROLE virelantic_runtime");
     const roles = await pg.query<{ rolsuper: boolean; rolbypassrls: boolean }>("SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user");
     expect(roles.rows[0]).toEqual({ rolsuper: false, rolbypassrls: false });
   });
@@ -82,7 +81,7 @@ describe.sequential("Service orders with isolated Postgres and non-bypass RLS", 
     await withTenantContext(database, c, async tx => { await tx.update(schema.workspaceMemberships).set({ role: "ANALYST" }).where(and(eq(schema.workspaceMemberships.workspaceId, c.workspaceId), eq(schema.workspaceMemberships.userId, c.userId!))); });
     await expect(order()).rejects.toThrow("ANALYST");
     expect((await panel()).orders).toHaveLength(1);
-    await pg.exec("RESET ROLE"); await pg.query("UPDATE workspace_memberships SET status='SUSPENDED' WHERE workspace_id=$1", [c.workspaceId]); await pg.exec("SET ROLE payment_test");
+    await pg.exec("RESET ROLE"); await pg.query("UPDATE workspace_memberships SET status='SUSPENDED' WHERE workspace_id=$1", [c.workspaceId]); await pg.exec("SET ROLE virelantic_runtime");
     await expect(panel()).rejects.toThrow();
   });
   it("keeps one payment on duplicate and concurrent checkout requests", async () => {
