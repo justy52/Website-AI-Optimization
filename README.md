@@ -48,3 +48,7 @@ corepack pnpm build               # production build
 ## Build order
 
 Phase 1 implements the first internal revenue slice: **Lead -> Client -> Website -> Audit -> Report**. Later phases add agents, monitoring, integrations, opportunities, approvals, and EXECUTE actions per the phase plan.
+
+## Working with AI agents
+
+Changes to this project may be proposed by AI agents through pull requests. A person reviews every pull request before it is merged.
