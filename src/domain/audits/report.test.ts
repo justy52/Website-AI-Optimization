@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAuditReportFromSnapshot, type AuditSnapshotData } from "./report";
+import { buildAuditReportFromSnapshot, canFinalizeAudit, hasReportableScore, type AuditSnapshotData } from "./report";
+
+describe("audit finalization readiness", () => {
+  it("accepts only completed runs in reviewable audit states", () => {
+    expect(canFinalizeAudit("READY_TO_FINALIZE", "SUCCEEDED")).toBe(true);
+    expect(canFinalizeAudit("REVIEW_REQUIRED", "PARTIAL")).toBe(true);
+    for (const state of ["QUEUED", "RUNNING", "FAILED"]) {
+      expect(canFinalizeAudit("READY_TO_FINALIZE", state)).toBe(false);
+    }
+    expect(canFinalizeAudit("RUNNING", "SUCCEEDED")).toBe(false);
+  });
+});
 
 const snapshot: AuditSnapshotData = {
   audit: {
@@ -71,11 +82,27 @@ describe("audit report builder", () => {
     expect(report.reportData.unavailableChecks).toHaveLength(1);
     expect(report.executiveSummary).toContain("checks were unavailable");
     expect(report.executiveSummary).toContain("Evidence coverage: 42%");
+    expect(report.executiveSummary).toContain("score is withheld");
+    expect(report.executiveSummary).not.toContain("74/100");
+  });
+
+  it("only displays a score when there is sufficient evidence", () => {
+    expect(hasReportableScore(92, 2600)).toBe(false);
+    expect(hasReportableScore(92, 6000)).toBe(true);
+    expect(hasReportableScore(null, 10000)).toBe(false);
   });
 
   it("does not claim ROI, rankings, revenue, or causation", () => {
     const report = buildAuditReportFromSnapshot(snapshot);
 
     expect(report.executiveSummary).not.toMatch(/roi|rank #?1|revenue|caused/i);
+  });
+
+  it("retains medium findings and high findings beyond the first ten", () => {
+    const high = Array.from({ length: 11 }, (_, index) => ({ ...snapshot.findings[0], checkKey: `high-${index}` }));
+    const medium = { ...snapshot.findings[0], checkKey: "seo.meta_description", severity: "MEDIUM" as const, title: "No meta description" };
+    const report = buildAuditReportFromSnapshot({ ...snapshot, findings: [...high, medium] });
+    expect(report.reportData.highPriorityFindings).toHaveLength(10);
+    expect(report.reportData.additionalFindings?.map(f => f.checkKey)).toEqual(["high-10", "seo.meta_description"]);
   });
 });

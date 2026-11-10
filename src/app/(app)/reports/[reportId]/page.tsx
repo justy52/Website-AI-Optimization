@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
-import type { BuiltAuditReport } from "@/domain/audits/report";
+import { findingGuidance, hasReportableScore, type BuiltAuditReport } from "@/domain/audits/report";
 import { getReport } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
 
@@ -52,7 +52,7 @@ export default async function ReportDetailPage({
           right={<StatusChip tone="info">{report.status}</StatusChip>}
           title="Executive summary"
         >
-          <p>{report.executiveSummary}</p>
+          <p>{hasReportableScore(data.overallScore, data.evidenceCoverageBasisPoints) ? report.executiveSummary : report.executiveSummary.replace(/Overall deterministic score:\s*\d+\/100\./, "An overall score is withheld because evidence is insufficient.")}</p>
           {report.status === "DRAFT" ? (
             <form action={finalizeReportAction} className="mx-action-inline">
               <input name="reportId" type="hidden" value={report.id} />
@@ -61,6 +61,10 @@ export default async function ReportDetailPage({
                 Finalize report
               </button>
             </form>
+          ) : report.finalizedAt ? (
+            <a className="mx-btn" href={`/api/reports/audit/${report.id}/download`}>
+              Download finalized report
+            </a>
           ) : null}
         </Panel>
         <div className="mx-spacer" />
@@ -68,7 +72,7 @@ export default async function ReportDetailPage({
           <Panel title="Score and coverage">
             <div className="mx-score-block">
               <span className="mx-score">
-                {data.overallScore === null ? "No score" : data.overallScore}
+                {hasReportableScore(data.overallScore, data.evidenceCoverageBasisPoints) ? data.overallScore : "No score"}
               </span>
               <div>
                 <StatusChip tone={data.provisional ? "warn" : "good"}>
@@ -111,11 +115,12 @@ export default async function ReportDetailPage({
               <div className="mx-mini-panel" key={score.category}>
                 <span className="mx-eyebrow">{score.category}</span>
                 <span className="mx-kpi-value">
-                  {score.score === null ? "NA" : score.score}
+                  {score.category === "aiReadiness" || score.score === null || score.lowCoverage ? "NA" : score.score}
                 </span>
                 <span className="mx-muted">
                   Coverage {percent(score.evidenceCoverageBasisPoints)}
                 </span>
+                {score.category === "aiReadiness" && <span className="mx-muted">AI score withheld: core checks are incomplete.</span>}
               </div>
             ))}
           </div>
@@ -127,8 +132,9 @@ export default async function ReportDetailPage({
               {data.highPriorityFindings.map((finding) => (
                 <div className="mx-check-row" key={finding.checkKey}>
                   <div>
-                    <div className="mx-row-title">{finding.title}</div>
+                    <div className="mx-row-title">{findingGuidance(finding.checkKey)?.title ?? finding.title}</div>
                     <div className="mx-row-meta">{finding.summary}</div>
+                    {findingGuidance(finding.checkKey) && <p>Next step: {findingGuidance(finding.checkKey)?.nextStep}</p>}
                   </div>
                   <StatusChip tone={finding.severity === "CRITICAL" ? "bad" : "warn"}>
                     {finding.severity}
@@ -141,6 +147,25 @@ export default async function ReportDetailPage({
           )}
         </Panel>
         <div className="mx-spacer" />
+        {data.additionalFindings && data.additionalFindings.length > 0 ? (
+          <>
+            <Panel title="Additional findings">
+              <div className="mx-list">
+                {data.additionalFindings.map((finding) => (
+                  <div className="mx-check-row" key={finding.checkKey}>
+                    <div>
+                      <div className="mx-row-title">{findingGuidance(finding.checkKey)?.title ?? finding.title}</div>
+                      <div className="mx-row-meta">{finding.summary}</div>
+                      {findingGuidance(finding.checkKey) && <p>Next step: {findingGuidance(finding.checkKey)?.nextStep}</p>}
+                    </div>
+                    <StatusChip tone={finding.severity === "CRITICAL" ? "bad" : "warn"}>{finding.severity}</StatusChip>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+            <div className="mx-spacer" />
+          </>
+        ) : null}
         <Panel title="Unavailable and errored checks">
           {data.unavailableChecks.length > 0 ? (
             <div className="mx-list">

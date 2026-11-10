@@ -1,0 +1,23 @@
+Production operator enrollment
+
+New production accounts default to closed. Existing users can still sign in.
+Temporarily enrolling a real operator requires both AUTH_SIGNUP_ENABLED=true and
+AUTH_ENROLLMENT_EMAILS containing the owner's approved exact email addresses,
+comma separated. Wildcards and malformed lists fail closed. The list stays on
+the server; the browser receives only whether enrollment is available.
+
+Keep Vercel Authentication enabled for every deployment, public intake/payments
+disabled, project cron disabled and all automation paused throughout enrollment.
+The human enters their own password directly in the app. Never send it in chat.
+Confirm their production user ID and intended workspace membership, then close
+AUTH_SIGNUP_ENABLED again and rebuild. Confirm sign-in works and further signup
+is denied. Readiness stays held whenever temporary enrollment is enabled.
+
+The enrollment list grants no platform privileges. PLATFORM_OPERATOR_USER_IDS is
+a separate reviewed assignment to real enrolled people. Do not add synthetic
+fixture IDs or infer an operator from an email address alone. Review recovery
+access and backup-operator access before resuming any work.
+
+Historical recovery evidence shown in Operations is a dated completed exercise.
+It does not monitor current snapshots, scheduler freshness, alerts or key escrow.
+Use the production recovery handoff and current monitoring evidence for release.

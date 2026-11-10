@@ -1,6 +1,6 @@
 # Service payment and onboarding pilot
 
-This increment is an operator-assisted **test-mode service-business** integration. It does not accept live money or sell subscriptions to Virelantic software. `SERVICE_PAYMENTS_MODE=disabled` is the default; test keys and non-production deployments are required at runtime. Do not enable this feature on a public production application.
+This guide covers the operator-assisted **test-mode service-business** path. `SERVICE_PAYMENTS_MODE=disabled` remains the default. Test mode requires test keys and non-production deployments; it cannot accept live money or sell subscriptions to Virelantic software. The separately gated production path is documented in [service-payments-production.md](./service-payments-production.md). This guide's original migration/account findings are historical; follow the current journal and production runbook when integrating the release.
 
 ## Supported path
 

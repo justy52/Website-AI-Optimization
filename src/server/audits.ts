@@ -1,7 +1,7 @@
-import { assertAutomationAllowed, assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext } from "./operations";
+import { assertAutomationAllowed, assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, OperationsValidationError, withOperationalContext } from "./operations";
 import { createHash } from "node:crypto";
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -13,20 +13,27 @@ import {
   auditRuns,
   audits,
   auditSnapshots,
+  businessFacts,
   reports,
   monitoringRuns,
   websites,
+  workspaceMemberships,
 } from "@/db/schema";
 import { withTenantContext } from "@/db/tenant";
 import {
+  AUDIT_COLLECTOR_VERSION,
   runPhase1DeterministicAudit,
   type Phase1AuditResult,
 } from "@/domain/audits/execution";
 import {
   buildAuditReportFromSnapshot,
+  canFinalizeAudit,
   type AuditSnapshotData,
 } from "@/domain/audits/report";
-import type { WorkspaceContext } from "@/domain/tenancy/context";
+import { isStaleAuditRun } from "@/domain/audits/recovery";
+import { assertWorkspaceRole, type WorkspaceContext } from "@/domain/tenancy/context";
+import { serverEnv } from "@/lib/env";
+import { z } from "zod";
 
 import { generateOpportunitiesForAuditRun } from "./opportunities";
 
@@ -223,6 +230,84 @@ async function persistAuditResult(
     .where(and(eq(audits.workspaceId, context.workspaceId), eq(audits.id, auditId)));
 }
 
+async function failRunningAudit(
+  context: WorkspaceContext,
+  auditId: string,
+  runId: string,
+  summary: string,
+  database: AuditDatabase,
+) {
+  await withTenantContext(database, context, async (tx) => {
+    const completedAt = now();
+    const [failed] = await tx.update(auditRuns)
+      .set({ status: "FAILED", errorSummary: summary, completedAt, updatedAt: completedAt })
+      .where(and(eq(auditRuns.workspaceId, context.workspaceId), eq(auditRuns.id, runId), eq(auditRuns.status, "RUNNING")))
+      .returning({ id: auditRuns.id });
+    if (!failed) return;
+    await tx.update(audits).set({ status: "FAILED", updatedAt: completedAt })
+      .where(and(eq(audits.workspaceId, context.workspaceId), eq(audits.id, auditId), eq(audits.status, "RUNNING")));
+  });
+}
+
+async function isMonitoringAuditRun(tx: AuditTransaction, workspaceId: string, runId: string) {
+  const [parent] = await tx.select({ id: monitoringRuns.id }).from(monitoringRuns)
+    .where(and(eq(monitoringRuns.workspaceId, workspaceId), eq(monitoringRuns.auditRunId, runId))).limit(1);
+  return Boolean(parent);
+}
+
+export async function closeStaleAuditRun(
+  context: WorkspaceContext,
+  input: { auditId: string; runId: string; reason: string },
+  database = db,
+) {
+  assertWorkspaceRole(context, ["OWNER", "ADMIN"]);
+  const reason = input.reason.trim();
+  if (context.actorType !== "USER" || !context.userId || !reason || reason.length > 500) {
+    throw new OperationsValidationError("A signed-in operator and a reason of 1–500 characters are required.");
+  }
+  const uuid = z.uuid();
+  if (!uuid.safeParse(input.auditId).success || !uuid.safeParse(input.runId).success) {
+    throw new OperationsValidationError("Audit run was not found.");
+  }
+  await enforceActionRateLimit(context, "recovery", database);
+  return withTenantContext(database, context, async (tx) => {
+    const [membership] = await tx.select({ role: workspaceMemberships.role }).from(workspaceMemberships)
+      .where(and(
+        eq(workspaceMemberships.workspaceId, context.workspaceId),
+        eq(workspaceMemberships.userId, context.userId!),
+        eq(workspaceMemberships.status, "ACTIVE"),
+      )).limit(1);
+    if (!membership || (membership.role !== "OWNER" && membership.role !== "ADMIN")) {
+      throw new OperationsValidationError("An active owner or admin membership is required.");
+    }
+    const [run] = await tx.select().from(auditRuns).where(and(
+      eq(auditRuns.workspaceId, context.workspaceId),
+      eq(auditRuns.auditId, input.auditId),
+      eq(auditRuns.id, input.runId),
+    )).limit(1).for("update");
+    if (!run) throw new OperationsValidationError("Audit run was not found.");
+    if (run.status === "CANCELED") return run;
+
+    const completedAt = now();
+    if (!isStaleAuditRun(run, completedAt) || await isMonitoringAuditRun(tx, context.workspaceId, run.id)) {
+      throw new OperationsValidationError("Only a manual audit still running after 15 minutes can be closed here.");
+    }
+    const [latest] = await tx.select({ id: auditRuns.id }).from(auditRuns).where(and(
+      eq(auditRuns.workspaceId, context.workspaceId), eq(auditRuns.auditId, run.auditId),
+    )).orderBy(desc(auditRuns.createdAt)).limit(1);
+    if (latest?.id !== run.id) throw new OperationsValidationError("Only the latest audit run can be closed.");
+    const [audit] = await tx.update(audits).set({ status: "CANCELED", updatedAt: completedAt })
+      .where(and(eq(audits.workspaceId, context.workspaceId), eq(audits.id, run.auditId), eq(audits.status, "RUNNING")))
+      .returning({ id: audits.id });
+    if (!audit) throw new OperationsValidationError("The audit is no longer running.");
+    const [closed] = await tx.update(auditRuns).set({
+      status: "CANCELED", errorSummary: "Stale manual audit closed by an operator.", completedAt, updatedAt: completedAt,
+    }).where(and(eq(auditRuns.workspaceId, context.workspaceId), eq(auditRuns.id, run.id))).returning();
+    await recordActivity(tx, context, "audit.stale_run_closed", "audit", audit.id, { runId: run.id, reason });
+    return closed;
+  });
+}
+
 export async function startAuditForWebsite(
   context: WorkspaceContext,
   websiteId: string,
@@ -239,12 +324,23 @@ export async function startAuditForWebsite(
     const [website] = await tx
       .select()
       .from(websites)
-      .where(and(eq(websites.workspaceId, context.workspaceId), eq(websites.id, websiteId)))
+      .where(and(eq(websites.workspaceId, context.workspaceId), eq(websites.id, websiteId), isNull(websites.archivedAt)))
       .limit(1);
 
     if (!website) {
       throw new Error("Website was not found.");
     }
+
+    // Only owner-verified, public, current facts for this client and site may
+    // enter an audit snapshot. Never include another site's private context.
+    const facts = await tx.select({ id: businessFacts.id, factType: businessFacts.factType, value: businessFacts.value })
+      .from(businessFacts).where(and(eq(businessFacts.workspaceId, context.workspaceId), eq(businessFacts.clientId, website.clientId),
+        or(isNull(businessFacts.websiteId), eq(businessFacts.websiteId, website.id)), eq(businessFacts.sensitivity, "PUBLIC"),
+        inArray(businessFacts.factType, ["business_name", "display_name", "brand_name", "service", "location", "service_area"]),
+        eq(businessFacts.verificationStatus, "VERIFIED"), isNotNull(businessFacts.approvedByUserId), isNull(businessFacts.archivedAt),
+        or(isNull(businessFacts.effectiveAt), lte(businessFacts.effectiveAt, sql`now()`)),
+        or(isNull(businessFacts.expiresAt), gt(businessFacts.expiresAt, sql`now()`))))
+      .limit(100);
 
     const [audit] = await tx
       .insert(audits)
@@ -264,6 +360,7 @@ export async function startAuditForWebsite(
         auditId: audit.id,
         websiteId: website.id,
         status: "RUNNING",
+        collectorVersion: AUDIT_COLLECTOR_VERSION,
         startedAt: now(),
       })
       .returning();
@@ -274,35 +371,40 @@ export async function startAuditForWebsite(
       domain: website.domain,
     });
 
-    return { audit, run, website };
+    return { audit, run, website, facts };
   });
 
-  try { await checkMaterialStep(context, "audit", database); }
-  catch (error) {
-    await withTenantContext(database, context, async tx => {
-      await tx.update(auditRuns).set({ status: "FAILED", completedAt: now() }).where(and(eq(auditRuns.workspaceId, context.workspaceId), eq(auditRuns.id, prepared.run.id)));
-      await tx.update(audits).set({ status: "FAILED" }).where(and(eq(audits.workspaceId, context.workspaceId), eq(audits.id, prepared.audit.id)));
+  try {
+    await checkMaterialStep(context, "audit", database);
+    const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl, { verifiedPublicFacts: prepared.facts }, { pagespeedApiKey: serverEnv.GOOGLE_PAGESPEED_API_KEY });
+
+    await withTenantContext(database, context, async (tx) => {
+      // Use the same run row lock as stale recovery before writing any evidence.
+      const [active] = await tx.select({ id: auditRuns.id }).from(auditRuns).where(and(
+        eq(auditRuns.workspaceId, context.workspaceId),
+        eq(auditRuns.id, prepared.run.id),
+        eq(auditRuns.status, "RUNNING"),
+      )).limit(1).for("update");
+      if (!active) return;
+      await persistAuditResult(
+        tx,
+        context,
+        prepared.audit.id,
+        prepared.run.id,
+        prepared.website.clientId,
+        prepared.website.id,
+        result,
+      );
+      await recordActivity(tx, context, "audit.completed", "audit", prepared.audit.id, {
+        runId: prepared.run.id,
+        overallScore: result.overall.score,
+        provisional: result.overall.provisional,
+      });
     });
+  } catch (error) {
+    await failRunningAudit(context, prepared.audit.id, prepared.run.id, "Audit processing failed; review and retry.", database);
     throw error;
   }
-  const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl);
-
-  await withTenantContext(database, context, async (tx) => {
-    await persistAuditResult(
-      tx,
-      context,
-      prepared.audit.id,
-      prepared.run.id,
-      prepared.website.clientId,
-      prepared.website.id,
-      result,
-    );
-    await recordActivity(tx, context, "audit.completed", "audit", prepared.audit.id, {
-      runId: prepared.run.id,
-      overallScore: result.overall.score,
-      provisional: result.overall.provisional,
-    });
-  });
 
   return prepared.audit;
 }
@@ -400,7 +502,9 @@ async function loadAuditDetail(
       .where(and(eq(reports.workspaceId, context.workspaceId), eq(reports.auditId, audit.id)))
       .limit(1);
 
-    return { audit, website, run, checks, scores, evidence, findings, snapshot, report };
+    const canCloseStaleRun = audit.status === "RUNNING" && !!run && isStaleAuditRun(run)
+      && !(await isMonitoringAuditRun(tx, context.workspaceId, run.id));
+    return { audit, website, run, checks, scores, evidence, findings, snapshot, report, canCloseStaleRun };
 }
 
 export async function getAuditDetail(
@@ -427,6 +531,10 @@ export async function finalizeAudit(
 
     if (detail.snapshot) {
       return detail.snapshot;
+    }
+
+    if (!canFinalizeAudit(detail.audit.status, detail.run.status)) {
+      throw new Error("The audit must finish successfully before its snapshot can be finalized.");
     }
 
     const finalizedAt = now().toISOString();
@@ -584,18 +692,26 @@ export async function finalizeReport(
   database = db,
 ) {
   return withTenantContext(database, context, async (tx) => {
+    const scope = and(eq(reports.workspaceId, context.workspaceId), eq(reports.id, reportId));
+    const finalizedAt = now();
     const [report] = await tx
       .update(reports)
       .set({
         status: "FINALIZED",
-        finalizedAt: now(),
+        finalizedAt,
         finalizedByUserId: context.userId,
-        updatedAt: now(),
+        updatedAt: finalizedAt,
       })
-      .where(and(eq(reports.workspaceId, context.workspaceId), eq(reports.id, reportId)))
+      .where(and(scope, eq(reports.status, "DRAFT")))
       .returning();
 
     if (!report) {
+      const [finalized] = await tx
+        .select()
+        .from(reports)
+        .where(and(scope, eq(reports.status, "FINALIZED")))
+        .limit(1);
+      if (finalized) return finalized;
       throw new Error("Report was not found.");
     }
 

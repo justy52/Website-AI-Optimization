@@ -14,7 +14,7 @@ Next.js (App Router) - TypeScript - Tailwind + shadcn/ui - Neon Postgres + Drizz
 
 ## Getting started
 
-The operator-assisted test service payment/onboarding pilot is documented in [`docs/service-payments-test-mode.md`](./docs/service-payments-test-mode.md). It requires migration 0018 and a verified Virelantic sandbox account; it defaults to disabled, rejects live payments and production, and is separate from future SaaS billing.
+Service payments default to disabled. The [production payment launch runbook](./docs/service-payments-production.md) documents migration 0026, separate test/live credentials, merchant and webhook readiness checks, and the owner approvals required before live activation. The [test pilot guide](./docs/service-payments-test-mode.md) covers sandbox acceptance. Managed service fees remain separate from future SaaS billing.
 
 ```bash
 corepack pnpm install

@@ -28,6 +28,9 @@ import {
 import { startAuditAction } from "../../audits/actions";
 import { EmptyState, formatDate, PageHeader, Panel, StatusChip } from "../../ui";
 
+// This page can also start the mobile lab audit through a server action.
+export const maxDuration = 120;
+
 export default async function WebsiteDetailPage({
   params,
 }: {
@@ -149,13 +152,15 @@ export default async function WebsiteDetailPage({
           <p className="mx-muted">
             Saving this target does not fetch, crawl, or audit the website.
           </p>
-          <form action={startAuditAction} className="mx-action-inline">
-            <input name="websiteId" type="hidden" value={website.id} />
-            <button className="mx-btn" type="submit">
-              <Play aria-hidden size={14} />
-              Start audit
-            </button>
-          </form>
+          {!website.archivedAt && (
+            <form action={startAuditAction} className="mx-action-inline">
+              <input name="websiteId" type="hidden" value={website.id} />
+              <button className="mx-btn" type="submit">
+                <Play aria-hidden size={14} />
+                Start audit
+              </button>
+            </form>
+          )}
         </Panel>
       </div>
       <div className="mx-spacer" />

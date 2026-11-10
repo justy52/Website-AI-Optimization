@@ -1,15 +1,18 @@
 "use server";
 import { OperationsValidationError } from "@/domain/operations/policy";
+import { AuthorizationError } from "@/domain/tenancy/context";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
+  closeStaleAuditRun,
   createReportForAudit,
   finalizeAudit,
   startAuditForWebsite,
 } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
+import { z } from "zod";
 
 function value(formData: FormData, key: string): string {
   const item = formData.get(key);
@@ -39,6 +42,28 @@ export async function finalizeAuditAction(formData: FormData) {
   await finalizeAudit(shell.workspaceContext, auditId);
   revalidatePath(`/audits/${auditId}`);
   redirect(`/audits/${auditId}`);
+}
+
+export async function closeStaleAuditRunAction(formData: FormData) {
+  const { workspaceContext } = await getWorkspaceShellContext();
+  const auditId = value(formData, "auditId");
+  if (!z.uuid().safeParse(auditId).success) redirect("/audits");
+  const detailPath = `/audits/${auditId}` as const;
+  try {
+    await closeStaleAuditRun(workspaceContext, {
+      auditId,
+      runId: value(formData, "runId"),
+      reason: value(formData, "reason"),
+    });
+  } catch (error) {
+    if (error instanceof OperationsValidationError || error instanceof AuthorizationError) {
+      redirect(`${detailPath}?recovery=unavailable` as never);
+    }
+    throw error;
+  }
+  revalidatePath("/audits");
+  revalidatePath(detailPath);
+  redirect(detailPath);
 }
 
 export async function createReportAction(formData: FormData) {

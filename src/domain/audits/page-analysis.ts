@@ -1,3 +1,5 @@
+import { parse, type DefaultTreeAdapterTypes } from "parse5";
+
 export type StructuredDataItem = {
   types: string[];
   valid: boolean;
@@ -31,9 +33,30 @@ function stripTags(value: string): string {
   return decodeHtml(value.replace(/<[^>]*>/g, " "));
 }
 
+// This is a conservative static HTML approximation, not browser-rendered text.
+// In particular, metadata, comments and markup explicitly hidden from users
+// must not make verified business facts appear on the page.
+function extractPageText(html: string): string {
+  const excluded = new Set(["head", "script", "style", "template", "noscript", "svg"]);
+  const parts: string[] = [];
+  function visit(node: DefaultTreeAdapterTypes.Node): void {
+    if ("tagName" in node) {
+      if (excluded.has(node.tagName)) return;
+      const attrs = new Map(node.attrs.map((attr) => [attr.name.toLowerCase(), attr.value]));
+      if (attrs.has("hidden") || attrs.get("aria-hidden")?.trim().toLowerCase() === "true") return;
+      const style = attrs.get("style")?.toLowerCase() ?? "";
+      if (/(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse))\s*(?:!important\s*)?(?:;|$)/.test(style)) return;
+    }
+    if (node.nodeName === "#text" && "value" in node) parts.push(node.value);
+    if ("childNodes" in node) for (const child of node.childNodes) visit(child);
+  }
+  visit(parse(html));
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
 function attribute(tag: string, name: string): string | null {
   const match = tag.match(
-    new RegExp(`${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"),
+    new RegExp(`(?:^|\\s)${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"),
   );
 
   return match ? decodeHtml(match[2] ?? match[3] ?? match[4] ?? "") : null;
@@ -127,10 +150,6 @@ function extractStructuredData(html: string): StructuredDataItem[] {
 }
 
 export function analyzeHtml(html: string): PageAnalysis {
-  const withoutScripts = html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
-
   return {
     title: extractTitle(html),
     metaDescription: extractMeta(html, "description"),
@@ -143,7 +162,7 @@ export function analyzeHtml(html: string): PageAnalysis {
     anchors: extractAnchors(html),
     buttons: findPairedTags(html, "button").map(stripTags).filter(Boolean),
     structuredData: extractStructuredData(html),
-    visibleText: stripTags(withoutScripts),
+    visibleText: extractPageText(html),
   };
 }
 
@@ -154,7 +173,12 @@ export function robotsTxtBlocksAll(robotsTxt: string | null | undefined): boolea
     .split(/\r?\n/)
     .map((line) => line.replace(/#.*/, "").trim().toLowerCase())
     .filter(Boolean);
-  let appliesToAll = false;
+  let agents: string[] = [];
+  let hasRules = false;
+  let disallowsRoot = false;
+  let hasAllow = false;
+
+  const groupBlocksAll = () => agents.includes("*") && disallowsRoot && !hasAllow;
 
   for (const line of lines) {
     const [rawKey, ...rawValue] = line.split(":");
@@ -162,15 +186,63 @@ export function robotsTxtBlocksAll(robotsTxt: string | null | undefined): boolea
     const value = rawValue.join(":").trim();
 
     if (key === "user-agent") {
-      appliesToAll = value === "*";
-    }
-
-    if (appliesToAll && key === "disallow" && value === "/") {
-      return true;
+      if (hasRules) {
+        if (groupBlocksAll()) return true;
+        agents = [];
+        hasRules = false;
+        disallowsRoot = false;
+        hasAllow = false;
+      }
+      agents.push(value);
+    } else if (key === "disallow" || key === "allow") {
+      hasRules = true;
+      if (key === "disallow" && value === "/") disallowsRoot = true;
+      if (key === "allow" && value) hasAllow = true;
     }
   }
 
-  return false;
+  return groupBlocksAll();
+}
+
+/** Check a named crawler's rules for the root URL, not the whole site. */
+export function robotsTxtBlocksHomepage(robotsTxt: string | null | undefined, crawler: "googlebot" | "oai-searchbot"): boolean {
+  if (!robotsTxt) return false;
+  const groups: Array<{ agents: string[]; rules: Array<{ allow: boolean; path: string }> }> = [];
+  let agents: string[] = [];
+  let rules: Array<{ allow: boolean; path: string }> = [];
+  let startedRules = false;
+  const flush = () => { if (agents.length) groups.push({ agents, rules }); agents = []; rules = []; startedRules = false; };
+  for (const raw of robotsTxt.split(/\r\n|\r|\n/)) {
+    const line = raw.replace(/#.*/, "").trim();
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const value = line.slice(colon + 1).trim();
+    if (key === "user-agent") {
+      if (startedRules) flush();
+      agents.push(value.toLowerCase());
+    } else if (key === "allow" || key === "disallow") {
+      startedRules = true;
+      if (value) rules.push({ allow: key === "allow", path: value });
+    }
+  }
+  flush();
+  const isCrawler = (agent: string) => agent === crawler || agent.startsWith(`${crawler}/`) || agent.startsWith(`${crawler}*`);
+  const hasSpecific = groups.some(group => group.agents.some(isCrawler));
+  const applicable = groups.filter(group => hasSpecific ? group.agents.some(isCrawler) : group.agents.includes("*"));
+  const matches = applicable.flatMap(group => group.rules).filter(rule => {
+    // The audited URL path is exactly '/'. Only '/', '*' and a final '$'
+    // can match it; other literal characters require a longer path.
+    if (!rule.path.startsWith("/")) return false;
+    return /^\/\**\$?$/.test(rule.path);
+  });
+  if (!matches.length) return false;
+  const longest = Math.max(...matches.map(rule => rule.path.length));
+  return !matches.some(rule => rule.path.length === longest && rule.allow);
+}
+
+export function robotsTxtBlocksGooglebotHomepage(robotsTxt: string | null | undefined): boolean {
+  return robotsTxtBlocksHomepage(robotsTxt, "googlebot");
 }
 
 export function firstSitemapUrl(robotsTxt: string | null | undefined): string | null {

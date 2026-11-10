@@ -35,6 +35,7 @@ export function environmentReadiness() {
     searchConsole: !!serverEnv.GOOGLE_OAUTH_CLIENT_ID && !!serverEnv.GOOGLE_OAUTH_CLIENT_SECRET && !!serverEnv.GOOGLE_OAUTH_REDIRECT_URI,
     perplexity: !!serverEnv.PERPLEXITY_API_KEY,
     aiGateway: !!serverEnv.AI_GATEWAY_MODEL && !!(serverEnv.AI_GATEWAY_API_KEY || serverEnv.VERCEL_OIDC_TOKEN),
+    openaiDirect: serverEnv.AGENT_PROVIDER === "openai_direct" && !!serverEnv.OPENAI_API_KEY,
     blob: !!serverEnv.BLOB_READ_WRITE_TOKEN, qaExecute: serverEnv.APP_ENV === "qa" && serverEnv.QA_EXECUTE_ENABLED,
     qaEnvironment: serverEnv.APP_ENV === "qa", productionExecute: false, platformOperatorConfigured: !!serverEnv.PLATFORM_OPERATOR_USER_IDS,
     emergencyStop: serverEnv.AUTOMATION_EMERGENCY_STOP,

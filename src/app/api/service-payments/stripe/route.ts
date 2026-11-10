@@ -18,11 +18,11 @@ export async function POST(request: Request) {
     if (size > limit) { await reader.cancel(); return new Response(null, { status: 413 }); }
     chunks.push(value);
   }
-  const provider = new StripeServicePayments(config.secretKey, config.accountId);
+  const provider = new StripeServicePayments(config);
   let event;
   try { event = parsePaymentEvent(provider.stripe, Buffer.concat(chunks).toString("utf8"), signature, config.webhookSecret); }
   catch { return Response.json({ error: "Invalid signature or event" }, { status: 400 }); }
-  if (event.livemode || (event.account && event.account !== config.accountId)) return Response.json({ error: "Wrong payment mode or account" }, { status: 400 });
+  if (event.livemode !== (config.mode === "live") || (event.account && event.account !== config.accountId)) return Response.json({ error: "Wrong payment mode or account" }, { status: 400 });
   try {
     await processServicePaymentEvent(event, { configuration: config, provider });
     return Response.json({ received: true });

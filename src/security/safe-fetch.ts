@@ -11,6 +11,7 @@ export type SafeFetchErrorCode =
   | "INVALID_SCHEME"
   | "URL_CREDENTIALS"
   | "BLOCKED_HOST"
+  | "OUT_OF_SCOPE"
   | "DNS_UNAVAILABLE"
   | "REDIRECT_LIMIT"
   | "REDIRECT_LOOP"
@@ -44,6 +45,7 @@ export type SafeFetchOptions = {
   timeoutMs?: number;
   lookupHost?: (hostname: string) => Promise<string[]>;
   requestImpl?: PinnedHttpRequest;
+  isTargetAllowed?: (target: URL, redirectedFrom: URL | null) => boolean;
 };
 
 type ValidatedAddress = {
@@ -438,8 +440,12 @@ export async function safeFetchText(
   const visited = new Set<string>();
   const requestedUrl = input;
   let currentUrl = new URL(input);
+  let redirectedFrom: URL | null = null;
 
   for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    if (options.isTargetAllowed && !options.isTargetAllowed(currentUrl, redirectedFrom)) {
+      throw new SafeFetchError("OUT_OF_SCOPE", "Website fetch stopped at a destination outside the approved host or protocol.");
+    }
     const validatedAddresses = await resolveSafePublicAddresses(currentUrl, lookupHost);
 
     const current = currentUrl.toString();
@@ -504,6 +510,7 @@ export async function safeFetchText(
         throw new SafeFetchError("REDIRECT_LIMIT", "Too many redirects.");
       }
 
+      redirectedFrom = currentUrl;
       currentUrl = new URL(location, currentUrl);
       redirects.push(currentUrl.toString());
       continue;

@@ -55,7 +55,7 @@ export async function operationalUsage(tx: OperationsTx, c: WorkspaceContext, at
     coalesce(sum(case when state='RESERVED' then greatest(reserved_cost_usd,coalesce(actual_cost_usd,0)) else coalesce(actual_cost_usd,greatest(reserved_cost_usd,coalesce(estimated_cost_usd,0))) end),0)::float8 as cost,
     coalesce(sum(case when category='PREPARE' then greatest(coalesce(calls,0),case when state='RESERVED' then reserved_calls else 0 end) else 0 end),0)::int as ai,
     coalesce(sum(case when category='AI_VISIBILITY' then greatest(coalesce(calls,0),case when state='RESERVED' then reserved_calls else 0 end) else 0 end),0)::int as visibility,
-    count(*) filter(where provider in ('vercel-ai-gateway','perplexity') and actual_cost_usd is null and reserved_cost_usd=0)::int as unknown
+    count(*) filter(where provider in ('vercel-ai-gateway','openai-direct','openai-web-search','perplexity') and actual_cost_usd is null and reserved_cost_usd=0)::int as unknown
     from usage_ledger where workspace_id=${c.workspaceId} and measurement_window=${at.toISOString().slice(0, 7)}`);
   const active = await tx.execute(sql`select
     (select count(*) from agent_runs where workspace_id=${c.workspaceId} and status in ('QUEUED','RUNNING'))+
