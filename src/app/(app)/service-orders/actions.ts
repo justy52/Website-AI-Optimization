@@ -2,15 +2,17 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getWorkspaceShellContext } from "@/server/auth";
-import { createServiceOrder, prepareServiceCheckout, reconcileServicePayment, recoverServiceCheckout, updateServiceOnboarding } from "@/server/service-payments";
+import { createServiceOrder, prepareServiceCheckout, reconcileServicePayment, recoverServiceCheckout, updateServiceOnboarding, verifyServicePaymentReadiness } from "@/server/service-payments";
 import { emptyOnboarding, ServicePaymentError } from "@/domain/payments/policy";
 
 function value(f: FormData, key: string) { const v = f.get(key); return typeof v === "string" ? v : ""; }
 export async function serviceOrderAction(f: FormData) {
   const { workspaceContext: c } = await getWorkspaceShellContext();
   let checkout: string | undefined;
+  let verified = false;
   try {
     switch (value(f, "action")) {
+      case "preflight": await verifyServicePaymentReadiness(c); verified = true; break;
       case "create":
         if (f.get("signatureVerified") !== "on") throw new ServicePaymentError("Verify the completed signed scope before recording an order.");
         await createServiceOrder(c, {
@@ -34,5 +36,6 @@ export async function serviceOrderAction(f: FormData) {
   }
   revalidatePath("/service-orders");
   if (checkout) redirect(checkout as `https://${string}`);
+  if (verified) redirect("/service-orders?verified=1");
   redirect("/service-orders");
 }

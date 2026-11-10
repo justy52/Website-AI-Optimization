@@ -3,6 +3,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 const { processEvent } = vi.hoisted(() => ({ processEvent: vi.fn() }));
 vi.mock("@/server/service-payments", () => ({ processServicePaymentEvent: processEvent }));
 import { POST } from "./route";
+import { livePaymentEnvironment } from "@/domain/payments/test-fixtures";
 const stripe = new Stripe("sk_test_fixture"), secret = "whsec_fixture";
 function request(overrides = {}, tamper = false) {
   const body = JSON.stringify({ id: "evt_fixture", type: "checkout.session.completed", livemode: false, data: { object: { id: "cs_test_fixture", metadata: { service_payment_id: "payment" } } }, ...overrides });
@@ -34,5 +35,16 @@ describe("Service payment webhook HTTP boundary", () => {
     expect(processEvent).toHaveBeenCalledWith(expect.objectContaining({ id: "evt_fixture", objectId: "cs_test_fixture" }), expect.any(Object));
     processEvent.mockRejectedValue(new Error("synthetic private provider error"));
     const response = await POST(request()); expect(response.status).toBe(503); expect(await response.text()).not.toContain("private provider");
+  });
+  it("separates signed test/live webhook delivery before any business processing", async () => {
+    for (const key of ["STRIPE_SERVICE_SECRET_KEY", "STRIPE_SERVICE_WEBHOOK_SECRET", "STRIPE_SERVICE_ACCOUNT_ID"]) vi.stubEnv(key, "");
+    for (const [key, value] of Object.entries(livePaymentEnvironment())) vi.stubEnv(key, value!);
+    expect((await POST(request())).status).toBe(400); // Correctly signed with the other mode's secret.
+    const payload = (livemode: boolean) => JSON.stringify({ id: "evt_live_fixture", type: "checkout.session.completed", livemode, data: { object: { id: "cs_live_fixture" } } });
+    function signed(livemode: boolean) { const body = payload(livemode); return new Request("https://payments.example.com/api/service-payments/stripe", { method: "POST", body, headers: { "stripe-signature": stripe.webhooks.generateTestHeaderString({ payload: body, secret: "whsec_livefixture" }) } }); }
+    expect((await POST(signed(false))).status).toBe(400);
+    expect(processEvent).not.toHaveBeenCalled();
+    expect((await POST(signed(true))).status).toBe(200);
+    expect(processEvent).toHaveBeenCalledWith(expect.objectContaining({ livemode: true }), expect.objectContaining({ configuration: expect.objectContaining({ mode: "live" }) }));
   });
 });

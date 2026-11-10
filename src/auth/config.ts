@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { authSchema } from "@/db/schema";
 import { serverEnv } from "@/lib/env";
 import { authOriginOptions } from "./origins";
+import { authEnrollmentOptions } from "./enrollment";
 
 export const auth = betterAuth({
   appName: "Virelantic",
@@ -14,9 +15,7 @@ export const auth = betterAuth({
     provider: "pg",
     schema: authSchema,
   }),
-  emailAndPassword: {
-    enabled: true,
-  },
+  ...authEnrollmentOptions(serverEnv),
   // Shared database storage preserves Better Auth's atomic special endpoint rules
   // across serverless instances; origin/CSRF checks remain enabled.
   rateLimit: { enabled: true, storage: "database" },

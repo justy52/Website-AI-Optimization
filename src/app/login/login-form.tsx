@@ -8,18 +8,19 @@ import { useRouter } from "next/navigation";
 
 type Mode = "sign-in" | "sign-up";
 
-export function LoginForm() {
+export function LoginForm({ signupEnabled }: { signupEnabled: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("sign-in");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const activeMode = signupEnabled ? mode : "sign-in";
 
   async function submit(formData: FormData) {
     setError(null);
     setPending(true);
 
     const endpoint =
-      mode === "sign-in" ? "/api/auth/sign-in/email" : "/api/auth/sign-up/email";
+      activeMode === "sign-in" ? "/api/auth/sign-in/email" : "/api/auth/sign-up/email";
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -51,22 +52,23 @@ export function LoginForm() {
       <h1 className="mx-title">Website & AI Optimization</h1>
       <div className="mx-segment">
         <button
-          className={mode === "sign-in" ? "is-active" : ""}
+          className={activeMode === "sign-in" ? "is-active" : ""}
           onClick={() => setMode("sign-in")}
           type="button"
         >
           Sign in
         </button>
-        <button
-          className={mode === "sign-up" ? "is-active" : ""}
+        {signupEnabled ? <button
+          className={activeMode === "sign-up" ? "is-active" : ""}
           onClick={() => setMode("sign-up")}
           type="button"
         >
           Create account
-        </button>
+        </button> : null}
       </div>
+      {!signupEnabled ? <p className="mx-muted">Account creation is closed. Contact your workspace owner for access.</p> : null}
       <form action={submit} className="mx-form">
-        {mode === "sign-up" ? (
+        {activeMode === "sign-up" ? (
           <label>
             Name
             <input className="mx-input" name="name" required type="text" />

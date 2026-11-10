@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { getOptionalAuthenticatedUser } from "@/server/auth";
+import { enrollmentPolicy } from "@/auth/enrollment";
+import { serverEnv } from "@/lib/env";
 
 import { LoginForm } from "./login-form";
 
@@ -15,7 +17,7 @@ export default async function LoginPage() {
     <main className="mx-auth-root">
       <div className="mx-rain" aria-hidden />
       <div className="mx-scan" aria-hidden />
-      <LoginForm />
+      <LoginForm signupEnabled={enrollmentPolicy(serverEnv).signupEnabled} />
     </main>
   );
 }

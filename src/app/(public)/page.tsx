@@ -3,15 +3,17 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { AuditRequestForm } from "./request-form";
 import { getIntakeConfig } from "@/server/intake-config";
+import { business } from "@/domain/intake/business";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Virelantic | Know what to fix next",
-  description: "A clear website and search fundamentals audit, with practical priorities for conversion and AI readiness. Request a $495 Digital Visibility Audit.",
+  description: "A manually reviewed website and search fundamentals audit for U.S. businesses. US$495 one time, with scope and delivery date agreed before payment.",
+  alternates: { canonical: "https://virelantic.com" },
 };
 
 const questions = [
-  ["Does this request place an order?", "No. The Digital Visibility Audit is $495 one time. We confirm the specific checks, exclusions, delivery date and terms with you before payment. This form takes no payment."],
+  ["Does this request place an order?", "No. The Digital Visibility Audit is US$495 one time, plus any applicable tax identified in your offer. We agree the checks, exclusions, delivery date and terms before payment. After acceptance, the owner reviews a private Stripe invoice. This form takes no payment and creates no subscription."],
   ["What will you check?", "We agree the pages and evidence sources before work begins. Website clarity, search fundamentals, structured-data signals and the main customer journey can be included. Connected account data and specialist measurements are included only when access and scope are confirmed. The report identifies checked pages and dates, manual observations and unavailable evidence."],
   ["Will you make changes to my website?", "The audit provides findings and priorities. Implementation is quoted and authorized separately. You can share the recommendations with your current website provider."],
   ["What does AI readiness mean?", "It concerns how clearly your website explains your business and how accessible its information is. It does not guarantee inclusion or ranking in an AI answer. Any separately agreed AI-response observations identify their source, prompts and date; they are a sample, not universal visibility."],
@@ -32,8 +34,8 @@ export default function LandingPage() {
           <h1>Know what<br />to fix <em>next.</em></h1>
           <p className="vl-lead">A clear audit of your website and search fundamentals, with practical recommendations for conversion and AI readiness.</p>
           <a className="vl-button" href="#request">Request an audit <span aria-hidden>↗</span></a>
-          <p className="vl-price">Digital Visibility Audit <strong>$495</strong> <span>one time</span></p>
-          <p className="vl-fine">Scope and delivery date confirmed before payment.<br />Implementation quoted separately.</p>
+          <p className="vl-price">Digital Visibility Audit <strong>US$495</strong> <span>one time</span></p>
+          <p className="vl-fine">U.S. customers · Any applicable tax stated in your offer.<br />Scope and delivery date agreed before a private Stripe invoice.<br />Implementation quoted separately.</p>
         </div>
         <div className="vl-report" aria-label="Illustration of the report structure; no client results shown">
           <div className="vl-report-top"><span className="vl-dot" /> VIRELANTIC / FIELD NOTES</div>
@@ -60,8 +62,8 @@ export default function LandingPage() {
         <ol><li><span>01</span><div><h3>Tell us about your website</h3><p>Share your business, website and main goal. No account, payment details or passwords required.</p></div></li><li><span>02</span><div><h3>Confirm the scope and date</h3><p>We review fit and confirm the checks, exclusions, price, delivery date and terms before payment.</p></div></li><li><span>03</span><div><h3>Get findings and next steps</h3><p>After the agreed review, receive a report explaining the evidence and priorities. Decide separately how to implement the recommendations.</p></div></li></ol>
       </div></section>
       <section className="vl-section vl-wrap vl-faq" id="questions"><div><p className="vl-eyebrow">03 / Good questions</p><h2>Clear from<br />the start.</h2></div><div>{questions.map(([question, answer]) => <details key={question}><summary>{question}<span aria-hidden>+</span></summary><p>{answer}</p></details>)}</div></section>
-      <section className="vl-section vl-wrap vl-request" id="request"><div><p className="vl-eyebrow">04 / Your next move</p><h2>Let’s look at<br />your website.</h2><p className="vl-lead">Tell us what you want it to do better.</p><p>The Digital Visibility Audit is <strong>$495 one time</strong>. We confirm the scope and delivery date before payment. This request does not place an order.</p><p className="vl-fine">Please share only business contact details. Don’t include passwords, payment information or private customer data.</p></div><AuditRequestForm enabled={!!config && process.env.PUBLIC_INTAKE_ENABLED === "true"} /></section>
+      <section className="vl-section vl-wrap vl-request" id="request"><div><p className="vl-eyebrow">04 / Your next move</p><h2>Let’s look at<br />your website.</h2><p className="vl-lead">Tell us what you want it to do better.</p><p>The Digital Visibility Audit is <strong>US$495 one time</strong>. We confirm the scope and delivery date before payment. This request does not place an order.</p><p className="vl-fine">Please share only business contact details. Don’t include passwords, payment information or private customer data.</p></div><AuditRequestForm enabled={!!config && process.env.PUBLIC_INTAKE_ENABLED === "true"} /></section>
     </main>
-    <footer className="vl-footer vl-wrap"><div><Image src="/virelantic-logo.svg" alt="Virelantic" width={165} height={45} /><p>{config?.PUBLIC_BUSINESS_NAME ?? "Virelantic"}</p>{config ? <a href={`mailto:${config.PUBLIC_CONTACT_EMAIL}`}>{config.PUBLIC_CONTACT_EMAIL}</a> : null}</div><div><Link href="/privacy">Privacy notice</Link><Link href="/audit-terms">About the audit</Link><Link href="/dashboard">Operator sign in</Link></div><p>Know what to fix next.</p></footer>
+    <footer className="vl-footer vl-wrap"><div><Image src="/virelantic-logo.svg" alt="Virelantic" width={165} height={45} /><p>{business.seller}</p><p>{business.location} · U.S. customers</p><a href={`mailto:${business.email}`}>{business.email}</a></div><div><Link href="/privacy">Privacy notice</Link><Link href="/audit-terms">Service terms</Link><Link href="/refunds">Cancellation and refunds</Link><Link href="/dashboard">Operator sign in</Link></div><p>Know what to fix next.</p></footer>
   </>;
 }

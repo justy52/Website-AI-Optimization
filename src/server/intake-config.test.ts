@@ -11,6 +11,14 @@ describe("intake configuration", () => {
   it("keeps business facts and operator review available when submissions are closed", () => {
     expect(getIntakeConfig({...valid,PUBLIC_INTAKE_ENABLED:"false"},false)).not.toBeNull();
   });
+  it("accepts private Secret names without the legacy public prefix", () => {
+    const { PUBLIC_INTAKE_DATABASE_URL, PUBLIC_INTAKE_SECRET, ...facts } = valid;
+    expect(getIntakeConfig({...facts,VIRELANTIC_INTAKE_DATABASE_URL:PUBLIC_INTAKE_DATABASE_URL,VIRELANTIC_INTAKE_SECRET:PUBLIC_INTAKE_SECRET})).toEqual(getIntakeConfig(valid));
+  });
+  it("validates the preferred private credential rather than falling back to a legacy value", () => {
+    expect(getIntakeConfig({...valid,VIRELANTIC_INTAKE_DATABASE_URL:'postgresql://app_owner:synthetic@db.example.com/app'})).toBeNull();
+    expect(getIntakeConfig({...valid,VIRELANTIC_INTAKE_SECRET:''})).toBeNull();
+  });
   it("requires a restricted submission role and a single secure origin", () => {
     expect(getIntakeConfig(valid)).not.toBeNull();
     expect(getIntakeConfig({...valid,PUBLIC_INTAKE_DATABASE_URL:"postgresql://app_owner:synthetic@db.example.com/app"})).toBeNull();

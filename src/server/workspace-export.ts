@@ -25,7 +25,7 @@ export async function exportWorkspace(c: WorkspaceContext, requestedWorkspaceId 
     const snapshot = result.rows[0].snapshot as { workspace: unknown; exportedAt: string; data: Record<string, unknown[]> };
     if (!snapshot.workspace) throw new OperationsValidationError("Workspace not found.");
     if (Object.values(snapshot.data).some(rows => rows.length > 1000)) throw new OperationsValidationError("This workspace exceeds the V1 export limit of 1,000 rows per entity. Ask an operator for a scoped database export.");
-    const payload = { exportVersion: "optiq-workspace-v1", schemaVersion: "0018", workspace: snapshot.workspace, exportedAt: snapshot.exportedAt, counts: Object.fromEntries(EXPORT_ENTITIES.map(name => [name, snapshot.data[name].length])), data: redactExport(snapshot.data) };
+    const payload = { exportVersion: "optiq-workspace-v1", schemaVersion: "0026", workspace: snapshot.workspace, exportedAt: snapshot.exportedAt, counts: Object.fromEntries(EXPORT_ENTITIES.map(name => [name, snapshot.data[name].length])), data: redactExport(snapshot.data) };
     const json = JSON.stringify(payload, null, 2);
     if (Buffer.byteLength(json, "utf8") > 10 * 1024 * 1024) throw new OperationsValidationError("Export exceeds the 10 MiB V1 limit. Ask an operator for a scoped database export.");
     await operationalEvent(tx, c, "operations.exported", { exportVersion: payload.exportVersion, counts: payload.counts });

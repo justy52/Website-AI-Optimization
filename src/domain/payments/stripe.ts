@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { ServicePaymentError, type SessionSnapshot } from "./policy";
+import { SERVICE_PAYMENT_EVENTS, STRIPE_SERVICE_API_VERSION, ServicePaymentError, type PaymentConfiguration, type SessionSnapshot } from "./policy";
 
 export type CheckoutRequest = {
   paymentId: string; orderId: string; email: string; amountCents: number;
@@ -7,7 +7,7 @@ export type CheckoutRequest = {
 };
 export type ProviderSession = SessionSnapshot & { url: string | null; financialReview: boolean };
 export interface ServicePaymentProvider {
-  verifyAccount(): Promise<void>;
+  verifyAccount(purpose?: "collection" | "reconciliation"): Promise<void>;
   createCheckout(input: CheckoutRequest): Promise<ProviderSession>;
   retrieveCheckout(id: string): Promise<ProviderSession>;
   paymentIdForCharge(chargeId: string): Promise<string | undefined>;
@@ -16,14 +16,19 @@ export type PaymentEvent = { id: string; type: string; livemode: boolean; accoun
 
 export class StripeServicePayments implements ServicePaymentProvider {
   readonly stripe: Stripe;
-  constructor(secretKey: string, private readonly accountId: string) {
-    // Never use this adapter to make live requests, even when directly instantiated.
-    if (!/^(sk|rk)_test_/.test(secretKey)) throw new ServicePaymentError("Test keys only.");
-    this.stripe = new Stripe(secretKey, { maxNetworkRetries: 1, timeout: 15000 });
+  constructor(private readonly config: PaymentConfiguration) {
+    if (!["test", "live"].includes(config.mode) || !new RegExp(`^(sk|rk)_${config.mode}_[A-Za-z0-9]+$`).test(config.secretKey) || (config.mode === "live" && !config.live)) throw new ServicePaymentError("Payment credentials do not match the explicit configuration.");
+    this.stripe = new Stripe(config.secretKey, { apiVersion: STRIPE_SERVICE_API_VERSION, maxNetworkRetries: 1, timeout: 15000 });
   }
-  async verifyAccount() {
-    const account: { id: string } = await this.stripe.rawRequest("GET", "/v1/account");
-    if (account.id !== this.accountId) throw new ServicePaymentError("Stripe key belongs to a different merchant account.");
+  async verifyAccount(purpose: "collection" | "reconciliation" = "collection") {
+    const account: Stripe.Account = await this.stripe.rawRequest("GET", "/v1/account");
+    if (account.id !== this.config.accountId) throw new ServicePaymentError("Stripe key belongs to a different merchant account.");
+    if (this.config.mode === "live" && purpose === "collection") {
+      const requirements = account.requirements;
+      if (!account.charges_enabled || !account.payouts_enabled || !account.details_submitted || account.capabilities?.card_payments !== "active" || !requirements || requirements.disabled_reason || (requirements.currently_due?.length ?? 0) > 0 || (requirements.past_due?.length ?? 0) > 0 || (requirements.pending_verification?.length ?? 0) > 0) throw new ServicePaymentError("Merchant activation, payouts, card capability or account verification is incomplete.");
+      const endpoint = await this.stripe.webhookEndpoints.retrieve(this.config.live!.webhookEndpointId);
+      if (endpoint.id !== this.config.live!.webhookEndpointId || endpoint.livemode !== true || endpoint.status !== "enabled" || endpoint.url !== `${this.config.baseUrl}/api/service-payments/stripe` || endpoint.api_version !== STRIPE_SERVICE_API_VERSION || endpoint.enabled_events.length !== SERVICE_PAYMENT_EVENTS.length || !SERVICE_PAYMENT_EVENTS.every(type => endpoint.enabled_events.includes(type))) throw new ServicePaymentError("Live webhook endpoint mode, origin, version or event selection does not match the approved configuration.");
+    }
   }
   private async normalize(session: Stripe.Checkout.Session): Promise<ProviderSession> {
     let financialReview = false;
@@ -32,11 +37,17 @@ export class StripeServicePayments implements ServicePaymentProvider {
       const charge = intent.latest_charge;
       financialReview = typeof charge === "object" && charge !== null && (charge.refunded || charge.amount_refunded > 0 || charge.disputed);
     }
+    if (session.livemode !== (this.config.mode === "live")) throw new ServicePaymentError("Provider session belongs to the other payment mode.");
     return { ...session, financialReview };
   }
   async createCheckout(input: CheckoutRequest) {
-    const customer = await this.stripe.customers.create({ email: input.email, metadata: { service_order_id: input.orderId } }, { idempotencyKey: `service-customer:${input.paymentId}` });
-    const metadata = { service_payment_id: input.paymentId, service_order_id: input.orderId };
+    if (!this.config.collectionEnabled) throw new ServicePaymentError("Live collection is held.");
+    const live = this.config.mode === "live";
+    // Preserve the tested request/key shape for uncertain legacy test reservations.
+    const namespace = live ? "service-live" : "service";
+    const customer = await this.stripe.customers.create({ email: input.email, metadata: { service_order_id: input.orderId, ...(live ? { service_payment_mode: "live" } : {}) } }, { idempotencyKey: `${namespace}-customer:${input.paymentId}` });
+    if (customer.livemode !== live) throw new ServicePaymentError("Provider customer belongs to the other payment mode.");
+    const metadata = { service_payment_id: input.paymentId, service_order_id: input.orderId, ...(live ? { service_payment_mode: "live" } : {}) };
     const session = await this.stripe.checkout.sessions.create({
       mode: "payment", customer: customer.id,
       allowed_payment_method_types: ["card"],
@@ -45,13 +56,13 @@ export class StripeServicePayments implements ServicePaymentProvider {
       metadata, payment_intent_data: { metadata },
       expires_at: Math.floor(input.expiresAt.getTime() / 1000),
       success_url: `${input.baseUrl}/service-payment/return`, cancel_url: `${input.baseUrl}/service-payment/return?canceled=1`,
-    }, { idempotencyKey: `service-checkout:${input.paymentId}` });
+    }, { idempotencyKey: `${namespace}-checkout:${input.paymentId}` });
     return this.normalize(session);
   }
   async retrieveCheckout(id: string) { return this.normalize(await this.stripe.checkout.sessions.retrieve(id)); }
   async paymentIdForCharge(id: string) {
     const charge = await this.stripe.charges.retrieve(id);
-    if (charge.livemode) throw new ServicePaymentError("Live charge rejected.");
+    if (charge.livemode !== (this.config.mode === "live")) throw new ServicePaymentError("Charge belongs to the other payment mode.");
     return charge.metadata.service_payment_id;
   }
 }

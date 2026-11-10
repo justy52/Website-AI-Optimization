@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { serverEnv } from "@/lib/env";
+import { enrollmentPolicy } from "@/auth/enrollment";
 
 // Catalog/control checks only. Do not read customer records or make provider calls.
 export async function productionReadiness(database = db) {
@@ -10,6 +11,7 @@ export async function productionReadiness(database = db) {
     tenantPolicies: false,
     automationControl: false,
     operatorConfigured: Boolean(serverEnv.PLATFORM_OPERATOR_USER_IDS?.trim()),
+    enrollmentClosed: !enrollmentPolicy(serverEnv).signupEnabled,
     environment: serverEnv.APP_ENV === "production" && process.env.VERCEL_ENV === "production",
   };
   let automationPaused = true;

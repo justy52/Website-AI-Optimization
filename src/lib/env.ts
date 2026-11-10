@@ -33,17 +33,24 @@ const rawEnvSchema = z.object({
   DATABASE_URL_UNPOOLED: optionalNonEmpty,
   BETTER_AUTH_SECRET: optionalNonEmpty,
   BETTER_AUTH_URL: optionalNonEmpty,
+  AUTH_SIGNUP_ENABLED: z.preprocess(
+    value => value === "" ? undefined : value,
+    z.enum(["true", "false"]).optional(),
+  ),
+  AUTH_ENROLLMENT_EMAILS: optionalNonEmpty,
   CREDENTIAL_ENCRYPTION_KEY: optionalNonEmpty,
   CREDENTIAL_KEY_VERSION: versionString,
   CREDENTIAL_ENCRYPTION_KEY_RING: optionalNonEmpty,
   AI_GATEWAY_API_KEY: optionalNonEmpty,
   AI_GATEWAY_MODEL: optionalNonEmpty,
+  OPENAI_API_KEY: optionalNonEmpty,
+  GOOGLE_PAGESPEED_API_KEY: optionalNonEmpty,
   VERCEL: optionalNonEmpty,
   VERCEL_URL: optionalNonEmpty,
   VERCEL_BRANCH_URL: optionalNonEmpty,
   VERCEL_OIDC_TOKEN: optionalNonEmpty,
   AGENT_PROVIDER: z
-    .enum(["deterministic", "ai_gateway"])
+    .enum(["deterministic", "ai_gateway", "openai_direct"])
     .optional()
     .default("deterministic"),
   BLOB_READ_WRITE_TOKEN: optionalNonEmpty,
@@ -53,6 +60,7 @@ const rawEnvSchema = z.object({
   CRON_SECRET: optionalNonEmpty,
   QA_EXECUTE_ENABLED: z.enum(["true", "false"]).optional().transform(value => value === "true"),
   PERPLEXITY_API_KEY: optionalNonEmpty,
+  AI_VISIBILITY_PROVIDER: z.enum(["perplexity", "openai"]).optional().default("perplexity"),
   PLATFORM_OPERATOR_USER_IDS: optionalNonEmpty,
   AUTOMATION_EMERGENCY_STOP: z.enum(["true", "false"]).optional().transform(value => value === "true"),
   GEMINI_API_KEY: optionalNonEmpty,
@@ -161,6 +169,9 @@ function assertRequiredValues(
         `Missing AI Gateway authentication for ${appEnv}: use Vercel OIDC on Vercel or provide a scoped AI_GATEWAY_API_KEY.`,
       );
     }
+  }
+  if (env.AGENT_PROVIDER === "openai_direct" && !env.OPENAI_API_KEY) {
+    throw new Error("Missing OPENAI_API_KEY for direct OpenAI access.");
   }
 }
 

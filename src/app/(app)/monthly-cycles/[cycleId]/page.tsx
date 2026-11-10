@@ -642,6 +642,10 @@ export default async function MonthlyCycleDetailPage({
                   Finalize report
                 </button>
               </form>
+            ) : detail.report.immutableSnapshot ? (
+              <a className="mx-btn" href={`/api/reports/monthly/${detail.report.id}/download`}>
+                Download finalized report
+              </a>
             ) : null}
           </div>
         ) : (

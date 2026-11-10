@@ -7,6 +7,9 @@ import { listWebsites } from "@/server/revenue";
 import { startAuditAction } from "./actions";
 import { EmptyState, formatDate, PageHeader, Panel, RowLink, StatusChip } from "../ui";
 
+// A mobile lab measurement can take over a minute before the audit is saved.
+export const maxDuration = 120;
+
 export default async function AuditsPage() {
   const shell = await getWorkspaceShellContext();
   const [websites, audits] = await Promise.all([

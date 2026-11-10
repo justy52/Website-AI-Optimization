@@ -316,7 +316,7 @@ export function shouldAutoCreateOpportunity(
 
   return (
     source.status === "FAIL" ||
-    (source.status === "WARNING" && source.maxPenaltyWeight >= 12)
+    (source.status === "WARNING" && (source.maxPenaltyWeight >= 12 || source.checkKey === "seo.meta_description"))
   );
 }
 

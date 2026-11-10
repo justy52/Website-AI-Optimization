@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { FORM_VERSION, PRIVACY_VERSION } from "@/domain/intake/constants";
+import { business } from "@/domain/intake/business";
 
 export function AuditRequestForm({ enabled }: { enabled: boolean }) {
   const [nonce, setNonce] = useState("");
@@ -54,7 +55,7 @@ export function AuditRequestForm({ enabled }: { enabled: boolean }) {
     finally { setPending(false); requestAnimationFrame(() => message.current?.focus()); }
   }
 
-  if (!enabled) return <div className="vl-form vl-unavailable" role="status"><h3>Audit requests are currently closed.</h3><p>Please check back when intake is available.</p></div>;
+  if (!enabled) return <div className="vl-form vl-unavailable" role="status"><h3>Audit requests are currently closed.</h3><p>For an enquiry, email <a href={`mailto:${business.email}`}>{business.email}</a>. Do not include passwords, payment details or private customer data.</p></div>;
   if (received) return <div className="vl-form vl-success"><span aria-hidden>↗</span><h3>Your audit request has been received.</h3><p ref={message} tabIndex={-1} role="status">We’ll review the details and email you about scope and next steps. No payment has been taken.</p></div>;
   const issue = (name: string) => fields[name] ? <span className="vl-field-error" id={`${name}-error`}>{fields[name]}</span> : null;
   const props = (name: string) => ({ "aria-invalid": !!fields[name], "aria-describedby": fields[name] ? `${name}-error` : undefined });
@@ -71,6 +72,6 @@ export function AuditRequestForm({ enabled }: { enabled: boolean }) {
       {error ? <p className="vl-error" role="alert" ref={message} tabIndex={-1}>{error}</p> : null}
       <button className="vl-button" type="submit" disabled={pending}>{pending ? "Saving your request…" : "Request an audit"}<span aria-hidden>↗</span></button>
     </fieldset>
-    <noscript><p>This secure form needs JavaScript. Please enable it to send your request.</p></noscript>
+    <noscript><p>This secure form needs JavaScript. You can also email {business.email} with your business website and goal.</p></noscript>
   </form>;
 }

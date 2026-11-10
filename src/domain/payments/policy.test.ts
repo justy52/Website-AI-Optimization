@@ -11,7 +11,7 @@ describe("Test service payment policy", () => {
     expect(() => paymentConfiguration({})).toThrow();
     expect(paymentConfiguration(configuration).baseUrl).toBe("http://localhost:3000");
     for (const change of [{ SERVICE_PAYMENTS_MODE: "live" }, { STRIPE_SERVICE_SECRET_KEY: "sk_live_fake" }, { APP_ENV: "production" }, { VERCEL_ENV: "production" }, { SERVICE_PAYMENTS_BASE_URL: "http://example.com" }, { SERVICE_PAYMENTS_BASE_URL: "https://example.com/path" }]) expect(() => paymentConfiguration({ ...configuration, ...change })).toThrow();
-    expect(() => new StripeServicePayments("sk_live_fake", "acct_fake")).toThrow();
+    expect(() => new StripeServicePayments({ ...paymentConfiguration(configuration), secretKey: "sk_live_fake" })).toThrow();
   });
   it("refuses underpriced audits, recurring plans, and unsigned or invented schedules", () => {
     const data = { clientId: configuration.SERVICE_PAYMENTS_WORKSPACE_ID, websiteId: configuration.SERVICE_PAYMENTS_WORKSPACE_ID, service: "AUDIT_ONLY", scopeReference: "signed-test", scopeSha256: "a".repeat(64), termsVersion: "terms-1", signedAt: "2026-01-01T00:00:00Z", customerEmail: "test@example.com", deliveryOperator: "Test operator", totalCents: 49500, depositCents: 49500 };

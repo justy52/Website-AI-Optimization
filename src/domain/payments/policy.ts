@@ -58,20 +58,54 @@ export function readiness(service: string, gates: OnboardingEvidence, payment: s
   return blocked;
 }
 
-export function paymentConfiguration(source: Record<string, string | undefined> = process.env) {
-  if (source.SERVICE_PAYMENTS_MODE !== "test") throw new ServicePaymentError("Service payments are disabled. Test mode must be explicitly enabled.");
-  if (source.APP_ENV === "production" || source.VERCEL_ENV === "production") throw new ServicePaymentError("Test service payments cannot run in production.");
-  if (!/^(sk|rk)_test_[A-Za-z0-9]+$/.test(source.STRIPE_SERVICE_SECRET_KEY ?? "")) throw new ServicePaymentError("A Stripe test secret or restricted key is required.");
-  if (!/^acct_[A-Za-z0-9]+$/.test(source.STRIPE_SERVICE_ACCOUNT_ID ?? "")) throw new ServicePaymentError("A verified Stripe account ID is required.");
-  const workspaceId = z.uuid().parse(source.SERVICE_PAYMENTS_WORKSPACE_ID);
-  const url = new URL(source.SERVICE_PAYMENTS_BASE_URL ?? "");
-  if (url.username || url.password || url.search || url.hash || url.pathname !== "/" || (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)))) throw new ServicePaymentError("Use an HTTPS application origin (HTTP localhost is allowed).");
-  const webhookSecret = source.STRIPE_SERVICE_WEBHOOK_SECRET;
-  if (!webhookSecret?.startsWith("whsec_")) throw new ServicePaymentError("Configure the test webhook signing secret.");
-  return { workspaceId, accountId: source.STRIPE_SERVICE_ACCOUNT_ID!, secretKey: source.STRIPE_SERVICE_SECRET_KEY!, webhookSecret, baseUrl: url.origin };
+export type PaymentMode = "test" | "live";
+export const STRIPE_SERVICE_API_VERSION = "2026-10-28.endive";
+export const SERVICE_PAYMENT_EVENTS = ["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired", "charge.refunded", "charge.dispute.created"] as const;
+export type PaymentConfiguration = {
+  mode: PaymentMode; collectionEnabled: boolean; workspaceId: string; accountId: string; secretKey: string;
+  webhookSecret: string; baseUrl: string;
+  live?: { approvalReference: string; legalSeller: string; termsVersion: string; webhookEndpointId: string };
+};
+export function paymentConfiguration(source: Record<string, string | undefined> = process.env): PaymentConfiguration {
+  const mode = source.SERVICE_PAYMENTS_MODE;
+  if (mode !== "test" && mode !== "live") throw new ServicePaymentError("Service payments are disabled. Select a fully configured payment mode explicitly.");
+  const production = source.APP_ENV === "production" || source.VERCEL_ENV === "production";
+  if (mode === "test" && production) throw new ServicePaymentError("Test service payments cannot run in production.");
+  if (mode === "live" && (source.NODE_ENV !== "production" || source.APP_ENV !== "production" || (source.VERCEL_ENV && source.VERCEL_ENV !== "production"))) throw new ServicePaymentError("Live payments require an explicit production environment.");
+  if (mode === "live" && source.SERVICE_PAYMENTS_LIVE_ACTIVATION !== "approved-v1") throw new ServicePaymentError("Live payment activation has not been explicitly approved.");
+  const prefix = mode === "test" ? "TEST" : "LIVE";
+  function selected(name: string, legacyName?: string) {
+    const explicit = source[`STRIPE_SERVICE_${prefix}_${name}`];
+    const legacy = legacyName ? source[legacyName] : undefined;
+    if (explicit && legacy && explicit !== legacy) throw new ServicePaymentError("Conflicting legacy and test payment configuration.");
+    return explicit || legacy;
+  }
+  const opposite = mode === "test" ? "LIVE" : "TEST";
+  if (source[`STRIPE_SERVICE_${opposite}_SECRET_KEY`] || (mode === "live" && source.STRIPE_SERVICE_SECRET_KEY)) throw new ServicePaymentError("Do not provision the other payment mode's credentials in this environment.");
+  // Generic legacy variables are accepted only for the previously tested test path.
+  const secretKey = selected("SECRET_KEY", mode === "test" ? "STRIPE_SERVICE_SECRET_KEY" : undefined);
+  if (!new RegExp(`^(sk|rk)_${mode}_[A-Za-z0-9]+$`).test(secretKey ?? "")) throw new ServicePaymentError(`A matching Stripe ${mode} secret or restricted key is required.`);
+  const accountId = selected("ACCOUNT_ID", mode === "test" ? "STRIPE_SERVICE_ACCOUNT_ID" : undefined);
+  if (!/^acct_[A-Za-z0-9]+$/.test(accountId ?? "")) throw new ServicePaymentError("A verified merchant account ID is required.");
+  const workspaceId = z.uuid().parse(mode === "live" ? source.SERVICE_PAYMENTS_LIVE_WORKSPACE_ID : source.SERVICE_PAYMENTS_TEST_WORKSPACE_ID || source.SERVICE_PAYMENTS_WORKSPACE_ID);
+  const url = new URL((mode === "live" ? source.SERVICE_PAYMENTS_LIVE_BASE_URL : source.SERVICE_PAYMENTS_TEST_BASE_URL || source.SERVICE_PAYMENTS_BASE_URL) ?? "");
+  if (url.username || url.password || url.search || url.hash || url.pathname !== "/" || (url.protocol !== "https:" && !(mode === "test" && url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)))) throw new ServicePaymentError("Configure a clean HTTPS application origin; only local test mode permits HTTP.");
+  if (mode === "live" && (!/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(url.hostname) || /\.(localhost|local|internal)$/i.test(url.hostname) || source.BETTER_AUTH_URL !== url.origin)) throw new ServicePaymentError("Live payments require a public HTTPS hostname matching BETTER_AUTH_URL exactly.");
+  const webhookSecret = selected("WEBHOOK_SECRET", mode === "test" ? "STRIPE_SERVICE_WEBHOOK_SECRET" : undefined);
+  if (!/^whsec_[A-Za-z0-9]+$/.test(webhookSecret ?? "")) throw new ServicePaymentError(`Configure the matching ${mode} webhook signing secret.`);
+  let live: PaymentConfiguration["live"];
+  if (mode === "live") {
+    live = {
+      approvalReference: reference.parse(source.SERVICE_PAYMENTS_LIVE_APPROVAL_REFERENCE),
+      legalSeller: reference.parse(source.SERVICE_PAYMENTS_LIVE_LEGAL_SELLER),
+      termsVersion: reference.parse(source.SERVICE_PAYMENTS_LIVE_TERMS_VERSION),
+      webhookEndpointId: z.string().regex(/^we_[A-Za-z0-9]+$/).parse(source.STRIPE_SERVICE_LIVE_WEBHOOK_ENDPOINT_ID),
+    };
+  }
+  return { mode, collectionEnabled: mode === "test" || source.SERVICE_PAYMENTS_LIVE_COLLECTION_ENABLED === "true", workspaceId, accountId: accountId!, secretKey: secretKey!, webhookSecret: webhookSecret!, baseUrl: url.origin, ...(live ? { live } : {}) };
 }
 
-export type PaymentMatch = { id: string; orderId: string; amountCents: number; sessionId: string | null; customerId: string | null };
+export type PaymentMatch = { id: string; orderId: string; amountCents: number; sessionId: string | null; customerId: string | null; paymentMode?: PaymentMode };
 export type SessionSnapshot = {
   id: string; livemode: boolean; mode: string; status: string | null;
   payment_status: string; currency: string | null; amount_total: number | null;
@@ -83,8 +117,9 @@ export function isStripeCheckoutUrl(value: string) {
   return url.protocol === "https:" && url.hostname === "checkout.stripe.com" && !url.username && !url.password;
 }
 export function verifySession(payment: PaymentMatch, session: SessionSnapshot) {
+  const mode = payment.paymentMode ?? "test";
   const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
-  if (session.livemode || session.mode !== "payment" || session.id !== payment.sessionId || !customerId || customerId !== payment.customerId || session.currency !== "usd" || session.amount_total !== payment.amountCents || session.metadata?.service_payment_id !== payment.id || session.metadata?.service_order_id !== payment.orderId) {
+  if (session.livemode !== (mode === "live") || (session.metadata?.service_payment_mode ?? "test") !== mode || session.mode !== "payment" || session.id !== payment.sessionId || !customerId || customerId !== payment.customerId || session.currency !== "usd" || session.amount_total !== payment.amountCents || session.metadata?.service_payment_id !== payment.id || session.metadata?.service_order_id !== payment.orderId) {
     throw new ServicePaymentError("Stripe session does not match the stored service payment.");
   }
   return session.status === "complete" && session.payment_status === "paid";

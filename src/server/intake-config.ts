@@ -11,7 +11,13 @@ const configSchema = z.object({
 
 export function getIntakeConfig(source: Record<string, string | undefined> = process.env, requireEnabled = true) {
   if (requireEnabled && source.PUBLIC_INTAKE_ENABLED !== "true") return null;
-  const result = configSchema.safeParse(source);
+  // New server-only names are accepted by the hosting platform's Secret fields.
+  // Retain the legacy names for existing protected previews.
+  const result = configSchema.safeParse({
+    ...source,
+    PUBLIC_INTAKE_DATABASE_URL: source.VIRELANTIC_INTAKE_DATABASE_URL ?? source.PUBLIC_INTAKE_DATABASE_URL,
+    PUBLIC_INTAKE_SECRET: source.VIRELANTIC_INTAKE_SECRET ?? source.PUBLIC_INTAKE_SECRET,
+  });
   if (!result.success) return null;
   const config = result.data;
   const origin = new URL(config.PUBLIC_INTAKE_ORIGIN);

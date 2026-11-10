@@ -4,10 +4,12 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Lock } from "lucide-react";
 
 import { scoreCategoryKeys } from "@/domain/audits/scoring";
+import { canFinalizeAudit, hasReportableScore } from "@/domain/audits/report";
+import { canManageWorkspace } from "@/domain/tenancy/context";
 import { getAuditDetail } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
 
-import { createReportAction, finalizeAuditAction } from "../actions";
+import { closeStaleAuditRunAction, createReportAction, finalizeAuditAction } from "../actions";
 import {
   formatDate,
   PageHeader,
@@ -22,10 +24,12 @@ function percentFromBasisPoints(value: number | null | undefined) {
 
 export default async function AuditDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ auditId: string }>;
+  searchParams: Promise<{ recovery?: string }>;
 }) {
-  const { auditId } = await params;
+  const [{ auditId }, { recovery }] = await Promise.all([params, searchParams]);
   const shell = await getWorkspaceShellContext();
   const detail = await getAuditDetail(shell.workspaceContext, auditId);
 
@@ -63,9 +67,7 @@ export default async function AuditDetailPage({
         >
           <div className="mx-score-block">
             <span className="mx-score">
-              {run?.overallScore === null || run?.overallScore === undefined
-                ? "No score"
-                : run.overallScore}
+              {hasReportableScore(run?.overallScore, run?.evidenceCoverageBasisPoints) ? run?.overallScore : "No score"}
             </span>
             <div>
               <div className="mx-method">
@@ -80,13 +82,27 @@ export default async function AuditDetailPage({
                 <span>Scoring</span>
                 <span>{detail.audit.scoringDefinitionVersion}</span>
               </div>
-              {run?.provisional ? (
+              {!run ? null : run.provisional ? (
                 <StatusChip tone="warn">Provisional</StatusChip>
               ) : (
                 <StatusChip tone="good">Complete coverage</StatusChip>
               )}
             </div>
           </div>
+          {recovery === "unavailable" ? <p role="alert">The run could not be closed. Review its current status and try again if it is eligible.</p> : null}
+          {run?.status === "CANCELED" && run.errorSummary ? <p>{run.errorSummary}</p> : null}
+          {run && detail.canCloseStaleRun && canManageWorkspace(shell.workspaceContext) ? (
+            <form action={closeStaleAuditRunAction} className="mx-action-stack">
+              <p>This manual audit has been running for at least 15 minutes. Closing it preserves its history and releases its audit slot.</p>
+              <input name="auditId" type="hidden" value={auditId} />
+              <input name="runId" type="hidden" value={run.id} />
+              <label className="mx-label">
+                Reason for closing
+                <input className="mx-input" name="reason" required maxLength={500} />
+              </label>
+              <button className="mx-btn" type="submit">Close stale audit run</button>
+            </form>
+          ) : null}
         </Panel>
         <Panel title="Finalize and report">
           {detail.snapshot ? (
@@ -113,7 +129,7 @@ export default async function AuditDetailPage({
           ) : (
             <form action={finalizeAuditAction} className="mx-action-stack">
               <input name="auditId" type="hidden" value={detail.audit.id} />
-              <button className="mx-btn" disabled={!run} type="submit">
+              <button className="mx-btn" disabled={!run || !canFinalizeAudit(detail.audit.status, run.status)} type="submit">
                 <Lock aria-hidden size={14} />
                 Finalize audit snapshot
               </button>
@@ -135,13 +151,14 @@ export default async function AuditDetailPage({
               <div className="mx-mini-panel" key={category}>
                 <span className="mx-eyebrow">{category}</span>
                 <span className="mx-kpi-value">
-                  {score?.score === null || score?.score === undefined
+                  {category === "aiReadiness" || score?.score === null || score?.score === undefined || score.lowCoverage
                     ? "NA"
                     : score.score}
                 </span>
                 <span className="mx-muted">
                   Coverage {percentFromBasisPoints(score?.evidenceCoverageBasisPoints)}
                 </span>
+                {category === "aiReadiness" && <span className="mx-muted">AI score withheld: core checks are incomplete.</span>}
               </div>
             );
           })}

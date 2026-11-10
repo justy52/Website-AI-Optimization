@@ -10,10 +10,19 @@ import {
   filterModelVisibleBusinessFacts,
   maliciousFixtureInput,
   renderDraftPreview,
+  unsupportedClaimWarnings,
   type ExistingPageOptimizationOutput,
 } from "./page-optimization";
 
 describe("existing page optimization PREPARE agent", () => {
+  it("does not interpret 'in the header' as an unverified service area", () => {
+    const input = maliciousFixtureInput();
+    const output = createDeterministicPageOptimizationOutput(input);
+    output.proposals[0] = { ...output.proposals[0], currentValue: null, proposedValue: "See details", rationale: "Make the action in the header easier to see.", factualBasis: [], evidenceRefs: [] };
+    expect(unsupportedClaimWarnings(output, input)).not.toContainEqual(expect.stringContaining("service area"));
+    output.proposals[0].proposedValue = "Fencing in denver";
+    expect(unsupportedClaimWarnings(output, input)).toContainEqual(expect.stringContaining("service area"));
+  });
   it("creates a valid metadata draft from verified facts", () => {
     const input = maliciousFixtureInput({
       businessFacts: [
@@ -274,6 +283,27 @@ describe("existing page optimization PREPARE agent", () => {
     expect(() => assertPrepareOutputPolicy(output, input)).toThrow(
       /service \/ service availability.*service area \/ location.*pricing \/ discount.*credential.*license.*insurance.*warranty.*guarantee.*award.*statistics.*customer count.*history.*legal \/ compliance.*testimonial \/ review/s,
     );
+  });
+
+  it("does not confuse available facts or a compliant draft with business claims", () => {
+    const input = maliciousFixtureInput();
+    const output = createDeterministicPageOptimizationOutput(input);
+    output.proposals[0].rationale = "The only verified fact available is the name. This is a compliant fallback draft.";
+    expect(() => assertPrepareOutputPolicy(output, input)).not.toThrow();
+  });
+
+  it("still rejects unsupported service availability and legal compliance claims", () => {
+    const input = maliciousFixtureInput();
+    const output = createDeterministicPageOptimizationOutput(input);
+    output.proposals[0].proposedValue = "Appointments are available and compliant with local regulations.";
+    expect(() => assertPrepareOutputPolicy(output, input)).toThrow(/service \/ service availability.*legal \/ compliance/s);
+  });
+
+  it("rejects an unsupported best-in-market claim", () => {
+    const input = maliciousFixtureInput();
+    const output = createDeterministicPageOptimizationOutput(input);
+    output.proposals[0].proposedValue = "Utah's best fence contractor";
+    expect(() => assertPrepareOutputPolicy(output, input)).toThrow(/award/);
   });
 
   it("allows protected claims only when proposal cites matching PUBLIC VERIFIED facts", () => {

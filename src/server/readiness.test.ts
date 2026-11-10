@@ -15,6 +15,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
   serverEnv.PLATFORM_OPERATOR_USER_IDS = "operator-id";
   serverEnv.AUTOMATION_EMERGENCY_STOP = false;
+  serverEnv.AUTH_SIGNUP_ENABLED = undefined;
+  serverEnv.AUTH_ENROLLMENT_EMAILS = undefined;
 });
 
 describe("production dependency readiness", () => {
@@ -38,6 +40,14 @@ describe("production dependency readiness", () => {
     vi.stubEnv("VERCEL_ENV", "production");
     serverEnv.PLATFORM_OPERATOR_USER_IDS = " ";
     expect((await productionReadiness(database())).ready).toBe(false);
+  });
+  it("holds production while temporary enrollment is enabled", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    serverEnv.AUTH_SIGNUP_ENABLED = "true";
+    serverEnv.AUTH_ENROLLMENT_EMAILS = "owner@example.com";
+    const result = await productionReadiness(database());
+    expect(result.ready).toBe(false);
+    expect(result.checks.enrollmentClosed).toBe(false);
   });
   it("fails closed without exposing database errors", async () => {
     const broken = { transaction: async () => { throw new Error("postgresql://private-user:private-password@private-host/customer-db"); } } as unknown as Parameters<typeof productionReadiness>[0];

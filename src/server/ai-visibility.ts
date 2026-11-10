@@ -11,9 +11,13 @@ import { assertWorkspaceRole, type WorkspaceContext } from "@/domain/tenancy/con
 import { buildAliases, eligibleFacts, generateVisibilityPrompts, PARSER_VERSION, PERPLEXITY_SURFACE, PROMPT_TEMPLATE_VERSION, visibilityHash, visibilityLimits, visibilityWindow, VisibilityValidationError, type ObservationSource } from "@/domain/ai-visibility/model";
 import { aggregateVisibility, parseVisibilityAnswer, sampledReportCopy } from "@/domain/ai-visibility/parser";
 import { createPerplexityProvider, PERPLEXITY_ADAPTER_VERSION, PERPLEXITY_MODEL, unavailableProviderResult, VISIBILITY_BUDGET, type ProviderResult, type VisibilityProvider } from "@/domain/ai-visibility/provider";
+import { createOpenAIVisibilityProvider, OPENAI_VISIBILITY_RESERVATION_PER_CALL_USD, OPENAI_VISIBILITY_SURFACE, OPENAI_VISIBILITY_VERSION } from "@/domain/ai-visibility/openai-provider";
+import { DIRECT_OPENAI_MODEL } from "@/domain/agents/openai-direct";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const scoped = (workspaceId: string) => eq(aiVisibilityRuns.workspaceId, workspaceId);
+const usesOpenAI = () => serverEnv.AI_VISIBILITY_PROVIDER === "openai";
+const visibilityConfigured = () => usesOpenAI() ? Boolean(serverEnv.OPENAI_API_KEY) : Boolean(serverEnv.PERPLEXITY_API_KEY);
 const requireId = (id: string) => { if (!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)) throw new VisibilityValidationError("Invalid visibility reference."); };
 function human(context: WorkspaceContext) { assertWorkspaceRole(context, ["OWNER", "ADMIN", "ANALYST"]); }
 async function activity(tx: Tx, context: WorkspaceContext, action: string, id: string) {
@@ -73,30 +77,33 @@ export async function createVisibilityPromptSet(context: WorkspaceContext, websi
   });
 }
 
-export async function requestVisibilityRun(context: WorkspaceContext, websiteId: string, source: ObservationSource = "API", database = db, at = new Date()) {
+export async function requestVisibilityRun(context: WorkspaceContext, websiteId: string, source: ObservationSource = "API", database = db, at = new Date(), options: { pilot?: boolean } = {}) {
   human(context);
   if (source === "MANUAL") throw new VisibilityValidationError("Use the explicitly labeled manual observation form.");
   if (source === "QA_FIXTURE" && serverEnv.APP_ENV !== "qa") throw new VisibilityValidationError("Deterministic visibility fixtures are QA-only.");
+  if (options.pilot && (source !== "API" || !usesOpenAI())) throw new VisibilityValidationError("The one-question test requires the OpenAI visibility provider.");
   // Missing configuration is not a paid attempt and must not occupy a cadence window.
   // Once queued, the durable call reservations and fail-closed recovery still apply.
-  if (source === "API" && !serverEnv.PERPLEXITY_API_KEY) throw new VisibilityValidationError("Perplexity Agent API is not configured for this environment.");
+  if (source === "API" && !visibilityConfigured()) throw new VisibilityValidationError(usesOpenAI() ? "OpenAI web-search API is not configured for this environment." : "Perplexity Agent API is not configured for this environment.");
   await enforceActionRateLimit(context, "visibility", database);
   return withOperationalContext(database, context, async tx => {
     await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, context.workspaceId)).for("update");
     const data = await sourceData(tx, context, websiteId);
     const [set] = await tx.select().from(aiVisibilityPromptSets).where(and(eq(aiVisibilityPromptSets.workspaceId, context.workspaceId), eq(aiVisibilityPromptSets.websiteId, websiteId))).orderBy(desc(aiVisibilityPromptSets.version)).limit(1);
     if (!set || set.contentHash !== data.contentHash) throw new VisibilityValidationError("Generate a current prompt set from verified facts before running observations.");
-    const window = visibilityWindow(at, data.limits.windows);
-    const surface = source === "API" ? PERPLEXITY_SURFACE : "QA deterministic fixture (not provider evidence)";
-    const configured = source === "QA_FIXTURE" || Boolean(serverEnv.PERPLEXITY_API_KEY);
+    const window = visibilityWindow(at, data.limits.windows) + (options.pilot ? ":pilot" : "");
+    const promptCount = options.pilot ? 1 : data.prompts.length;
+    const surface = source === "API" ? (usesOpenAI() ? OPENAI_VISIBILITY_SURFACE : PERPLEXITY_SURFACE) : "QA deterministic fixture (not provider evidence)";
+    const configured = source === "QA_FIXTURE" || visibilityConfigured();
+    const maxEstimatedCostUsd = source !== "API" ? 0 : usesOpenAI() ? promptCount * OPENAI_VISIBILITY_RESERVATION_PER_CALL_USD : VISIBILITY_BUDGET.maxEstimatedCostUsd;
     const idempotencyKey = visibilityHash([context.workspaceId, websiteId, set.id, set.version, surface, window, configured]);
     const [prior] = await tx.select().from(aiVisibilityRuns).where(and(scoped(context.workspaceId), sql`(${aiVisibilityRuns.idempotencyKey}=${idempotencyKey} or (${aiVisibilityRuns.websiteId}=${websiteId} and ${aiVisibilityRuns.surface}=${surface} and ${aiVisibilityRuns.window}=${window} and ${aiVisibilityRuns.source}='API'))`)).limit(1);
     if (prior) return prior;
     const [active] = await tx.select({ id: aiVisibilityRuns.id }).from(aiVisibilityRuns).where(and(scoped(context.workspaceId), inArray(aiVisibilityRuns.status, ["QUEUED", "RUNNING"]))).limit(1);
     if (active) throw new VisibilityValidationError("A visibility workflow is already active in this workspace.");
-    await assertOperationalAdmission(tx, context, "visibility", { workflow: true, costUsd: source === "API" ? VISIBILITY_BUDGET.maxEstimatedCostUsd : 0, visibilityCalls: source === "API" ? data.prompts.length : 0 });
-    const [run] = await tx.insert(aiVisibilityRuns).values({ workspaceId: context.workspaceId, clientId: data.client.id, websiteId, promptSetId: set.id, promptSetVersion: set.version, source, surface, adapterVersion: source === "API" ? PERPLEXITY_ADAPTER_VERSION : "qa-visibility-fixture-v1.0", model: source === "API" ? PERPLEXITY_MODEL : "deterministic-test-fixture", trigger: context.actorType === "SYSTEM" ? "SCHEDULED" : "USER", window, idempotencyKey, context: { localization: "Exact prompt location only", personalization: "NONE", aliases: set.aliases, factHash: set.contentHash }, budget: { ...VISIBILITY_BUDGET, maxPrompts: data.prompts.length, maxCalls: data.prompts.length }, promptCount: data.prompts.length, actorUserId: context.userId, status: "QUEUED" }).returning();
-    await reserveUsage(tx, context, { visibilityRunId: run.id, clientId: run.clientId, websiteId: run.websiteId, sourceKey: `visibility:${run.id}`, provider: source === "API" ? "perplexity" : "deterministic", category: "AI_VISIBILITY", outcome: run.status, reservedCostUsd: String(source === "API" ? VISIBILITY_BUDGET.maxEstimatedCostUsd : 0), reservedCalls: source === "API" ? data.prompts.length : 0, sourceVersion: run.adapterVersion });
+    await assertOperationalAdmission(tx, context, "visibility", { workflow: true, costUsd: maxEstimatedCostUsd, visibilityCalls: source === "API" ? promptCount : 0 });
+    const [run] = await tx.insert(aiVisibilityRuns).values({ workspaceId: context.workspaceId, clientId: data.client.id, websiteId, promptSetId: set.id, promptSetVersion: set.version, source, surface, adapterVersion: source === "API" ? (usesOpenAI() ? OPENAI_VISIBILITY_VERSION : PERPLEXITY_ADAPTER_VERSION) : "qa-visibility-fixture-v1.0", model: source === "API" ? (usesOpenAI() ? DIRECT_OPENAI_MODEL : PERPLEXITY_MODEL) : "deterministic-test-fixture", trigger: context.actorType === "SYSTEM" ? "SCHEDULED" : "USER", window, idempotencyKey, context: { localization: "Exact prompt location only", personalization: "NONE", aliases: set.aliases, factHash: set.contentHash, pilot: !!options.pilot }, budget: { ...VISIBILITY_BUDGET, maxEstimatedCostUsd, maxPrompts: promptCount, maxCalls: promptCount }, promptCount, actorUserId: context.userId, status: "QUEUED" }).returning();
+    await reserveUsage(tx, context, { visibilityRunId: run.id, clientId: run.clientId, websiteId: run.websiteId, sourceKey: `visibility:${run.id}`, provider: source === "API" ? (usesOpenAI() ? "openai-web-search" : "perplexity") : "deterministic", category: "AI_VISIBILITY", outcome: run.status, reservedCostUsd: String(maxEstimatedCostUsd), reservedCalls: source === "API" ? promptCount : 0, sourceVersion: run.adapterVersion });
     await activity(tx, context, "ai_visibility.run_queued", run.id);
     return run;
   });
@@ -157,10 +164,10 @@ export async function observeVisibilityPrompt(context: WorkspaceContext, runId: 
     try { const current = await sourceData(tx, context, run.websiteId); if (current.contentHash !== set.contentHash || current.limits.prompts < run.promptCount || !current.limits.surfaces) unavailable = "FACTS_OR_ENTITLEMENTS_CHANGED"; }
     catch (error) { if (error instanceof VisibilityValidationError) unavailable = "VERIFIED_FACTS_UNAVAILABLE"; else throw error; }
     if (run.source === "QA_FIXTURE" && serverEnv.APP_ENV !== "qa") unavailable = "QA_FIXTURE_DISABLED";
-    if (run.source === "API" && !serverEnv.PERPLEXITY_API_KEY && !testProvider) unavailable = "PROVIDER_NOT_CONFIGURED";
+    if (run.source === "API" && !(run.adapterVersion === OPENAI_VISIBILITY_VERSION ? serverEnv.OPENAI_API_KEY : serverEnv.PERPLEXITY_API_KEY) && !testProvider) unavailable = "PROVIDER_NOT_CONFIGURED";
     const previous = await tx.select({ status: aiVisibilityObservations.status, usage: aiVisibilityObservations.usage }).from(aiVisibilityObservations).where(and(eq(aiVisibilityObservations.workspaceId, context.workspaceId), eq(aiVisibilityObservations.runId, run.id)));
     if (previous.some(o => o.status === "FAILED")) unavailable = "PROVIDER_RUN_STOPPED_AFTER_ERROR";
-    if (previous.reduce((total, o) => total + Number(o.usage.costUsd ?? 0), 0) >= VISIBILITY_BUDGET.maxEstimatedCostUsd) unavailable = "PROVIDER_COST_BUDGET_EXHAUSTED";
+    if (run.source === "API" && previous.reduce((total, o) => total + Number(o.usage.costUsd ?? 0), 0) >= run.budget.maxEstimatedCostUsd) unavailable = "PROVIDER_COST_BUDGET_EXHAUSTED";
     const [count] = await tx.select({ n: sql<number>`count(*)::int` }).from(aiVisibilityCalls).where(and(eq(aiVisibilityCalls.workspaceId, context.workspaceId), eq(aiVisibilityCalls.runId, runId)));
     if (count.n >= Math.min(run.budget.maxCalls, VISIBILITY_BUDGET.maxCalls)) unavailable = "PROVIDER_CALL_BUDGET_EXHAUSTED";
     const [call] = await tx.insert(aiVisibilityCalls).values({ workspaceId: context.workspaceId, promptSetId: set.id, runId, promptId }).returning();
@@ -170,8 +177,8 @@ export async function observeVisibilityPrompt(context: WorkspaceContext, runId: 
   if (!prepared) return;
   const { run, set, prompt, call } = prepared;
   if (testProvider && process.env.NODE_ENV !== "test") throw new Error("Test provider injection is unavailable outside tests.");
-  const provider = testProvider ?? (run.source === "QA_FIXTURE" ? fixtureProvider(set) : createPerplexityProvider(serverEnv.PERPLEXITY_API_KEY));
-  const response = prepared.unavailable ? unavailableProviderResult(prepared.unavailable) : await provider.observe(prompt.renderedPrompt);
+  const provider = testProvider ?? (run.source === "QA_FIXTURE" ? fixtureProvider(set) : run.adapterVersion === OPENAI_VISIBILITY_VERSION ? createOpenAIVisibilityProvider(serverEnv.OPENAI_API_KEY) : createPerplexityProvider(serverEnv.PERPLEXITY_API_KEY));
+  const response = prepared.unavailable ? { ...unavailableProviderResult(prepared.unavailable), model: run.model } : await provider.observe(prompt.renderedPrompt);
   await withTenantContext(database, context, async tx => {
     const [locked] = await tx.select().from(aiVisibilityRuns).where(and(scoped(context.workspaceId), eq(aiVisibilityRuns.id, runId))).for("update");
     if (!locked.completedAt) await persistObservation(tx, context, run, set, prompt, call.id, response);
@@ -228,7 +235,7 @@ export async function getVisibilityPanel(context: WorkspaceContext, websiteId: s
     const observations = runs.length ? await tx.select().from(aiVisibilityObservations).where(and(eq(aiVisibilityObservations.workspaceId, context.workspaceId), inArray(aiVisibilityObservations.runId, runs.map(r => r.id)))).orderBy(desc(aiVisibilityObservations.observedAt)) : [];
     let factStatus = "READY";
     try { await sourceData(tx, context, websiteId); } catch (error) { if (error instanceof VisibilityValidationError) factStatus = error.message; else throw error; }
-    return { ...target, limits: visibilityLimits(target.client.servicePlan, target.client.servicePlanVersion), sets, prompts, runs, observations, configured: Boolean(serverEnv.PERPLEXITY_API_KEY), factStatus, qa: serverEnv.APP_ENV === "qa" };
+    return { ...target, limits: visibilityLimits(target.client.servicePlan, target.client.servicePlanVersion), sets, prompts, runs, observations, configured: visibilityConfigured(), surface: usesOpenAI() ? OPENAI_VISIBILITY_SURFACE : PERPLEXITY_SURFACE, reservationUsd: usesOpenAI() ? prompts.length * OPENAI_VISIBILITY_RESERVATION_PER_CALL_USD : VISIBILITY_BUDGET.maxEstimatedCostUsd, factStatus, qa: serverEnv.APP_ENV === "qa" };
   });
 }
 
@@ -243,14 +250,14 @@ export async function getVisibilityObservation(context: WorkspaceContext, observ
 }
 
 export async function visibilityCycleSummary(tx: Tx, workspaceId: string, clientId: string, websiteId: string | null, start: string, end: string) {
-  const runs = await tx.select().from(aiVisibilityRuns).where(and(scoped(workspaceId), eq(aiVisibilityRuns.clientId, clientId), ...(websiteId ? [eq(aiVisibilityRuns.websiteId, websiteId)] : []), eq(aiVisibilityRuns.source, "API"), sql`${aiVisibilityRuns.createdAt}>=${start}::date and ${aiVisibilityRuns.createdAt}<${end}::date+interval '1 day'`));
+  const runs = await tx.select().from(aiVisibilityRuns).where(and(scoped(workspaceId), eq(aiVisibilityRuns.clientId, clientId), ...(websiteId ? [eq(aiVisibilityRuns.websiteId, websiteId)] : []), eq(aiVisibilityRuns.source, "API"), sql`coalesce((${aiVisibilityRuns.context}->>'pilot')::boolean,false)=false`, sql`${aiVisibilityRuns.createdAt}>=${start}::date and ${aiVisibilityRuns.createdAt}<${end}::date+interval '1 day'`));
   const observations = runs.length ? await tx.select().from(aiVisibilityObservations).where(and(eq(aiVisibilityObservations.workspaceId, workspaceId), inArray(aiVisibilityObservations.runId, runs.map(r => r.id)), sql`${aiVisibilityObservations.observedAt}>=${start}::date and ${aiVisibilityObservations.observedAt}<${end}::date+interval '1 day'`)) : [];
-  return { configured: Boolean(serverEnv.PERPLEXITY_API_KEY), completedWindows: new Set(runs.filter(r => r.status === "SUCCEEDED" && observations.filter(o => o.runId === r.id && o.status === "SUCCEEDED").length === r.promptCount).map(r => r.window)).size, observationsUsed: observations.filter(o => o.status === "SUCCEEDED").length,
+  return { configured: visibilityConfigured(), completedWindows: new Set(runs.filter(r => r.status === "SUCCEEDED" && observations.filter(o => o.runId === r.id && o.status === "SUCCEEDED").length === r.promptCount).map(r => r.window)).size, observationsUsed: observations.filter(o => o.status === "SUCCEEDED").length,
     sections: runs.map(run => { const sample = observations.filter(o => o.runId === run.id); const metrics = aggregateVisibility(sample); return { runId: run.id, surface: run.surface, model: run.model, window: run.window, promptSetVersion: run.promptSetVersion, source: run.source, metrics, copy: sampledReportCopy(run.surface, metrics), limitations: run.limitations }; }).filter(section => section.metrics.successfulPrompts > 0) };
 }
 
 export async function listVisibilityScheduleRefs() {
-  if (!serverEnv.PERPLEXITY_API_KEY) return [];
+  if (!visibilityConfigured()) return [];
   if (pauseApplies(await platformPauseState(), "visibility")) return [];
   const rows = await db.execute(sql`select * from public.list_ai_visibility_site_refs(100)`);
   return filterUnpausedWorkspaceRefs(rows.rows as { workspace_id: string; website_id: string }[], "visibility");
@@ -273,7 +280,7 @@ export async function getVisibilityDashboard(context: WorkspaceContext, database
       const currentWindow = visibilityWindow(new Date(), visibilityLimits(target.plan, target.planVersion).windows);
       return { ...target, factStatus: ready ? "Verified prompt facts available" : "Missing verified prompt facts", ready, due: ready && !runs.some(r => r.websiteId === target.id && r.window === currentWindow && r.status === "SUCCEEDED") };
     });
-    return { sites, due: serverEnv.PERPLEXITY_API_KEY ? sites.filter(s => s.due).length : 0, failed: runs.filter(r => r.status === "FAILED" || r.status === "PARTIAL").length, missingFacts: new Set(sites.filter(s => !s.ready).map(s => s.clientId)).size, unavailable: serverEnv.PERPLEXITY_API_KEY ? 0 : new Set(sites.map(s => s.clientId)).size, review: reviews.n };
+    return { sites, due: visibilityConfigured() ? sites.filter(s => s.due).length : 0, failed: runs.filter(r => r.status === "FAILED" || r.status === "PARTIAL").length, missingFacts: new Set(sites.filter(s => !s.ready).map(s => s.clientId)).size, unavailable: visibilityConfigured() ? 0 : new Set(sites.map(s => s.clientId)).size, review: reviews.n };
   });
 }
 

@@ -47,7 +47,7 @@ describe("opportunity auto-generation rules", () => {
     ).toBe(true);
   });
 
-  it("does not create opportunities for low-weight warnings", () => {
+  it("makes a missing meta description reviewable even at low weight", () => {
     expect(
       shouldAutoCreateOpportunity({
         ...baseSource,
@@ -56,7 +56,11 @@ describe("opportunity auto-generation rules", () => {
         severity: "MEDIUM",
         maxPenaltyWeight: 6,
       }),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("does not create opportunities for other low-weight warnings", () => {
+    expect(shouldAutoCreateOpportunity({ ...baseSource, checkKey: "seo.canonical", status: "WARNING", severity: "MEDIUM", maxPenaltyWeight: 10 })).toBe(false);
   });
 
   it("does not create opportunities for unavailable or not-applicable checks", () => {

@@ -22,7 +22,7 @@ import { SCORING_DEFINITION_VERSION } from "@/domain/audits/scoring";
 import { PRIORITY_DEFINITION_VERSION } from "@/domain/opportunities/priority";
 import { SERVICE_PLAN_DEFINITION_VERSION } from "@/domain/service-plans";
 import type { AliasSnapshot, ParsedObservation, ObservationSource } from "@/domain/ai-visibility/model";
-import type { OnboardingEvidence } from "@/domain/payments/policy";
+import type { OnboardingEvidence, PaymentMode } from "@/domain/payments/policy";
 
 // Queued rows are durable dispatch intents; a lease never authorizes execution.
 const workflowDispatchColumns = () => ({
@@ -3451,6 +3451,8 @@ export const retentionCleanupRuns = pgTable("retention_cleanup_runs", {
 // Merchant services only. These records never grant SaaS entitlements or start agents.
 export const serviceOrders = pgTable("service_orders", {
   id: uuid("id").defaultRandom().primaryKey(),
+  paymentMode: text("payment_mode").$type<PaymentMode>().notNull().default("test"),
+  merchantAccountId: text("merchant_account_id"), legalSeller: text("legal_seller"), activationApprovalReference: text("activation_approval_reference"),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
   clientId: uuid("client_id").notNull(), websiteId: uuid("website_id").notNull(),
   service: text("service").notNull(), scopeReference: text("scope_reference").notNull(),
@@ -3464,13 +3466,17 @@ export const serviceOrders = pgTable("service_orders", {
   createdAt: createdAt(), updatedAt: updatedAt(),
 }, t => [
   uniqueIndex("service_orders_workspace_id_unique").on(t.workspaceId, t.id),
-  uniqueIndex("service_orders_scope_unique").on(t.workspaceId, t.scopeReference),
+  uniqueIndex("service_orders_mode_unique").on(t.workspaceId, t.id, t.paymentMode),
+  uniqueIndex("service_orders_scope_unique").on(t.workspaceId, t.paymentMode, t.scopeReference),
+  check("service_orders_mode", sql`${t.paymentMode} in ('test','live')`),
+  check("service_orders_live_identity", sql`${t.paymentMode}<>'live' or (${t.merchantAccountId} is not null and ${t.legalSeller} is not null and ${t.activationApprovalReference} is not null)`),
   foreignKey({ columns: [t.workspaceId, t.clientId, t.websiteId], foreignColumns: [websites.workspaceId, websites.clientId, websites.id], name: "service_orders_website_client_fk" }),
   check("service_orders_amounts", sql`(${t.service}='AUDIT_ONLY' and ${t.totalCents}=49500 and ${t.depositCents}=49500) or (${t.service}='LAUNCH' and ${t.totalCents} between 150000 and 10000000 and ${t.depositCents}*2=${t.totalCents})`),
 ]).enableRLS();
 
 export const servicePayments = pgTable("service_payments", {
   id: uuid("id").defaultRandom().primaryKey(), workspaceId: uuid("workspace_id").notNull(), orderId: uuid("order_id").notNull(),
+  paymentMode: text("payment_mode").$type<PaymentMode>().notNull().default("test"),
   installment: text("installment").notNull(), amountCents: integer("amount_cents").notNull(),
   accountId: text("account_id").notNull(), baseUrl: text("base_url").notNull(),
   state: text("state").notNull().default("PENDING"),
@@ -3482,14 +3488,16 @@ export const servicePayments = pgTable("service_payments", {
 }, t => [
   uniqueIndex("service_payments_workspace_id_unique").on(t.workspaceId, t.id),
   uniqueIndex("service_payments_installment_unique").on(t.workspaceId, t.orderId, t.installment),
-  uniqueIndex("service_payments_session_unique").on(t.accountId, t.sessionId),
-  foreignKey({ columns: [t.workspaceId, t.orderId], foreignColumns: [serviceOrders.workspaceId, serviceOrders.id], name: "service_payments_order_fk" }),
+  uniqueIndex("service_payments_session_unique").on(t.accountId, t.paymentMode, t.sessionId),
+  check("service_payments_mode", sql`${t.paymentMode} in ('test','live')`),
+  foreignKey({ columns: [t.workspaceId, t.orderId, t.paymentMode], foreignColumns: [serviceOrders.workspaceId, serviceOrders.id, serviceOrders.paymentMode], name: "service_payments_order_fk" }),
   check("service_payments_bounds", sql`${t.amountCents} between 1 and 10000000 and ${t.installment} in ('INITIAL','BALANCE') and ${t.state} in ('PENDING','PAID','REVIEW')`),
 ]).enableRLS();
 
 export const servicePaymentEvents = pgTable("service_payment_events", {
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+  paymentMode: text("payment_mode").$type<PaymentMode>().notNull().default("test"),
   accountId: text("account_id").notNull(), eventId: text("event_id").notNull(),
   eventType: text("event_type").notNull(), objectId: text("object_id").notNull(),
   outcome: text("outcome").notNull(), receivedAt: createdAt(),
-}, t => [primaryKey({ columns: [t.workspaceId, t.accountId, t.eventId] })]).enableRLS();
+}, t => [primaryKey({ name: "service_payment_events_mode_pk", columns: [t.workspaceId, t.accountId, t.paymentMode, t.eventId] }), check("service_payment_events_mode", sql`${t.paymentMode} in ('test','live')`)]).enableRLS();

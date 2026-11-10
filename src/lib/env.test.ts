@@ -104,6 +104,11 @@ describe("server environment validation", () => {
     ).toThrow("Missing required qa AI Gateway variables");
   });
 
+  it("requires a key when direct OpenAI is selected", () => {
+    expect(() => getServerEnv({ AGENT_PROVIDER: "openai_direct" })).toThrow("Missing OPENAI_API_KEY");
+    expect(getServerEnv({ AGENT_PROVIDER: "openai_direct", OPENAI_API_KEY: "test-only" }).AGENT_PROVIDER).toBe("openai_direct");
+  });
+
   it("fails safely when AI Gateway has neither Vercel OIDC nor a scoped key", () => {
     expect(() =>
       getServerEnv({

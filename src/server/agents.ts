@@ -52,6 +52,7 @@ import {
   type PrepareModelProvider,
 } from "@/domain/agents/page-optimization";
 import { routePrepareOpportunity } from "@/domain/agents/routing";
+import { createDirectOpenAIPrepareProvider, DIRECT_OPENAI_MODEL } from "@/domain/agents/openai-direct";
 import { requirePersistedAgentDefinition } from "@/domain/agents/persisted-catalog";
 import { assertDeliverablePolicy, createDeterministicDeliverableProvider } from "@/domain/agents/prepare-deliverables";
 import { assertToolAllowedForAgent } from "@/domain/agents/tool-registry";
@@ -90,8 +91,15 @@ function providerForRun(
   context: WorkspaceContext,
   runId: string,
   override?: PrepareModelProvider,
+  database: AgentDatabase = db,
 ): PrepareModelProvider {
   if (override) return override;
+
+  if (serverEnv.AGENT_PROVIDER === "openai_direct" && serverEnv.OPENAI_API_KEY) {
+    return createDirectOpenAIPrepareProvider({ apiKey: serverEnv.OPENAI_API_KEY, budget, timeoutMs: 60_000,
+      onUsage: usage => recordPrepareUsage(context, runId, "openai-direct", usage, database),
+    });
+  }
 
   if (serverEnv.AGENT_PROVIDER === "ai_gateway" && serverEnv.AI_GATEWAY_MODEL) {
     return createAiGatewayPrepareProvider({
@@ -324,7 +332,17 @@ export async function requestPrepareDraftForOpportunity(
       .limit(1);
 
     const persistedDefinition = requirePersistedAgentDefinition(agent, definitionRecord);
-    const paid = agent.key === "existing-page-optimization" && serverEnv.AGENT_PROVIDER === "ai_gateway" && !!serverEnv.AI_GATEWAY_MODEL;
+    const paid = agent.key === "existing-page-optimization" && ((serverEnv.AGENT_PROVIDER === "ai_gateway" && !!serverEnv.AI_GATEWAY_MODEL) || serverEnv.AGENT_PROVIDER === "openai_direct");
+    if (agent.key === "existing-page-optimization" && serverEnv.AGENT_PROVIDER === "openai_direct") {
+      const [fact] = await tx.select({ id: businessFacts.id }).from(businessFacts).where(and(
+        eq(businessFacts.workspaceId, context.workspaceId),
+        eq(businessFacts.clientId, opportunity.clientId),
+        eq(businessFacts.verificationStatus, "VERIFIED"),
+        eq(businessFacts.sensitivity, "PUBLIC"),
+        isNull(businessFacts.archivedAt),
+      )).limit(1);
+      if (!fact) throw new OperationsValidationError("Add public verified business facts before requesting an AI content draft.", "MANUAL_REVIEW");
+    }
     await assertOperationalAdmission(tx, context, "prepare", { workflow: true, costUsd: paid ? budget.maxCostCents / 100 : 0, aiCalls: paid ? 1 : 0 });
     const [run] = await tx
       .insert(agentRuns)
@@ -353,12 +371,12 @@ export async function requestPrepareDraftForOpportunity(
         timeoutSeconds: agent.defaultTimeoutSeconds,
         deadlineAt: new Date(Date.now() + agent.defaultTimeoutSeconds * 1_000),
         provider:
-          agent.key === "existing-page-optimization" && serverEnv.AGENT_PROVIDER === "ai_gateway" && serverEnv.AI_GATEWAY_MODEL
-            ? "vercel-ai-gateway"
+          paid
+            ? (serverEnv.AGENT_PROVIDER === "openai_direct" ? "openai-direct" : "vercel-ai-gateway")
             : "deterministic",
         model:
-          agent.key === "existing-page-optimization" && serverEnv.AGENT_PROVIDER === "ai_gateway" && serverEnv.AI_GATEWAY_MODEL
-            ? serverEnv.AI_GATEWAY_MODEL
+          paid
+            ? (serverEnv.AGENT_PROVIDER === "openai_direct" ? DIRECT_OPENAI_MODEL : serverEnv.AI_GATEWAY_MODEL!)
             : `deterministic-${agent.key}-v1`,
         promptTemplateVersion: agent.key === "existing-page-optimization" ? PAGE_OPTIMIZATION_PROMPT_VERSION : "prepare-deliverable-prompt-v1.0",
         outputSchemaVersion: agent.outputSchemaVersion,
@@ -721,6 +739,7 @@ export async function executePrepareDraftAgentRun(
       context,
       runId,
       providerOverride,
+      database,
     ) : (providerOverride ?? createDeterministicDeliverableProvider());
     if (prepared.loaded.run.provider !== provider.provider ||
         (provider.provider !== "deterministic" && prepared.loaded.run.model !== provider.model)) {

@@ -16,8 +16,8 @@ export async function visibilityAction(data: FormData) {
     switch (field(data, "operation")) {
       case "generate": await createVisibilityPromptSet(context, websiteId); break;
       case "aliases": await approveVisibilityCompetitorAliases(context, websiteId); break;
-      case "run": case "fixture": {
-        const run = await requestVisibilityRun(context, websiteId, field(data, "operation") === "fixture" ? "QA_FIXTURE" : "API");
+      case "run": case "fixture": case "pilot": {
+        const run = await requestVisibilityRun(context, websiteId, field(data, "operation") === "fixture" ? "QA_FIXTURE" : "API", undefined, undefined, { pilot: field(data, "operation") === "pilot" });
         if (!run.completedAt) await dispatchQueuedRun(context, "visibility", run.id);
         break;
       }
