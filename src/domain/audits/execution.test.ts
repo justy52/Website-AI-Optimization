@@ -237,6 +237,24 @@ describe("Phase 1 deterministic audit execution", () => {
     expect(statusOf(result, "conv.primary_cta")).toBe("PASS");
   });
 
+  it.each([
+    '<a href="#request">Request an audit <span aria-hidden="true">↗</span></a>',
+    "<button>Request an audit</button>",
+  ])("recognizes an audit request control as a primary CTA: %s", (control) => {
+    const result = evaluatePhase1Checks(collected(`<main>${control}</main>`));
+    expect(statusOf(result, "conv.primary_cta")).toBe("PASS");
+  });
+
+  it.each([
+    "<p>Request an audit</p>",
+    '<a href="#guide">How to request an audit</a>',
+    '<a href="#faq">Request an audit FAQs</a>',
+    '<a href="#one">Request an</a><a href="#two">audit</a>',
+  ])("does not infer an audit CTA from unrelated or informational text: %s", (content) => {
+    const result = evaluatePhase1Checks(collected(`<main>${content}</main>`));
+    expect(statusOf(result, "conv.primary_cta")).toBe("FAIL");
+  });
+
   it("returns deterministic PASS results where first-party evidence supports them", () => {
     const result = evaluatePhase1Checks(
       collected(`

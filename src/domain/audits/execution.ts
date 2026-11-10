@@ -93,7 +93,7 @@ export type AuditBusinessContext = {
 };
 
 // Record evaluator changes independently of the unchanged scoring weights.
-export const AUDIT_COLLECTOR_VERSION = "phase1-deterministic-v1.10";
+export const AUDIT_COLLECTOR_VERSION = "phase1-deterministic-v1.11";
 
 const unsupportedCheckReasons: Record<string, string> = {
   "perf.lcp": "Core Web Vitals are unavailable until an official lab or field data source is connected.",
@@ -288,10 +288,10 @@ function appearsToBeSitemap(response: SafeFetchResult | null): boolean {
 }
 
 function hasPrimaryCta(analysis: PageAnalysis): boolean {
-  const text = [...analysis.anchors.map((anchor) => anchor.text), ...analysis.buttons]
-    .join(" ")
-    .toLowerCase();
+  const labels = [...analysis.anchors.map((anchor) => anchor.text), ...analysis.buttons];
+  if (labels.some((label) => /^request\s+(?:an\s+)?audit(?:\s*[↗→])?$/i.test(label.trim()))) return true;
 
+  const text = labels.join(" ").toLowerCase();
   if (/\b(?:get|request)\s+(?:(?:a|an|your)\s+)?(?:(?:instant|free|online)\s+)?(?:quote|estimate)\b/i.test(text)) return true;
 
   return [
@@ -640,7 +640,7 @@ function evaluateImplementedCheck(
         });
       }
 
-      return result(check, "FAIL", "No deterministic primary call-to-action phrase was found.", {
+      return result(check, "FAIL", "The automated check found no supported call-to-action label in the fetched homepage links or buttons. Review the page for alternate wording or controls.", {
         evidenceRefs: ["homepage-html"],
       });
     }
