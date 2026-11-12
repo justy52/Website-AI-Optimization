@@ -33,10 +33,13 @@ export const maxDuration = 120;
 
 export default async function WebsiteDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ websiteId: string }>;
+  searchParams: Promise<{ notice?: string }>;
 }) {
   const { websiteId } = await params;
+  const { notice } = await searchParams;
   const shell = await getWorkspaceShellContext();
   const website = await getWebsite(shell.workspaceContext, websiteId);
 
@@ -73,6 +76,9 @@ export default async function WebsiteDetailPage({
         eyebrow={`Website - ${formatDate(website.createdAt)}`}
         title={website.displayName}
       />
+      {notice === "already-added" ? (
+        <p role="status">This domain is already in the workspace, so no new website was added. This is the existing record; start an audit from here.</p>
+      ) : null}
       <div className="mx-grid mx-grid-2">
         <Panel
           right={<StatusChip tone="neutral">{website.monitoringStatus}</StatusChip>}

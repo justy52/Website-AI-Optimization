@@ -24,6 +24,7 @@ import {
 import {
   archiveWebsite,
   createWebsite,
+  DuplicateWebsiteError,
   updateWebsite,
 } from "@/server/revenue";
 
@@ -34,13 +35,20 @@ function value(formData: FormData, key: string): string {
 
 export async function createWebsiteAction(formData: FormData) {
   const shell = await getWorkspaceShellContext();
-  const website = await createWebsite(shell.workspaceContext, {
-    clientId: value(formData, "clientId"),
-    displayName: value(formData, "displayName"),
-    canonicalUrl: value(formData, "canonicalUrl"),
-    domain: value(formData, "domain"),
-    authorizationScope: value(formData, "authorizationScope"),
-  });
+  let website: Awaited<ReturnType<typeof createWebsite>>;
+  try {
+    website = await createWebsite(shell.workspaceContext, {
+      clientId: value(formData, "clientId"),
+      displayName: value(formData, "displayName"),
+      canonicalUrl: value(formData, "canonicalUrl"),
+      domain: value(formData, "domain"),
+      authorizationScope: value(formData, "authorizationScope"),
+    });
+  } catch (error) {
+    if (!(error instanceof DuplicateWebsiteError)) throw error;
+    // Take the operator to the record that already exists.
+    redirect((error.archived ? "/websites?notice=archived-duplicate" : `/websites/${error.websiteId}?notice=already-added`) as never);
+  }
 
   revalidatePath("/websites");
   revalidatePath(`/clients/${website.clientId}`);

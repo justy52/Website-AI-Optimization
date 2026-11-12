@@ -512,6 +512,17 @@ export async function getWebsite(
   });
 }
 
+/** The workspace already has a website for this domain. */
+export class DuplicateWebsiteError extends Error {
+  constructor(
+    public readonly websiteId: string,
+    public readonly archived: boolean,
+  ) {
+    super("A website with this domain already exists in the workspace.");
+    this.name = "DuplicateWebsiteError";
+  }
+}
+
 export async function createWebsite(
   context: WorkspaceContext,
   input: {
@@ -551,6 +562,18 @@ export async function createWebsite(
 
     if (!client) {
       throw new Error("Client was not found.");
+    }
+
+    // One website per domain per workspace. Report the existing record rather
+    // than letting the unique index fail the request.
+    const [existing] = await tx
+      .select({ id: websites.id, archivedAt: websites.archivedAt })
+      .from(websites)
+      .where(and(eq(websites.workspaceId, context.workspaceId), eq(websites.domain, domain)))
+      .limit(1);
+
+    if (existing) {
+      throw new DuplicateWebsiteError(existing.id, existing.archivedAt !== null);
     }
 
     const [website] = await tx

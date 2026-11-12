@@ -10,7 +10,12 @@ import {
 import { createWebsiteAction } from "./actions";
 import { EmptyState, PageHeader, Panel, RowLink, StatusChip } from "../ui";
 
-export default async function WebsitesPage() {
+export default async function WebsitesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ notice?: string }>;
+}) {
+  const { notice } = await searchParams;
   const shell = await getWorkspaceShellContext();
   const [clients, websites] = await Promise.all([
     listClients(shell.workspaceContext),
@@ -20,6 +25,9 @@ export default async function WebsitesPage() {
   return (
     <>
       <PageHeader eyebrow="Owned targets" title="Websites" />
+      {notice === "archived-duplicate" ? (
+        <p role="alert">That domain belongs to an archived website in this workspace, so it was not added again.</p>
+      ) : null}
       <div className="mx-grid mx-grid-2">
         <Panel title="Add website">
           {clients.length > 0 ? (
