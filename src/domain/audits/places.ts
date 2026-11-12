@@ -26,6 +26,8 @@ export type PlacesEvidence = {
   query: string;
   fetchedAt: string;
   candidateCount: number;
+  /** Provider requests this lookup made (1 or 2), for usage reporting. */
+  requests: number;
   /** How the audited business was tied to a listing; null when none matched. */
   matchBasis: "website" | "phone" | "name" | null;
   listing: PlaceListing | null;
@@ -135,9 +137,11 @@ export async function collectPlacesEvidence(
     const listing = byWebsite ?? byPhone ?? byName ?? null;
     const matchBasis = byWebsite ? "website" : byPhone ? "phone" : byName ? "name" : null;
 
+    let requests = 1;
     let competitors: PlacesEvidence["competitors"] = [];
     if (listing && locality && (listing.primaryTypeLabel || listing.primaryType)) {
       const category = listing.primaryTypeLabel ?? listing.primaryType!.replace(/_/g, " ");
+      requests += 1;
       const rawCompetitors = await search(`${category} in ${locality}`, competitorFields, 10);
       competitors = (rawCompetitors ?? []).flatMap((place) => {
         const competitorName = typeof place.displayName?.text === "string" ? place.displayName.text.slice(0, 200) : null;
@@ -151,6 +155,7 @@ export async function collectPlacesEvidence(
       query,
       fetchedAt: new Date().toISOString(),
       candidateCount: listings.length,
+      requests,
       matchBasis,
       listing,
       competitors,

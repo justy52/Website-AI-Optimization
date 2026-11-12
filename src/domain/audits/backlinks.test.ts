@@ -32,7 +32,7 @@ describe("referring-domain evidence", () => {
       { target: "rival-c.com", referring_domains: 50 },
     ]);
     const evidence = await collectBacklinkEvidence({ siteDomain: "www.example.com", competitorDomains: ["https://rival-a.com/", "rival-b.com", "rival-c.com", "example.com", "rival-a.com"], competitorSource: "configured" }, credentials, io.fn);
-    expect(evidence).toMatchObject({ provider: "DataForSEO", referringDomains: 40, competitorMedian: 50, competitorSource: "configured" });
+    expect(evidence).toMatchObject({ provider: "DataForSEO", referringDomains: 40, competitorMedian: 50, competitorSource: "configured", targets: 4 });
     expect(evidence?.competitors).toHaveLength(3);
     expect(io.calls[0].url).toBe("https://api.dataforseo.com/v3/backlinks/bulk_referring_domains/live");
     expect(io.calls[0].body).toEqual([{ targets: ["example.com", "rival-a.com", "rival-b.com", "rival-c.com"] }]);
@@ -69,7 +69,7 @@ describe("auth.referring_domains rule", () => {
     pageAnalysis: analyzeHtml(html), backlinks, backlinksConfigured: configured,
   });
   const evidence = (overrides: Partial<BacklinkEvidence> = {}): BacklinkEvidence => ({
-    provider: "DataForSEO", fetchedAt: "2026-11-12T00:00:00.000Z", referringDomains: 40, competitorSource: "configured", competitorMedian: 50,
+    provider: "DataForSEO", fetchedAt: "2026-11-12T00:00:00.000Z", referringDomains: 40, competitorSource: "configured", competitorMedian: 50, targets: 4,
     competitors: [20, 50, 80].map((referringDomains, index) => ({ domain: `rival-${index}.com`, referringDomains })), ...overrides,
   });
   const result = (input: CollectedWebsiteEvidence) => evaluatePhase1Checks(input).checkResults.find((check) => check.checkKey === "auth.referring_domains")!;

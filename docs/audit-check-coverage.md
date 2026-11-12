@@ -35,7 +35,7 @@ Without a Places key, `local.gbp_presence` returns a warning only when the site 
 1. In Google Cloud, enable **Places API (New)** on a project with billing, and create an API key restricted to that API.
 2. Add it to the deployment as `GOOGLE_PLACES_API_KEY` (server only).
 3. Each audit then makes at most two Text Search requests: one for the business (name and locality only) and one for nearby listings in the same category. Review Google's current pricing and free usage caps before enabling.
-4. Places requests are not yet recorded in the usage ledger or counted against the monthly provider ceiling. Track them in the Google Cloud console until that is added.
+4. Each audit's Places requests are recorded in the usage ledger as a request count under provider `google-places`. Google does not return a price, so the cost stays unknown and is not counted against the monthly provider ceiling. Check spend in the Google Cloud console.
 
 ## Verifying against a live site
 
@@ -51,4 +51,4 @@ Set `OPTIQ_AUDIT_LIVE_OUT` to a file path to save the per-check output. The run 
 2. Add the API login and API password to the deployment as `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` (server only), then redeploy.
 3. Each audit makes one bulk request for the audited domain and up to ten competitor domains. Only bare domain names are sent.
 
-The check compares the site with a competitor median, as Doc 26 requires. It uses the active competitor targets saved on the website; when there are none it falls back to the websites of the nearby same-category listings Google Places returned, and reports medium confidence. With fewer than three competitor domains it reports the measured figure but stays unavailable. Like Places, these requests are not yet recorded in the usage ledger.
+The check compares the site with a competitor median, as Doc 26 requires. It uses the active competitor targets saved on the website; when there are none it falls back to the websites of the nearby same-category listings Google Places returned, and reports medium confidence. With fewer than three competitor domains it reports the measured figure but stays unavailable. Like Places, these requests are recorded in the usage ledger as a count (provider `dataforseo`) with the cost left unknown. Check the balance in the DataForSEO dashboard.

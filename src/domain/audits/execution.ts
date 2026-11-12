@@ -476,7 +476,7 @@ function evaluateImplementedCheck(
         }
         const tbt = collected.mobileLab?.tbtMs;
         if (tbt != null) {
-          return result(check, tbt <= 200 ? "PASS" : tbt > 600 ? "FAIL" : "WARNING", `No real-user INP data exists for this site, so INP itself could not be measured. As a lab proxy, one simulated mobile PageSpeed test measured Total Blocking Time of ${Math.round(tbt)} ms (good is 200 ms or less). This is lab data, not INP and not real-user data.`, {
+          return result(check, tbt <= 200 ? "PASS" : tbt > 600 ? "FAIL" : "WARNING", `Google has no real-user responsiveness data (INP) for this site, so it could not be measured directly. As a lab stand-in, one simulated mobile PageSpeed test measured ${Math.round(tbt)} ms of blocked time while the page loaded (good is 200 ms or less). This is lab data, not INP and not real-user data.`, {
             evidenceConfidence: "LOW", evidenceRefs: ["pagespeed-mobile"], observedValue: { value: Math.round(tbt), unit: "ms", metric: "total-blocking-time", dataType: "lab proxy", fetchedAt: collected.mobileLab?.fetchedAt },
           });
         }
@@ -519,8 +519,10 @@ function evaluateImplementedCheck(
       const isLcp = check.key === "perf.lcp";
       const good = isLcp ? value <= 2500 : value <= 0.1;
       const poor = isLcp ? value > 4000 : value > 0.25;
-      const label = isLcp ? `LCP ${(value / 1000).toFixed(2)} seconds` : `CLS ${value.toFixed(3)}`;
-      return result(check, good ? "PASS" : poor ? "FAIL" : "WARNING", `One simulated mobile PageSpeed test measured ${label}; this is lab data, not real-user field data.`, {
+      const label = isLcp
+        ? `the main content appearing after ${(value / 1000).toFixed(2)} seconds (LCP; good is 2.5 seconds or less)`
+        : `a layout shift score of ${value.toFixed(3)} (CLS; good is 0.1 or less)`;
+      return result(check, good ? "PASS" : poor ? "FAIL" : "WARNING", `One simulated mobile PageSpeed test measured ${label}. This is lab data, not real-user field data.`, {
         evidenceRefs: ["pagespeed-mobile"], observedValue: { value, unit: isLcp ? "ms" : "score", source: "Google PageSpeed Insights mobile lab", lighthouseVersion: lab?.lighthouseVersion, fetchedAt: lab?.fetchedAt },
       });
     }
@@ -570,7 +572,7 @@ function evaluateImplementedCheck(
         });
       }
 
-      return result(check, "PASS", "The homepage returned 2xx without noindex/blocking signals.", {
+      return result(check, "PASS", "The homepage loaded successfully, and nothing on it or in robots.txt tells search engines to stay away.", {
         evidenceRefs: collected.robots ? ["homepage", "robots"] : ["homepage"],
       });
     }
@@ -594,7 +596,7 @@ function evaluateImplementedCheck(
 
       if (robotsStatus && robotsStatus >= 200 && robotsStatus < 300) {
         if (sitemapLooksValid) {
-          return result(check, "PASS", "robots.txt is reachable and the sitemap response contains an XML sitemap root.", {
+          return result(check, "PASS", "The site has a robots.txt file and a valid XML sitemap.", {
             evidenceRefs: ["robots", "sitemap"],
             observedValue: { sitemapDeclared },
           });
@@ -664,7 +666,7 @@ function evaluateImplementedCheck(
         });
       }
 
-      return result(check, "PASS", "A single same-host canonical link was found.", {
+      return result(check, "PASS", "The homepage declares one canonical address, on the same website.", {
         evidenceRefs: ["homepage-html"],
         observedValue: { canonical: canonical.toString() },
       });
@@ -686,7 +688,7 @@ function evaluateImplementedCheck(
         });
       }
 
-      return result(check, "PASS", "A non-empty HTML title was found.", {
+      return result(check, "PASS", "The homepage has a page title.", {
         evidenceRefs: ["homepage-html"],
         observedValue: { title },
       });
@@ -713,7 +715,7 @@ function evaluateImplementedCheck(
       }
 
       if (analysis.h1.length > 1) {
-        return result(check, "WARNING", "Multiple H1 headings were found on the homepage.", {
+        return result(check, "WARNING", "The homepage has more than one main heading (H1).", {
           evidenceRefs: ["homepage-html"],
           observedValue: { h1Count: analysis.h1.length },
         });
@@ -738,7 +740,7 @@ function evaluateImplementedCheck(
       });
 
       if (navigationalLinks.length > 0) {
-        return result(check, "PASS", "Same-host internal links were found in the homepage HTML.", {
+        return result(check, "PASS", "The homepage links to other pages on the same website.", {
           evidenceRefs: ["homepage-html"],
           observedValue: { internalLinkCount: internalLinks.length },
         });
@@ -758,7 +760,7 @@ function evaluateImplementedCheck(
 
     case "conv.primary_cta": {
       if (hasPrimaryCta(analysis)) {
-        return result(check, "PASS", "A primary call-to-action phrase was found in links or buttons.", {
+        return result(check, "PASS", "A clear call-to-action label was found in the homepage's links or buttons.", {
           evidenceRefs: ["homepage-html"],
         });
       }
@@ -857,7 +859,7 @@ function evaluateImplementedCheck(
         });
       }
 
-      return result(check, "PASS", "The fetched homepage HTML contained text, and the checked robots.txt rules did not block OAI-SearchBot. This does not establish access through a firewall or inclusion in search results.", {
+      return result(check, "PASS", "The homepage's text can be read without running scripts, and the site's crawler rules do not block OpenAI's search crawler (OAI-SearchBot). This does not establish access through a firewall or inclusion in search results.", {
         evidenceRefs: ["homepage-html", ...(successful(collected.robots) ? ["robots"] : [])],
         observedValue: { visibleTextLength: analysis.visibleText.length, oaiSearchBotBlocked: false },
       });
@@ -958,7 +960,7 @@ function evidenceItems(collected: CollectedWebsiteEvidence): AuditEvidenceItem[]
       metadata: {
         provider: collected.backlinks.provider, fetchedAt: collected.backlinks.fetchedAt, referringDomains: collected.backlinks.referringDomains,
         competitorSource: collected.backlinks.competitorSource, competitorsCompared: collected.backlinks.competitors.length,
-        competitorMedian: collected.backlinks.competitorMedian, competitors: collected.backlinks.competitors,
+        competitorMedian: collected.backlinks.competitorMedian, competitors: collected.backlinks.competitors, requests: 1, targets: collected.backlinks.targets,
       },
     });
   }
@@ -970,7 +972,7 @@ function evidenceItems(collected: CollectedWebsiteEvidence): AuditEvidenceItem[]
       sourceLabel: "Google Places listing lookup",
       excerpt: listing ? `${listing.name}${listing.address ? `, ${listing.address}` : ""}` : "No matching listing",
       metadata: {
-        query: collected.places.query, fetchedAt: collected.places.fetchedAt, matchBasis: collected.places.matchBasis,
+        query: collected.places.query, fetchedAt: collected.places.fetchedAt, matchBasis: collected.places.matchBasis, requests: collected.places.requests,
         candidateCount: collected.places.candidateCount, reviewCount: listing?.reviewCount ?? null, rating: listing?.rating ?? null,
         primaryType: listing?.primaryTypeLabel ?? listing?.primaryType ?? null, competitorMedianReviews: collected.places.competitorMedianReviews,
         competitorsCompared: collected.places.competitors.length,

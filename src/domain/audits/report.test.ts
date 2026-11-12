@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAuditReportFromSnapshot, canFinalizeAudit, hasReportableScore, type AuditSnapshotData, isCategoryScoreWithheld } from "./report";
+import { buildAuditReportFromSnapshot, canFinalizeAudit, hasReportableScore, type AuditSnapshotData, isCategoryScoreWithheld, checkLabel, findingGuidance } from "./report";
+import { auditCheckDefinitions } from "./scoring";
 
 describe("audit finalization readiness", () => {
   it("accepts only completed runs in reviewable audit states", () => {
@@ -80,7 +81,7 @@ describe("audit report builder", () => {
     expect(report.reportData.overallScore).toBe(74);
     expect(report.reportData.provisional).toBe(true);
     expect(report.reportData.unavailableChecks).toHaveLength(1);
-    expect(report.executiveSummary).toContain("checks were unavailable");
+    expect(report.executiveSummary).toContain("1 check was unavailable");
     expect(report.executiveSummary).toContain("Evidence coverage: 42%");
     expect(report.executiveSummary).toContain("score is withheld");
     expect(report.executiveSummary).not.toContain("74/100");
@@ -115,5 +116,38 @@ describe("category score display", () => {
     expect(isCategoryScoreWithheld("aiReadiness", 82, true, "site-sample-deterministic-v2.0")).toBe(true);
     expect(isCategoryScoreWithheld("seo", 90, false, "phase1-deterministic-v1.11")).toBe(false);
     expect(isCategoryScoreWithheld("seo", null, false, "site-sample-deterministic-v2.0")).toBe(true);
+  });
+});
+
+describe("customer-facing report content", () => {
+  it("lists passed checks, orders findings by weight, and summarizes in plain language", () => {
+    const full: AuditSnapshotData = {
+      ...snapshot,
+      run: { ...snapshot.run, overallScore: 81, provisional: false, evidenceCoverageBasisPoints: 10000 },
+      checkResults: [
+        { checkKey: "perf.https", category: "websitePerformance", status: "PASS", severity: null, reason: "The audited page resolved over HTTPS.", evidenceRefs: ["homepage"] },
+        { checkKey: "seo.title", category: "seo", status: "PASS", severity: null, reason: "A non-empty HTML title was found.", evidenceRefs: ["homepage-html"] },
+        { checkKey: "auth.credentials", category: "authority", status: "FAIL", severity: "HIGH", reason: "None found.", evidenceRefs: [] },
+        { checkKey: "local.gbp_presence", category: "localSearch", status: "NOT_APPLICABLE", severity: null, reason: "Not applicable.", evidenceRefs: [] },
+      ],
+      findings: [
+        { checkKey: "auth.expertise_content", severity: "HIGH", title: "x", summary: "x", evidenceRefs: [] },
+        { checkKey: "ai.citability", severity: "HIGH", title: "x", summary: "x", evidenceRefs: [] },
+        { checkKey: "local.category_service_alignment", severity: "HIGH", title: "x", summary: "x", evidenceRefs: [] },
+      ],
+    };
+    const report = buildAuditReportFromSnapshot(full);
+    expect(report.executiveSummary).toBe("Overall score: 81 out of 100. 2 of 3 checks passed. 3 high-priority findings and 0 other findings are listed, each with a suggested next step. Every check returned a result. Evidence coverage: 100%.");
+    expect(report.reportData.passedChecks?.map((check) => check.checkKey)).toEqual(["perf.https", "seo.title"]);
+    // Equal severity: the check with the larger scoring weight comes first.
+    expect(report.reportData.highPriorityFindings.map((finding) => finding.checkKey)).toEqual(["local.category_service_alignment", "auth.expertise_content", "ai.citability"]);
+  });
+
+  it("has a neutral label and a next step for every catalog check", () => {
+    for (const check of auditCheckDefinitions) {
+      expect(checkLabel(check.key), check.key).toBeTruthy();
+      expect(findingGuidance(check.key)?.nextStep, check.key).toBeTruthy();
+    }
+    expect(findingGuidance("auth.referring_domains")?.nextStep).not.toMatch(/connect a licensed/i);
   });
 });

@@ -13,6 +13,8 @@ export type BacklinkEvidence = {
   competitors: Array<{ domain: string; referringDomains: number }>;
   competitorSource: "configured" | "google_listings" | "none";
   competitorMedian: number | null;
+  /** Domains sent in the one bulk request, for usage reporting. */
+  targets: number;
 };
 
 export type BacklinkCredentials = { login: string; password: string };
@@ -102,6 +104,7 @@ export async function collectBacklinkEvidence(
       competitorSource: measured.length ? input.competitorSource : "none",
       // A median of fewer than three domains is not a usable comparison set.
       competitorMedian: measured.length >= 3 ? median(measured.map((item) => item.referringDomains)) : null,
+      targets: 1 + competitors.length,
     };
   } catch (error) {
     return unavailable(error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name) ? "timeout" : "request_or_parse_error");

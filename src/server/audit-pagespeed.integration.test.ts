@@ -10,6 +10,7 @@ import { withTenantContext } from "@/db/tenant";
 import type { WorkspaceContext } from "@/domain/tenancy/context";
 import type { AuditSnapshotData, BuiltAuditReport } from "@/domain/audits/report";
 import { serverEnv } from "@/lib/env";
+import { syncUsageLedger } from "./usage-ledger";
 import { AUDIT_REPEAT_WINDOW_MS, createReportForAudit, finalizeAudit, findDuplicateAuditForWebsite, startAuditForWebsite } from "./audits";
 
 vi.mock("@/security/safe-fetch", () => ({
@@ -114,5 +115,27 @@ describe("mobile lab evidence through the audit workflow", () => {
     // An unknown or malformed website never matches another site's audit.
     expect(await findDuplicateAuditForWebsite(context, randomUUID(), database)).toBeNull();
     expect(await findDuplicateAuditForWebsite(context, "not-a-uuid", database)).toBeNull();
+  }, 60_000);
+
+  it("records paid audit lookups in the usage ledger by request count, with cost left unknown", async () => {
+    const previousPlaces = serverEnv.GOOGLE_PLACES_API_KEY;
+    serverEnv.GOOGLE_PLACES_API_KEY = "test-only";
+    try {
+      vi.stubGlobal("fetch", vi.fn(async (url: unknown) => String(url).includes("places.googleapis.com")
+        ? new Response(JSON.stringify({ places: [{ id: "p1", displayName: { text: "Example" }, websiteUri: "https://example.com/", userRatingCount: 12, rating: 4.6, businessStatus: "OPERATIONAL" }] }), { status: 200 })
+        : new Response("{}", { status: 429 })));
+      const audit = await startAuditForWebsite(context, websiteId, database);
+      const rows = await withTenantContext(database, context, async tx => {
+        await syncUsageLedger(tx, context);
+        await syncUsageLedger(tx, context);
+        return tx.select().from(schema.usageLedger).where(eq(schema.usageLedger.provider, "google-places"));
+      });
+      const [run] = await withTenantContext(database, context, tx => tx.select().from(schema.auditRuns).where(eq(schema.auditRuns.auditId, audit.id)));
+      const mine = rows.filter(row => row.auditRunId === run.id);
+      expect(mine).toHaveLength(1);
+      expect(mine[0]).toMatchObject({ category: "AUDIT", calls: 1, actualCostUsd: null, state: "RECORDED", sourceKey: `audit-places:${run.id}` });
+    } finally {
+      serverEnv.GOOGLE_PLACES_API_KEY = previousPlaces;
+    }
   }, 60_000);
 });

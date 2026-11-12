@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
-import { findingGuidance, hasReportableScore, isCategoryScoreWithheld, type BuiltAuditReport } from "@/domain/audits/report";
+import { checkLabel, findingGuidance, hasReportableScore, isCategoryScoreWithheld, type BuiltAuditReport } from "@/domain/audits/report";
 import { getReport } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
 
@@ -52,7 +52,7 @@ export default async function ReportDetailPage({
           right={<StatusChip tone="info">{report.status}</StatusChip>}
           title="Executive summary"
         >
-          <p>{hasReportableScore(data.overallScore, data.evidenceCoverageBasisPoints) ? report.executiveSummary : report.executiveSummary.replace(/Overall deterministic score:\s*\d+\/100\./, "An overall score is withheld because evidence is insufficient.")}</p>
+          <p>{hasReportableScore(data.overallScore, data.evidenceCoverageBasisPoints) ? report.executiveSummary : report.executiveSummary.replace(/Overall (?:deterministic )?score:\s*\d+(?:\/| out of )100\./, "An overall score is withheld because evidence is insufficient.")}</p>
           {report.status === "DRAFT" ? (
             <form action={finalizeReportAction} className="mx-action-inline">
               <input name="reportId" type="hidden" value={report.id} />
@@ -162,6 +162,28 @@ export default async function ReportDetailPage({
                   </div>
                 ))}
               </div>
+            </Panel>
+            <div className="mx-spacer" />
+          </>
+        ) : null}
+        {data.passedChecks ? (
+          <>
+            <Panel title="What is working">
+              {data.passedChecks.length > 0 ? (
+                <div className="mx-list">
+                  {data.passedChecks.map((check) => (
+                    <div className="mx-check-row" key={check.checkKey}>
+                      <div>
+                        <div className="mx-row-title">{checkLabel(check.checkKey) ?? check.checkKey}</div>
+                        <div className="mx-row-meta">{check.reason}</div>
+                      </div>
+                      <StatusChip tone="good">PASS</StatusChip>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mx-muted">No check passed.</p>
+              )}
             </Panel>
             <div className="mx-spacer" />
           </>

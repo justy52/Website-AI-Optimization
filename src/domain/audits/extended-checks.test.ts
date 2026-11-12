@@ -323,7 +323,7 @@ describe("Google Places evidence", () => {
   it("matches by website, sends only the name and locality, and computes a competitor median", async () => {
     const io = transport([place()]);
     const evidence = await collectPlacesEvidence(input, "secret-key", io.fn);
-    expect(evidence).toMatchObject({ matchBasis: "website", competitorMedianReviews: 100, listing: { reviewCount: 90, operational: true, phone: "8015550142" } });
+    expect(evidence).toMatchObject({ matchBasis: "website", requests: 2, competitorMedianReviews: 100, listing: { reviewCount: 90, operational: true, phone: "8015550142" } });
     expect(io.calls[0].body).toEqual({ textQuery: "Summit Roofing Provo, UT", pageSize: 5 });
     expect(io.calls[1].body).toEqual({ textQuery: "Roofing contractor in Provo, UT", pageSize: 10 });
     expect(io.calls[0].headers["X-Goog-Api-Key"]).toBe("secret-key");
@@ -343,7 +343,7 @@ describe("Google Places evidence", () => {
 
   const withPlaces = (places: PlacesEvidence) => site(strongHome, strongSite().sampledPages, { places, placesConfigured: true });
   const evidence = (overrides: Partial<PlacesEvidence> = {}): PlacesEvidence => ({
-    query: "Summit Roofing Provo, UT", fetchedAt: new Date().toISOString(), candidateCount: 1, matchBasis: "website",
+    query: "Summit Roofing Provo, UT", fetchedAt: new Date().toISOString(), candidateCount: 1, requests: 2, matchBasis: "website",
     listing: { id: "p", name: "Summit Roofing LLC", address: "12 Main St, Provo, UT", phone: "8015550142", websiteHost: "example.com", rating: 4.8, reviewCount: 90, primaryType: "roofing_contractor", primaryTypeLabel: "Roofing contractor", types: ["roofing_contractor"], operational: true, latestReviewAt: new Date(Date.now() - 20 * 86_400_000).toISOString() },
     competitors: [40, 80, 120, 200].map((reviewCount, index) => ({ name: `Rival ${index}`, reviewCount })), competitorMedianReviews: 100, ...overrides,
   });

@@ -1,4 +1,4 @@
-import { findingGuidance, hasReportableScore, isCategoryScoreWithheld, type BuiltAuditReport } from "./audits/report";
+import { checkLabel, findingGuidance, hasReportableScore, isCategoryScoreWithheld, type BuiltAuditReport } from "./audits/report";
 import type { ScoreCategoryKey } from "./audits/scoring";
 
 const categoryLabels: Record<ScoreCategoryKey, string> = {
@@ -61,15 +61,22 @@ export function renderAuditReport(
   const coverage = (basisPoints: number) => Math.round(basisPoints / 100) + "%";
   const reportable = hasReportableScore(data.overallScore, data.evidenceCoverageBasisPoints);
   const summary = reportable ? report.executiveSummary : report.executiveSummary.replace(
-    /Overall deterministic score:\s*\d+\/100\./, "An overall score is withheld because evidence is insufficient.",
+    /Overall (?:deterministic )?score:\s*\d+(?:\/| out of )100\./, "An overall score is withheld because evidence is insufficient.",
   );
   const findings = (entries: BuiltAuditReport["reportData"]["highPriorityFindings"]) =>
     entries.map((finding) => {
       const guidance = findingGuidance(finding.checkKey);
-      return `${finding.severity}: ${guidance?.title ?? finding.title}. ${finding.summary}${guidance ? ` Next step: ${guidance.nextStep}` : ""}`;
+      return `${severityLabels[finding.severity] ?? finding.severity}: ${guidance?.title ?? finding.title}. ${finding.summary}${guidance ? ` Next step: ${guidance.nextStep}` : ""}`;
     });
+  const severityLabels: Record<string, string> = { CRITICAL: "Critical", HIGH: "High priority", MEDIUM: "Medium priority", LOW: "Low priority" };
+  const passed = (data.passedChecks ?? []).map((check) => `${checkLabel(check.checkKey) ?? `${categoryLabels[check.category] ?? "Additional"} check`}: ${check.reason}`);
   return document(report.title, finalizedAt, [
     section("Executive summary", `<p>${escape(summary)}</p>`),
+    section("How to read this report", list([
+      "Each check is an automated observation of the public website and, where noted, of public listings. A person reviews the report before it is sent.",
+      "A finding means something was observed that is worth reviewing. It does not prove the cause, and fixing it does not guarantee more traffic, leads or revenue.",
+      "Scores run from 0 to 100 within each category. Evidence coverage is the share of checks that returned a result.",
+    ], "")),
     section("Website and evidence coverage", list([
       reportUrl(data.website.canonicalUrl),
       `Overall score: ${reportable ? `${data.overallScore}/100` : "Withheld due to insufficient evidence"}`,
@@ -82,6 +89,7 @@ export function renderAuditReport(
     }), "No category scores were recorded.")),
     section("High-priority findings", list(findings(data.highPriorityFindings), "No high or critical findings were recorded.")),
     section("Additional findings", list(findings(data.additionalFindings ?? []), "No additional findings were recorded.")),
+    ...(data.passedChecks ? [section("What is working", list(passed, "No check passed."))] : []),
     section("Evidence limitations", list(data.unavailableChecks.map((check) => {
       const title = findingGuidance(check.checkKey)?.title ?? `${categoryLabels[check.category] ?? "Additional"} check`;
       return `${title} (${check.status.toLowerCase()}): ${check.reason}`;

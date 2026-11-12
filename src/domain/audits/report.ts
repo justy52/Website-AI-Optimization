@@ -1,4 +1,4 @@
-import type { CheckStatus, ScoreCategoryKey } from "./scoring";
+import { auditCheckDefinitions, type CheckStatus, type ScoreCategoryKey } from "./scoring";
 import type { EvidenceConfidence } from "@/domain/opportunities/generation";
 
 export function canFinalizeAudit(auditStatus: string, runStatus: string): boolean {
@@ -66,7 +66,7 @@ export function findingGuidance(checkKey: string): { title: string; nextStep: st
     "ai.citability": { title: "Review how specific and source-worthy the content is", nextStep: "Add accurate specifics that a reader could cite, such as figures, process details, credentials and worked examples." },
     "auth.reviews": { title: "Review the visibility of customer reviews", nextStep: "Link to the review profiles where customers can verify feedback and show genuine reviews on the site." },
     "auth.third_party_mentions": { title: "Review third-party business profiles", nextStep: "Confirm which directory and review profiles the business really has, complete them, and link them from the site." },
-    "auth.referring_domains": { title: "Review links from other websites", nextStep: "Connect a licensed backlink data source to measure this, then compare the result with relevant competitors." },
+    "auth.referring_domains": { title: "Review links from other websites", nextStep: "Look for genuine opportunities to be listed or mentioned by relevant local organizations, suppliers, directories and publications. Avoid paid link schemes." },
     "auth.credentials": { title: "Review stated credentials", nextStep: "List genuine licenses, certifications and experience, and include a detail a visitor can check, such as a license number." },
     "auth.business_transparency": { title: "Review how openly the business identifies itself", nextStep: "Check that an about page, direct contact details and an address or service area are easy to find." },
     "auth.expertise_content": { title: "Review educational content", nextStep: "Consider publishing accurate guides or answers to common questions, with a named author or a date where appropriate." },
@@ -74,6 +74,56 @@ export function findingGuidance(checkKey: string): { title: string; nextStep: st
     "ai.crawlability": { title: "Review AI search access to the homepage", nextStep: "Review the homepage text, robots.txt, and any firewall restrictions. Decide whether to allow OAI-SearchBot based on the business's preferences; this is separate from GPTBot's training setting and does not guarantee inclusion." },
   };
   return guidance[checkKey] ?? null;
+}
+
+/** Neutral, customer-facing name for a check, used when it is not a finding. */
+export function checkLabel(checkKey: string): string | null {
+  const labels: Record<string, string> = {
+    "perf.lcp": "Mobile loading speed",
+    "perf.inp": "Responsiveness to taps and clicks",
+    "perf.cls": "Visual stability while loading",
+    "perf.https": "Secure connection (HTTPS)",
+    "perf.mobile_render": "Display on phones",
+    "perf.critical_functionality": "Links and contact paths",
+    "seo.indexability": "Access for search engines",
+    "seo.robots_sitemap": "Sitemap and crawler instructions",
+    "seo.canonical": "Canonical address",
+    "seo.title": "Page title",
+    "seo.meta_description": "Page description",
+    "seo.heading_structure": "Page headings",
+    "seo.internal_links": "Internal links",
+    "seo.content_targeting": "Distinct, substantive pages",
+    "local.business_identity": "Business name, phone and location details",
+    "local.gbp_presence": "Google Business Profile",
+    "local.category_service_alignment": "Business category",
+    "local.location_clarity": "Area served",
+    "local.local_pages": "Service and location pages",
+    "local.structured_business_data": "Business structured data",
+    "local.review_signal": "Google review volume and recency",
+    "conv.primary_cta": "Primary call to action",
+    "conv.lead_form": "Enquiry form",
+    "conv.mobile_contact": "Mobile contact options",
+    "conv.offer_clarity": "Clarity of the offer",
+    "conv.trust_signals": "Proof of credibility",
+    "conv.friction": "Steps needed to enquire",
+    "conv.measurement": "Lead tracking",
+    "ai.identity_clarity": "Business name on the homepage",
+    "ai.service_clarity": "Description of services",
+    "ai.location_clarity": "Location information",
+    "ai.entity_consistency": "Consistency of business facts across the site",
+    "ai.answerability": "Answers to common customer questions",
+    "ai.structured_data": "Structured data for search and AI systems",
+    "ai.citability": "Specific, source-worthy content",
+    "ai.crawlability": "AI search access to the homepage",
+    "auth.reviews": "Customer reviews",
+    "auth.third_party_mentions": "Third-party business profiles",
+    "auth.referring_domains": "Links from other websites",
+    "auth.credentials": "Stated credentials",
+    "auth.business_transparency": "Business details and transparency",
+    "auth.expertise_content": "Educational content",
+    "auth.entity_consistency": "Consistency with the Google listing",
+  };
+  return labels[checkKey] ?? null;
 }
 
 export type SnapshotCheckResult = {
@@ -139,6 +189,8 @@ export type BuiltAuditReport = {
     categoryScores: SnapshotCategoryScore[];
     highPriorityFindings: SnapshotFinding[];
     additionalFindings?: SnapshotFinding[];
+    /** Checks that passed. Absent on reports built before this was recorded. */
+    passedChecks?: SnapshotCheckResult[];
     unavailableChecks: SnapshotCheckResult[];
     methodology: {
       scoringDefinitionVersion: string;
@@ -152,38 +204,48 @@ function severityRank(finding: SnapshotFinding): number {
   return { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }[finding.severity];
 }
 
+const weightByCheck = new Map(auditCheckDefinitions.map((check) => [check.key, check.maxPenaltyWeight]));
+
+// Most severe first; within a severity, the check that weighs most on its score.
+function byImportance(a: SnapshotFinding, b: SnapshotFinding): number {
+  return severityRank(a) - severityRank(b) || (weightByCheck.get(b.checkKey) ?? 0) - (weightByCheck.get(a.checkKey) ?? 0);
+}
+
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
 export function buildAuditReportFromSnapshot(
   snapshot: AuditSnapshotData,
 ): BuiltAuditReport {
   const highPriorityFindings = snapshot.findings
     .filter((finding) => finding.severity === "CRITICAL" || finding.severity === "HIGH")
-    .sort((a, b) => severityRank(a) - severityRank(b))
+    .sort(byImportance)
     .slice(0, 10);
   const featured = new Set(highPriorityFindings);
-  const additionalFindings = snapshot.findings.filter(finding => !featured.has(finding)).sort((a, b) => severityRank(a) - severityRank(b));
+  const additionalFindings = snapshot.findings.filter(finding => !featured.has(finding)).sort(byImportance);
+  const passedChecks = snapshot.checkResults.filter((check) => check.status === "PASS");
+  const assessed = snapshot.checkResults.filter((check) => check.status !== "NOT_APPLICABLE").length;
   const unavailableChecks = snapshot.checkResults.filter(
     (check) => check.status === "UNAVAILABLE" || check.status === "ERROR",
   );
   const scoreText =
     !hasReportableScore(snapshot.run.overallScore, snapshot.run.evidenceCoverageBasisPoints)
       ? "An overall score is withheld because evidence is insufficient"
-      : `Overall deterministic score: ${snapshot.run.overallScore}/100`;
+      : `Overall score: ${snapshot.run.overallScore} out of 100`;
   const coveragePercent = Math.round(
     snapshot.run.evidenceCoverageBasisPoints / 100,
   );
-  const provisionalText = snapshot.run.provisional
-    ? "The assessment is provisional because evidence coverage is incomplete."
-    : "The score is not provisional under the configured evidence-coverage rule.";
 
   return {
     title: `${snapshot.website.displayName} Digital Visibility Audit`,
     executiveSummary: [
       `${scoreText}.`,
-      `${provisionalText}`,
-      `${highPriorityFindings.length} critical or high findings are listed for review.`,
-      `${additionalFindings.length} additional findings are listed for review.`,
-      `${unavailableChecks.length} checks were unavailable or errored and are disclosed rather than inferred.`,
+      `${passedChecks.length} of ${plural(assessed, "check", "checks")} passed.`,
+      `${plural(highPriorityFindings.length, "high-priority finding", "high-priority findings")} and ${plural(additionalFindings.length, "other finding", "other findings")} are listed, each with a suggested next step.`,
+      unavailableChecks.length
+        ? `${plural(unavailableChecks.length, "check was", "checks were")} unavailable or errored; ${unavailableChecks.length === 1 ? "it is" : "they are"} listed rather than guessed.`
+        : "Every check returned a result.",
       `Evidence coverage: ${coveragePercent}%.`,
+      ...(snapshot.run.provisional ? ["The assessment is provisional because some evidence is missing."] : []),
     ].join(" "),
     methodologyVersion: snapshot.audit.scoringDefinitionVersion,
     reportData: {
@@ -194,6 +256,7 @@ export function buildAuditReportFromSnapshot(
       categoryScores: snapshot.categoryScores,
       highPriorityFindings,
       additionalFindings,
+      passedChecks,
       unavailableChecks,
       methodology: {
         scoringDefinitionVersion: snapshot.audit.scoringDefinitionVersion,

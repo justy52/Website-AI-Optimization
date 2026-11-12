@@ -42,6 +42,20 @@ export async function syncUsageLedger(tx: OperationsTx, c: WorkspaceContext, at 
       case when r.completed_at is null then 'RESERVED' else 'RECORDED' end,r.status::text,r.created_at,to_char(timezone('UTC',r.created_at),'YYYY-MM'),'bounded-audit-v1'
     from audit_runs r join websites w on w.workspace_id=r.workspace_id and w.id=r.website_id where r.workspace_id=${c.workspaceId} and r.created_at>=(${month}||'-01')::date
     on conflict(workspace_id,source_key) do update set state=excluded.state,outcome=excluded.outcome,updated_at=now()`);
+  // Paid lookups made inside an audit. The providers do not return a price, so
+  // only the request count is recorded: cost stays null (unknown), never zero.
+  for (const source of [
+    { key: "audit-places", provider: "google-places", label: "Google Places listing lookup", version: "places-text-search-v1", units: sql`1` },
+    { key: "audit-backlinks", provider: "dataforseo", label: "DataForSEO referring domains", version: "bulk-referring-domains-v1", units: sql`coalesce((e.metadata->>'targets')::int,1)` },
+  ]) {
+    await tx.execute(sql`insert into usage_ledger(workspace_id,client_id,website_id,audit_run_id,source_key,provider,category,units,calls,actual_cost_usd,state,outcome,occurred_at,measurement_window,source_version,metadata)
+      select r.workspace_id,w.client_id,r.website_id,r.id,${source.key}||':'||r.id,${source.provider},'AUDIT',${source.units},coalesce((e.metadata->>'requests')::int,1),null,
+        'RECORDED',r.status::text,r.created_at,to_char(timezone('UTC',r.created_at),'YYYY-MM'),${source.version},jsonb_build_object('measurement','request-count-only')
+      from audit_runs r join websites w on w.workspace_id=r.workspace_id and w.id=r.website_id
+        join audit_evidence e on e.workspace_id=r.workspace_id and e.audit_run_id=r.id and e.source_label=${source.label}
+      where r.workspace_id=${c.workspaceId} and r.created_at>=(${month}||'-01')::date and r.completed_at is not null
+      on conflict(workspace_id,source_key) do nothing`);
+  }
 }
 
 export async function reserveUsage(tx: OperationsTx, c: WorkspaceContext, input: Omit<typeof usageLedger.$inferInsert, "workspaceId" | "occurredAt" | "measurementWindow">, at = new Date()) {

@@ -46,11 +46,11 @@ export type ExtendedOutcome = {
   observedValue?: Record<string, unknown>;
 };
 
-const STATIC_NOTE = "This is a static HTML check: no JavaScript ran and nothing was submitted.";
+const STATIC_NOTE = "This check reads the page's code without running scripts or submitting anything.";
 
 function scopeText(ctx: SiteContext): string {
   const sampled = ctx.pages.length - 1;
-  return sampled > 0 ? `the homepage and ${sampled} sampled page${sampled === 1 ? "" : "s"}` : "the homepage (no other page could be sampled)";
+  return sampled > 0 ? `the homepage and ${sampled} sampled page${sampled === 1 ? "" : "s"}` : "the homepage (the only page that could be sampled)";
 }
 
 function refsOf(pages: SitePage[], limit = 6): string[] {
@@ -591,7 +591,7 @@ function expertiseContent(ctx: SiteContext): ExtendedOutcome {
   const observedValue = { expertisePagesSampled: expert.map((page) => page.url), substantivePages: substantive.length, withAuthorOrDateContext: expert.filter(context).length, homepageFaq: homeFaq };
   if (substantive.length && expert.some(context)) return { status: "PASS", evidenceConfidence: "MEDIUM", reason: `Sampled ${expert.map((page) => page.kind).filter((kind, index, all) => all.indexOf(kind) === index).join(" and ")} content is substantive and carries author, date or question-and-answer context. Accuracy and depth were not judged.`, evidenceRefs: refsOf(expert), observedValue };
   if (expert.length || homeFaq) return { status: "WARNING", evidenceConfidence: "MEDIUM", reason: expert.length ? "Educational or FAQ content exists but is brief or lacks author and date context." : "The homepage answers a few questions, but no dedicated guide, article or FAQ page was found.", evidenceRefs: refsOf(expert.length ? expert : [ctx.home]), observedValue };
-  return { status: "FAIL", evidenceConfidence: "MEDIUM", reason: `No blog, guide, resource or FAQ content was found among ${scopeText(ctx)}.`, evidenceRefs: [ctx.home.ref], observedValue };
+  return { status: "FAIL", evidenceConfidence: "MEDIUM", reason: `No blog, guide, resource or FAQ content was found on ${scopeText(ctx)}.`, evidenceRefs: [ctx.home.ref], observedValue };
 }
 
 function leadForm(ctx: SiteContext): ExtendedOutcome {
