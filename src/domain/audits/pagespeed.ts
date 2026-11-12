@@ -43,18 +43,29 @@ export async function collectMobileLabEvidence(
       if (/API key expired|API_KEY_EXPIRED/i.test(text)) return "api_key_expired";
       if (/has not been used in project|SERVICE_DISABLED|is disabled/i.test(text)) return "api_not_enabled";
       if (/referer|IP address|API_KEY_(?:HTTP_REFERRER|IP_ADDRESS|SERVICE)_BLOCKED|are blocked/i.test(text)) return "api_key_restricted";
+      // Google reports a failed lab run as an HTTP error naming a Lighthouse
+      // code such as FAILED_DOCUMENT_REQUEST. Only that fixed token is kept.
+      const lighthouse = text.match(/Lighthouse returned error:\s*([A-Z][A-Z_]{2,40})/);
+      if (lighthouse) return `lighthouse_${lighthouse[1].toLowerCase()}`;
       if (/Invalid field selection|fields/i.test(text)) return "invalid_field_selection";
       return "provider_http";
     };
+    const started = Date.now();
     let response = await request();
-    if (response.status === 400 || response.status === 403) {
+    if (!response.ok) {
       const reason = await rejection(response);
-      if (reason !== "invalid_field_selection") return unavailable(reason, response.status);
-      // Site-wide field data is optional: retry once without asking for it.
-      api.searchParams.set("fields", baseFields);
+      if (reason === "invalid_field_selection") {
+        // Site-wide field data is optional: retry once without asking for it.
+        api.searchParams.set("fields", baseFields);
+      } else if (!((reason.startsWith("lighthouse_") || response.status >= 500) && Date.now() - started < 25_000)) {
+        return unavailable(reason, response.status);
+      }
+      // A failed lab run or provider error is often transient. Retry once, and
+      // only when the first attempt failed quickly enough to leave time for it.
       response = await request();
+      if (!response.ok) return unavailable(await rejection(response), response.status);
     }
-    if (!response.ok || !response.body) return unavailable("provider_http", response.status);
+    if (!response.body) return unavailable("provider_http", response.status);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let size = 0, content = "";

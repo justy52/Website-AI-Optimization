@@ -72,4 +72,21 @@ describe("public mobile lab collection", () => {
     const other = { ...body, originLoadingExperience: { id: "https://other.example", metrics: body.originLoadingExperience.metrics } };
     expect(await collectMobileLabEvidence("https://example.com/", "key", vi.fn(async () => new Response(JSON.stringify(other), { status: 200 })) as typeof fetch)).toMatchObject({ originFieldInpMs: null });
   });
+  it("retries a failed lab run once and names the Lighthouse error if it fails again", async () => {
+    const failed = () => new Response(JSON.stringify({ error: { code: 400, message: "Lighthouse returned error: FAILED_DOCUMENT_REQUEST. Lighthouse was unable to reliably load https://example.com/" } }), { status: 400 });
+    const recovers = vi.fn<(url: URL) => Promise<Response>>()
+      .mockResolvedValueOnce(failed())
+      .mockResolvedValueOnce(new Response(JSON.stringify(valid), { status: 200 }));
+    expect(await collectMobileLabEvidence("https://example.com/", "key", recovers as unknown as typeof fetch)).toMatchObject({ lcpMs: 4400 });
+    expect(recovers).toHaveBeenCalledTimes(2);
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const stillFails = vi.fn(async () => failed());
+      expect(await collectMobileLabEvidence("https://example.com/", "key", stillFails as unknown as typeof fetch)).toBeNull();
+      expect(stillFails).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith("pagespeed_lab_unavailable", { reason: "lighthouse_failed_document_request", status: 400 });
+      expect(JSON.stringify(warn.mock.calls)).not.toMatch(/example\.com|unable to reliably/);
+    } finally { warn.mockRestore(); }
+  });
 });
