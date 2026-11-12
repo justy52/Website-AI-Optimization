@@ -1,6 +1,7 @@
 {
   "git": {
     "deploymentEnabled": {
+      "main": false,
       "release/virelantic-integrated-20261104": false,
       "codex/virelantic-readiness-20261106": false
     }
