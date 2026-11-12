@@ -6,10 +6,38 @@ export type EmailMessage = { to: string; subject: string; text: string };
 
 type EmailSettings = { apiKey: string; from: string };
 
+/**
+ * Tidy a sender or recipient pasted into a settings field: surrounding
+ * quotes, backticks and stray spaces are the usual reason a provider rejects it.
+ */
+export function cleanAddress(value: string | undefined) {
+  return (value ?? "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
+}
+
+const EMAIL = String.raw`[^\s@<>"',]+@[^\s@<>"',]+\.[^\s@<>"',]+`;
+
+/** Whether a sender is `name@domain` or `Name <name@domain>`. */
+export function isValidSender(value: string) {
+  return new RegExp(`^(?:${EMAIL}|[^<>]{1,100}<${EMAIL}>)$`).test(value);
+}
+
 function settings(): EmailSettings | null {
-  const apiKey = serverEnv.RESEND_API_KEY;
-  const from = serverEnv.EMAIL_FROM;
+  const apiKey = serverEnv.RESEND_API_KEY?.trim();
+  const from = cleanAddress(serverEnv.EMAIL_FROM);
   return apiKey && from ? { apiKey, from } : null;
+}
+
+/** A fixed category for a provider rejection; its own message is never logged. */
+async function rejectionReason(response: Response) {
+  if (response.status === 401) return "api_key_rejected";
+  if (response.status === 429) return "rate_limited";
+  let text = "";
+  try { text = (await response.text()).slice(0, 2000); } catch { return "unreadable"; }
+  if (/not verified|verify (a|your) domain/i.test(text)) return "sender_domain_not_verified";
+  if (/testing emails|your own email address/i.test(text)) return "test_mode_own_address_only";
+  if (/`from`|from field|from address/i.test(text)) return "sender_invalid";
+  if (/`to`|to field|recipient/i.test(text)) return "recipient_invalid";
+  return "other";
 }
 
 /** Whether transactional email can be sent from this deployment. */
@@ -32,10 +60,16 @@ export async function sendEmail(
     const response = await transport("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${configured.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: configured.from, to: [message.to], subject: message.subject, text: message.text }),
+      body: JSON.stringify({ from: configured.from, to: [cleanAddress(message.to)], subject: message.subject, text: message.text }),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) console.error("email_send_failed", { status: response.status });
+    if (!response.ok) {
+      console.error("email_send_failed", {
+        status: response.status,
+        reason: await rejectionReason(response),
+        senderFormatValid: isValidSender(configured.from),
+      });
+    }
     return response.ok;
   } catch (error) {
     console.error("email_send_failed", { name: error instanceof Error ? error.name : typeof error });
