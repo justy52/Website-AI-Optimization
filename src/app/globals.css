@@ -747,6 +747,13 @@ textarea.mx-input {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  /* A grid item will not shrink below its content without this, so long
+     titles pushed the row past the panel edge. */
+  min-width: 0;
+}
+
+.mx-audit-row > input[type="checkbox"] {
+  flex: none;
 }
 
 .mx-audit-row > .mx-row {
