@@ -29,7 +29,7 @@ export type PlacesEvidence = {
   /** How the audited business was tied to a listing; null when none matched. */
   matchBasis: "website" | "phone" | "name" | null;
   listing: PlaceListing | null;
-  competitors: Array<{ name: string; reviewCount: number }>;
+  competitors: Array<{ name: string; reviewCount: number; websiteHost?: string | null }>;
   competitorMedianReviews: number | null;
 };
 
@@ -144,7 +144,7 @@ export async function collectPlacesEvidence(
         const count = typeof place.userRatingCount === "number" && Number.isSafeInteger(place.userRatingCount) && place.userRatingCount >= 0 ? place.userRatingCount : null;
         const open = place.businessStatus === undefined || place.businessStatus === "OPERATIONAL";
         if (!competitorName || count === null || !open || place.id === listing.id || hostOf(place.websiteUri) === siteHost) return [];
-        return [{ name: competitorName, reviewCount: count }];
+        return [{ name: competitorName, reviewCount: count, websiteHost: hostOf(place.websiteUri) }];
       });
     }
     return {

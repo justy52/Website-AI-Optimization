@@ -1,5 +1,6 @@
 import type { EvidenceConfidence } from "@/domain/opportunities/generation";
 
+import type { BacklinkEvidence } from "./backlinks";
 import type { CrawlSummary, SampledPage, SampledPageKind } from "./crawl";
 import type { PageAnalysis } from "./page-analysis";
 import { normalizeBusinessName, type PlacesEvidence } from "./places";
@@ -30,6 +31,8 @@ export type SiteContext = {
   facts: Array<{ id: string; factType: string; value: string }>;
   places: PlacesEvidence | null;
   placesConfigured: boolean;
+  backlinks: BacklinkEvidence | null;
+  backlinksConfigured: boolean;
   siteHost: string;
   homeHasPrimaryCta: boolean;
 };
@@ -510,6 +513,25 @@ function thirdPartyMentions(ctx: SiteContext): ExtendedOutcome {
   return { status: "WARNING", evidenceConfidence: "MEDIUM", reason: `${names.length} third-party profile${names.length === 1 ? " is" : "s are"} declared (${names.join(", ")})${directories.length ? "" : ", none of them a business directory or review platform"}. ${scope}`, evidenceRefs: refsOf(ctx.pages), observedValue };
 }
 
+function referringDomains(ctx: SiteContext): ExtendedOutcome {
+  const data = ctx.backlinks;
+  if (!data) {
+    return { status: "UNAVAILABLE", reason: ctx.backlinksConfigured ? "The backlink data provider did not return a usable response. No link data was inferred." : "Referring-domain counts require backlink data from a licensed provider, and none is configured. No link data was inferred." };
+  }
+  if (data.referringDomains === null) return { status: "UNAVAILABLE", reason: "The backlink data provider reported no figure for this domain. No link data was inferred." };
+  const count = data.referringDomains;
+  const source = data.competitorSource === "configured" ? "the competitor websites configured for this client" : "the websites of nearby same-category Google listings";
+  const observedValue = { referringDomains: count, competitorMedian: data.competitorMedian, competitorsCompared: data.competitors.length, competitorSource: data.competitorSource, provider: data.provider, fetchedAt: data.fetchedAt };
+  const note = `Counts are ${data.provider}'s index of referring root domains, not Google's, and say nothing about link quality.`;
+  if (count === 0) return { status: "FAIL", reason: `${data.provider} reports no referring domains for this website. ${note}`, evidenceRefs: ["backlinks"], observedValue };
+  if (data.competitorMedian === null) {
+    return { status: "UNAVAILABLE", reason: `${data.provider} reports ${count} referring domain${count === 1 ? "" : "s"} for this website, but fewer than three competitor websites were available to compare it with. Add competitor targets to this website to score this check.` };
+  }
+  const ratio = data.competitorMedian === 0 ? 1 : count / data.competitorMedian;
+  const basis = `${data.provider} reports ${count} referring domain${count === 1 ? "" : "s"}, ${Math.round(ratio * 100)}% of the median (${data.competitorMedian}) across ${data.competitors.length} of ${source}. ${note}`;
+  return { status: ratio >= 0.75 ? "PASS" : ratio >= 0.25 ? "WARNING" : "FAIL", evidenceConfidence: data.competitorSource === "configured" ? "HIGH" : "MEDIUM", reason: basis, evidenceRefs: ["backlinks"], observedValue };
+}
+
 function thirdPartyConsistency(ctx: SiteContext): ExtendedOutcome {
   const listing = ctx.places?.listing;
   if (!listing) return { status: "UNAVAILABLE", reason: ctx.places ? "No Google listing could be matched to this business, so no third-party source was available to compare." : "Comparing the site with a third-party source requires a Google Places lookup, which is not configured." };
@@ -749,6 +771,7 @@ const rules: Record<string, (ctx: SiteContext) => ExtendedOutcome> = {
   "ai.citability": citability,
   "auth.reviews": authorityReviews,
   "auth.third_party_mentions": thirdPartyMentions,
+  "auth.referring_domains": referringDomains,
   "auth.credentials": credentials,
   "auth.business_transparency": businessTransparency,
   "auth.expertise_content": expertiseContent,

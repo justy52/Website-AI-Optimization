@@ -18,7 +18,7 @@ Before this collector, 27 of the 43 catalog checks returned `UNAVAILABLE` on eve
 | Homepage and page sample (always) | `perf.https`, `perf.mobile_render`, `perf.critical_functionality`, all eight `seo.*`, `local.business_identity`, `local.category_service_alignment`, `local.location_clarity`, `local.local_pages`, `local.structured_business_data`, all seven `conv.*`, all eight `ai.*`, `auth.reviews`, `auth.third_party_mentions`, `auth.credentials`, `auth.business_transparency`, `auth.expertise_content` |
 | `GOOGLE_PAGESPEED_API_KEY` | `perf.lcp`, `perf.cls`, `perf.inp` |
 | `GOOGLE_PLACES_API_KEY` | `local.gbp_presence`, `local.review_signal`, `auth.entity_consistency`; it also upgrades `local.category_service_alignment` and `auth.reviews` from on-site evidence to listing data |
-| No provider yet | `auth.referring_domains` (needs a licensed backlink data source) |
+| `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` | `auth.referring_domains` |
 
 Without a Places key, `local.gbp_presence` returns a warning only when the site itself links to a Google Maps or Business Profile page; otherwise it stays unavailable. Nothing about a listing, review count or backlink is ever inferred.
 
@@ -44,3 +44,11 @@ OPTIQ_AUDIT_LIVE_URLS="https://example.com/" corepack pnpm vitest run src/domain
 ```
 
 Set `OPTIQ_AUDIT_LIVE_OUT` to a file path to save the per-check output. The run contacts only the listed sites (and Google, when keys are supplied) and writes nothing to a database.
+
+## Enabling referring domains (DataForSEO)
+
+1. Create a DataForSEO account and make sure the **Backlinks API** is available on it. Check their current pricing and any minimum commitment first.
+2. Add the API login and API password to the deployment as `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` (server only), then redeploy.
+3. Each audit makes one bulk request for the audited domain and up to ten competitor domains. Only bare domain names are sent.
+
+The check compares the site with a competitor median, as Doc 26 requires. It uses the active competitor targets saved on the website; when there are none it falls back to the websites of the nearby same-category listings Google Places returned, and reports medium confidence. With fewer than three competitor domains it reports the measured figure but stays unavailable. Like Places, these requests are not yet recorded in the usage ledger.

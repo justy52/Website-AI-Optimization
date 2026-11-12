@@ -14,6 +14,7 @@ import {
   audits,
   auditSnapshots,
   businessFacts,
+  competitorTargets,
   reports,
   monitoringRuns,
   websites,
@@ -371,6 +372,12 @@ export async function startAuditForWebsite(
         or(isNull(businessFacts.expiresAt), gt(businessFacts.expiresAt, sql`now()`))))
       .limit(100);
 
+    // Public competitor domains the operator configured for this website.
+    const competitors = await tx.select({ domain: competitorTargets.domain }).from(competitorTargets)
+      .where(and(eq(competitorTargets.workspaceId, context.workspaceId), eq(competitorTargets.websiteId, website.id),
+        eq(competitorTargets.active, true), isNull(competitorTargets.archivedAt)))
+      .limit(10);
+
     const [audit] = await tx
       .insert(audits)
       .values({
@@ -400,12 +407,17 @@ export async function startAuditForWebsite(
       domain: website.domain,
     });
 
-    return { audit, run, website, facts };
+    return { audit, run, website, facts, competitorDomains: competitors.map((competitor) => competitor.domain) };
   });
 
   try {
     await checkMaterialStep(context, "audit", database);
-    const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl, { verifiedPublicFacts: prepared.facts }, { pagespeedApiKey: serverEnv.GOOGLE_PAGESPEED_API_KEY, placesApiKey: serverEnv.GOOGLE_PLACES_API_KEY });
+    const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl, { verifiedPublicFacts: prepared.facts }, {
+      pagespeedApiKey: serverEnv.GOOGLE_PAGESPEED_API_KEY,
+      placesApiKey: serverEnv.GOOGLE_PLACES_API_KEY,
+      backlinkCredentials: serverEnv.DATAFORSEO_LOGIN && serverEnv.DATAFORSEO_PASSWORD ? { login: serverEnv.DATAFORSEO_LOGIN, password: serverEnv.DATAFORSEO_PASSWORD } : undefined,
+      competitorDomains: prepared.competitorDomains,
+    });
 
     await withTenantContext(database, context, async (tx) => {
       // Use the same run row lock as stale recovery before writing any evidence.

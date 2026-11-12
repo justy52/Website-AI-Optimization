@@ -46,6 +46,8 @@ const rawEnvSchema = z.object({
   OPENAI_API_KEY: optionalNonEmpty,
   GOOGLE_PAGESPEED_API_KEY: optionalNonEmpty,
   GOOGLE_PLACES_API_KEY: optionalNonEmpty,
+  DATAFORSEO_LOGIN: optionalNonEmpty,
+  DATAFORSEO_PASSWORD: optionalNonEmpty,
   VERCEL: optionalNonEmpty,
   VERCEL_URL: optionalNonEmpty,
   VERCEL_BRANCH_URL: optionalNonEmpty,

@@ -18,6 +18,7 @@ import {
   type ScoreCategoryKey,
 } from "./scoring";
 import type { EvidenceConfidence } from "@/domain/opportunities/generation";
+import { collectBacklinkEvidence, type BacklinkCredentials, type BacklinkEvidence } from "./backlinks";
 import { fetchSamplePages, selectSamplePages, type CrawlSummary, type SampledPage } from "./crawl";
 import { evaluateDeclaredFactCheck, evaluateExtendedCheck, type ExtendedOutcome, type SiteContext, type SitePage } from "./extended-checks";
 import { collectMobileLabEvidence, type MobileLabEvidence } from "./pagespeed";
@@ -96,11 +97,16 @@ export type CollectedWebsiteEvidence = {
   crawl?: CrawlSummary | null;
   places?: PlacesEvidence | null;
   placesConfigured?: boolean;
+  backlinks?: BacklinkEvidence | null;
+  backlinksConfigured?: boolean;
 };
 
 export type AuditCollectionOptions = {
   pagespeedApiKey?: string;
   placesApiKey?: string;
+  backlinkCredentials?: BacklinkCredentials;
+  /** Competitor domains the operator configured for this website. */
+  competitorDomains?: string[];
   verifiedPublicFacts?: AuditBusinessContext["verifiedPublicFacts"];
   /** Injected in tests; defaults to the global fetch for provider APIs. */
   providerTransport?: typeof fetch;
@@ -270,6 +276,18 @@ export async function collectWebsiteEvidence(
         }, options.placesApiKey, options.providerTransport);
       }
     }
+    let backlinks: BacklinkEvidence | null = null;
+    if (options.backlinkCredentials && successful(page)) {
+      // Prefer the operator's competitor set; otherwise use the websites of
+      // the nearby same-category listings Google returned.
+      const configured = options.competitorDomains ?? [];
+      const listed = (places?.competitors ?? []).flatMap((competitor) => competitor.websiteHost ? [competitor.websiteHost] : []);
+      backlinks = await collectBacklinkEvidence({
+        siteDomain: finalPage.hostname,
+        competitorDomains: configured.length ? configured : listed,
+        competitorSource: configured.length ? "configured" : listed.length ? "google_listings" : "none",
+      }, options.backlinkCredentials, options.providerTransport);
+    }
     const mobileLab = await labPromise;
 
     return {
@@ -286,6 +304,8 @@ export async function collectWebsiteEvidence(
       crawl,
       places,
       placesConfigured: Boolean(options.placesApiKey),
+      backlinks,
+      backlinksConfigured: Boolean(options.backlinkCredentials),
     };
   } catch (error) {
     return {
@@ -400,6 +420,8 @@ function buildSiteContext(collected: CollectedWebsiteEvidence, businessContext: 
     facts: (businessContext.verifiedPublicFacts ?? []).filter((fact) => fact.value.trim().length >= 3 && fact.value.trim().length <= 200),
     places: collected.places ?? null,
     placesConfigured: collected.placesConfigured ?? false,
+    backlinks: collected.backlinks ?? null,
+    backlinksConfigured: collected.backlinksConfigured ?? false,
     siteHost: new URL(page.finalUrl).hostname.replace(/^www\./, ""),
     homeHasPrimaryCta: hasPrimaryCta(analysis),
   };
@@ -926,6 +948,19 @@ function evidenceItems(collected: CollectedWebsiteEvidence): AuditEvidenceItem[]
   });
   if (collected.crawl) {
     items.push({ id: "page-sample", evidenceType: "TEXT", sourceUrl: collected.page?.finalUrl, sourceLabel: "Same-site page sample", metadata: { ...collected.crawl } });
+  }
+  if (collected.backlinks) {
+    items.push({
+      id: "backlinks",
+      evidenceType: "TEXT",
+      sourceLabel: "DataForSEO referring domains",
+      excerpt: collected.backlinks.referringDomains === null ? "No figure reported for the audited domain" : `${collected.backlinks.referringDomains} referring domains`,
+      metadata: {
+        provider: collected.backlinks.provider, fetchedAt: collected.backlinks.fetchedAt, referringDomains: collected.backlinks.referringDomains,
+        competitorSource: collected.backlinks.competitorSource, competitorsCompared: collected.backlinks.competitors.length,
+        competitorMedian: collected.backlinks.competitorMedian, competitors: collected.backlinks.competitors,
+      },
+    });
   }
   if (collected.places) {
     const listing = collected.places.listing;
