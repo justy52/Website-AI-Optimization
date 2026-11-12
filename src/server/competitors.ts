@@ -113,6 +113,14 @@ export async function listWebsiteCompetitorTargets(
   });
 }
 
+/** The client's service plan does not allow another competitor target. */
+export class CompetitorLimitError extends Error {
+  constructor(public readonly planLimit: number) {
+    super(`The current service plan allows ${planLimit} competitor targets.`);
+    this.name = "CompetitorLimitError";
+  }
+}
+
 export async function createCompetitorTarget(
   context: WorkspaceContext,
   websiteId: string,
@@ -190,7 +198,7 @@ export async function createCompetitorTarget(
         resourceType: "website",
         resourceId: websiteId,
       });
-      throw new Error(`The current service plan allows ${planLimit} competitor targets.`);
+      throw new CompetitorLimitError(planLimit);
     }
 
     const [target] = await tx

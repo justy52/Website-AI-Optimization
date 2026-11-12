@@ -37,10 +37,10 @@ export default async function WebsiteDetailPage({
   searchParams,
 }: {
   params: Promise<{ websiteId: string }>;
-  searchParams: Promise<{ notice?: string }>;
+  searchParams: Promise<{ notice?: string; limit?: string }>;
 }) {
   const { websiteId } = await params;
-  const { notice } = await searchParams;
+  const { notice, limit } = await searchParams;
   const shell = await getWorkspaceShellContext();
   const website = await getWebsite(shell.workspaceContext, websiteId);
 
@@ -77,6 +77,11 @@ export default async function WebsiteDetailPage({
         eyebrow={`Website - ${formatDate(website.createdAt)}`}
         title={website.displayName}
       />
+      {notice === "competitor-limit" ? (
+        <p role="alert">
+          The competitor was not added. The service plan for this client allows {/^\d{1,3}$/.test(limit ?? "") ? limit : "no more"} competitor targets. Change the plan on the client page to add more.
+        </p>
+      ) : null}
       {notice === "already-added" ? (
         <p role="status">This domain is already in the workspace, so no new website was added. This is the existing record; start an audit from here.</p>
       ) : null}

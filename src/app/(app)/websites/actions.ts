@@ -7,6 +7,7 @@ import { dispatchQueuedRun } from "@/server/workflow-dispatch";
 
 import {
   archiveCompetitorTarget,
+  CompetitorLimitError,
   createCompetitorTarget,
   observeCompetitorTarget,
 } from "@/server/competitors";
@@ -174,12 +175,18 @@ export async function createCompetitorTargetAction(formData: FormData) {
   const shell = await getWorkspaceShellContext();
   const websiteId = value(formData, "websiteId");
 
-  await createCompetitorTarget(shell.workspaceContext, websiteId, {
-    name: value(formData, "name"),
-    domainOrUrl: value(formData, "domainOrUrl"),
-    relationship: value(formData, "relationship"),
-    notes: value(formData, "notes"),
-  });
+  try {
+    await createCompetitorTarget(shell.workspaceContext, websiteId, {
+      name: value(formData, "name"),
+      domainOrUrl: value(formData, "domainOrUrl"),
+      relationship: value(formData, "relationship"),
+      notes: value(formData, "notes"),
+    });
+  } catch (error) {
+    if (!(error instanceof CompetitorLimitError)) throw error;
+    // Explain the plan limit on the page instead of failing the request.
+    redirect(`/websites/${websiteId}?notice=competitor-limit&limit=${error.planLimit}` as never);
+  }
   revalidatePath(`/websites/${websiteId}`);
   redirect(`/websites/${websiteId}`);
 }
