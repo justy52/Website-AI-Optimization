@@ -1,3 +1,4 @@
+import { UserInputError } from "@/domain/errors";
 import { createHash } from "node:crypto";
 
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
@@ -136,7 +137,7 @@ export async function createCompetitorTarget(
   const name = input.name.trim();
 
   if (!name) {
-    throw new Error("Competitor name is required.");
+    throw new UserInputError("Competitor name is required.");
   }
 
   const normalized = normalizeCompetitorTargetUrl(input.domainOrUrl);
@@ -170,7 +171,7 @@ export async function createCompetitorTarget(
       .limit(1);
 
     if (!targetWebsite) {
-      throw new Error("Website was not found.");
+      throw new UserInputError("Website was not found.");
     }
 
     const [count] = await tx
@@ -249,7 +250,7 @@ export async function archiveCompetitorTarget(
       .returning();
 
     if (!target) {
-      throw new Error("Competitor target was not found.");
+      throw new UserInputError("Competitor target was not found.");
     }
 
     await recordActivity(
@@ -287,7 +288,7 @@ export async function observeCompetitorTarget(
       .limit(1);
 
     if (!row) {
-      throw new Error("Competitor target was not found.");
+      throw new UserInputError("Competitor target was not found.");
     }
 
     return row;

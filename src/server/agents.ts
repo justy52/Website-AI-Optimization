@@ -1,3 +1,4 @@
+import { UserInputError } from "@/domain/errors";
 import { randomUUID } from "node:crypto";
 import { lockOperationalWorkspace, assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, withOperationalContext, OperationsValidationError } from "./operations";
 import { reserveUsage, recordPrepareUsage } from "./usage-ledger";
@@ -241,11 +242,11 @@ export async function requestPrepareDraftForOpportunity(
       .limit(1);
 
     if (!opportunity) {
-      throw new Error("Opportunity was not found.");
+      throw new UserInputError("Opportunity was not found.");
     }
 
     const route = routePrepareOpportunity(opportunity);
-    if (!route) throw new Error("This Opportunity requires manual review; no supported PREPARE capability is available.");
+    if (!route) throw new UserInputError("This Opportunity requires manual review; no supported PREPARE capability is available.");
     const agent = getEnabledAgentDefinition(route.agentKey);
     const allowedTools = agent.allowedToolKeys.map((toolKey) => {
       const tool = assertToolAllowedForAgent(agent, toolKey);
@@ -254,7 +255,7 @@ export async function requestPrepareDraftForOpportunity(
     const budget = createBudgetSnapshot(agent.budgetLimits);
 
     if (!openOpportunityStatuses.includes(opportunity.status)) {
-      throw new Error("Only open Opportunities can request PREPARE work.");
+      throw new UserInputError("Only open Opportunities can request PREPARE work.");
     }
 
     const [pendingApproval] = await tx
@@ -1313,11 +1314,11 @@ export async function decideApprovalRequest(
       .limit(1);
 
     if (!detail) {
-      throw new Error("Approval request was not found.");
+      throw new UserInputError("Approval request was not found.");
     }
 
     if (detail.approval.status !== "PENDING") {
-      throw new Error("Only pending approval requests can be decided.");
+      throw new UserInputError("Only pending approval requests can be decided.");
     }
 
     assertPhase3ApprovalTarget({
@@ -1618,7 +1619,7 @@ export async function listClientFactualControls(
       )
       .limit(1);
 
-    if (!client) throw new Error("Client was not found.");
+    if (!client) throw new UserInputError("Client was not found.");
 
     const sources = await tx
       .select()
@@ -1677,7 +1678,7 @@ export async function createBusinessFact(
   const sourceReference = input.sourceReference.trim();
 
   if (!factType || !value || !sourceReference) {
-    throw new Error("Fact type, value, and source reference are required.");
+    throw new UserInputError("Fact type, value, and source reference are required.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -1728,7 +1729,7 @@ export async function createClientKnowledgeSource(
   const title = input.title.trim();
 
   if (!title) {
-    throw new Error("Source title is required.");
+    throw new UserInputError("Source title is required.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -1781,7 +1782,7 @@ export async function createClaimPolicy(
   const rule = input.rule.trim();
 
   if (!claimCategory || !rule) {
-    throw new Error("Claim category and rule are required.");
+    throw new UserInputError("Claim category and rule are required.");
   }
 
   return withTenantContext(database, context, async (tx) => {

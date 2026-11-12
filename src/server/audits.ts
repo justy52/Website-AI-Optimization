@@ -1,7 +1,8 @@
 import { assertAutomationAllowed, assertOperationalAdmission, checkMaterialStep, enforceActionRateLimit, OperationsValidationError, withOperationalContext } from "./operations";
+import { UserInputError } from "@/domain/errors";
 import { createHash } from "node:crypto";
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -31,7 +32,7 @@ import {
   canFinalizeAudit,
   type AuditSnapshotData,
 } from "@/domain/audits/report";
-import { isStaleAuditRun } from "@/domain/audits/recovery";
+import { AUDIT_STALE_AFTER_MS, AuditDeadlineError, DAILY_AUDIT_LIMIT, isStaleAuditRun, withAuditDeadline } from "@/domain/audits/recovery";
 import { assertWorkspaceRole, type WorkspaceContext } from "@/domain/tenancy/context";
 import { serverEnv } from "@/lib/env";
 import { z } from "zod";
@@ -338,6 +339,36 @@ export async function closeStaleAuditRun(
   });
 }
 
+/**
+ * Mark audits whose run was cut off (for example by the hosting time limit) as
+ * failed. A run cannot outlive that limit, so one still "running" after the
+ * stale window is dead; left alone it would count against the concurrency
+ * ceiling and block every new audit. Monitoring-owned runs are left to their
+ * parent run.
+ */
+async function closeAbandonedAuditRuns(tx: AuditTransaction, context: WorkspaceContext, at = now()) {
+  const closed = await tx.update(auditRuns)
+    .set({ status: "FAILED", errorSummary: "The audit did not finish and was closed automatically. Start it again.", completedAt: at, updatedAt: at })
+    .where(and(
+      eq(auditRuns.workspaceId, context.workspaceId),
+      eq(auditRuns.status, "RUNNING"),
+      lt(auditRuns.startedAt, new Date(at.getTime() - AUDIT_STALE_AFTER_MS)),
+      sql`not exists (select 1 from monitoring_runs m where m.workspace_id = ${auditRuns.workspaceId} and m.audit_run_id = ${auditRuns.id} and m.status = 'RUNNING')`,
+    ))
+    .returning({ id: auditRuns.id, auditId: auditRuns.auditId });
+  for (const run of closed) {
+    await tx.update(audits).set({ status: "FAILED", updatedAt: at })
+      .where(and(eq(audits.workspaceId, context.workspaceId), eq(audits.id, run.auditId), eq(audits.status, "RUNNING")));
+    await recordActivity(tx, context, "audit.abandoned_run_closed", "audit", run.auditId, { runId: run.id, automatic: true });
+  }
+  return closed.length;
+}
+
+/** Close cut-off audits before showing the list, so none appears to run forever. */
+export async function closeAbandonedAudits(context: WorkspaceContext, database = db) {
+  return withTenantContext(database, context, (tx) => closeAbandonedAuditRuns(tx, context));
+}
+
 /** A repeat request this soon after an audit is treated as the same request. */
 export const AUDIT_REPEAT_WINDOW_MS = 30_000;
 
@@ -379,7 +410,18 @@ export async function startAuditForWebsite(
       await assertAutomationAllowed(tx,context,"audit");
       const [parent]=await tx.select().from(monitoringRuns).where(and(eq(monitoringRuns.workspaceId,context.workspaceId),eq(monitoringRuns.id,parentMonitoringRunId),eq(monitoringRuns.websiteId,websiteId),eq(monitoringRuns.status,"RUNNING"))).limit(1);
       if (!parent || parent.auditRunId) throw new Error("An active unclaimed parent monitoring run is required.");
-    } else await assertOperationalAdmission(tx, context, "audit", { workflow: true, crawl: true });
+    } else {
+      // Clear dead runs first so they cannot hold the concurrency ceiling.
+      await closeAbandonedAuditRuns(tx, context);
+      await assertOperationalAdmission(tx, context, "audit", { workflow: true, crawl: true });
+    }
+    // Each audit makes paid Places and backlink lookups that no dollar budget
+    // counts, so the number of audits per day is capped instead.
+    const [recent] = await tx.select({ count: sql<number>`count(*)::int` }).from(auditRuns)
+      .where(and(eq(auditRuns.workspaceId, context.workspaceId), gte(auditRuns.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))));
+    if ((recent?.count ?? 0) >= DAILY_AUDIT_LIMIT) {
+      throw new OperationsValidationError(`This workspace has started ${DAILY_AUDIT_LIMIT} audits in the last 24 hours, which is the daily limit. Try again later.`, "BUDGET");
+    }
     const [website] = await tx
       .select()
       .from(websites)
@@ -387,7 +429,7 @@ export async function startAuditForWebsite(
       .limit(1);
 
     if (!website) {
-      throw new Error("Website was not found.");
+      throw new UserInputError("Website was not found.");
     }
 
     // Only owner-verified, public, current facts for this client and site may
@@ -441,12 +483,12 @@ export async function startAuditForWebsite(
 
   try {
     await checkMaterialStep(context, "audit", database);
-    const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl, { verifiedPublicFacts: prepared.facts }, {
+    const result = await withAuditDeadline(runPhase1DeterministicAudit(prepared.website.canonicalUrl, { verifiedPublicFacts: prepared.facts }, {
       pagespeedApiKey: serverEnv.GOOGLE_PAGESPEED_API_KEY,
       placesApiKey: serverEnv.GOOGLE_PLACES_API_KEY,
       backlinkCredentials: serverEnv.DATAFORSEO_LOGIN && serverEnv.DATAFORSEO_PASSWORD ? { login: serverEnv.DATAFORSEO_LOGIN, password: serverEnv.DATAFORSEO_PASSWORD } : undefined,
       competitorDomains: prepared.competitorDomains,
-    });
+    }));
 
     await withTenantContext(database, context, async (tx) => {
       // Use the same run row lock as stale recovery before writing any evidence.
@@ -472,7 +514,14 @@ export async function startAuditForWebsite(
       });
     });
   } catch (error) {
-    await failRunningAudit(context, prepared.audit.id, prepared.run.id, "Audit processing failed; review and retry.", database);
+    const timedOut = error instanceof AuditDeadlineError;
+    await failRunningAudit(context, prepared.audit.id, prepared.run.id, timedOut
+      ? "The audit ran out of time before every check finished. Start it again; a slow website or provider is the usual cause."
+      : "Audit processing failed; review and retry.", database);
+    // Name the failure in the function log; the page shows only the summary.
+    console.error("audit_run_failed", { auditId: prepared.audit.id, runId: prepared.run.id, name: error instanceof Error ? error.name : typeof error });
+    // A timed-out manual audit is recorded as failed; show it, not an error page.
+    if (timedOut && !parentMonitoringRunId) return prepared.audit;
     throw error;
   }
 
@@ -596,7 +645,7 @@ export async function finalizeAudit(
     const detail = await loadAuditDetail(tx, context, auditId);
 
     if (!detail?.audit || !detail.website || !detail.run) {
-      throw new Error("Audit is not ready to finalize.");
+      throw new UserInputError("Audit is not ready to finalize.");
     }
 
     if (detail.snapshot) {
@@ -604,7 +653,7 @@ export async function finalizeAudit(
     }
 
     if (!canFinalizeAudit(detail.audit.status, detail.run.status)) {
-      throw new Error("The audit must finish successfully before its snapshot can be finalized.");
+      throw new UserInputError("The audit must finish successfully before its snapshot can be finalized.");
     }
 
     const finalizedAt = now().toISOString();
@@ -711,7 +760,7 @@ export async function createReportForAudit(
       .limit(1);
 
     if (!snapshot) {
-      throw new Error("Audit must be finalized before a report can be created.");
+      throw new UserInputError("Audit must be finalized before a report can be created.");
     }
 
     const built = buildAuditReportFromSnapshot(
@@ -782,7 +831,7 @@ export async function finalizeReport(
         .where(and(scope, eq(reports.status, "FINALIZED")))
         .limit(1);
       if (finalized) return finalized;
-      throw new Error("Report was not found.");
+      throw new UserInputError("Report was not found.");
     }
 
     await recordActivity(tx, context, "report.finalized", "report", report.id, {

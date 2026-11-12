@@ -1,5 +1,5 @@
 "use server";
-import { OperationsValidationError } from "@/domain/operations/policy";
+import { failAction } from "../action-errors";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -32,29 +32,33 @@ function value(formData: FormData, key: string): string {
 }
 
 export async function updateOpportunityAction(formData: FormData) {
-  const shell = await getWorkspaceShellContext();
-  const opportunityId = value(formData, "opportunityId");
+  try {
+    const shell = await getWorkspaceShellContext();
+    const opportunityId = value(formData, "opportunityId");
 
-  await updateOpportunity(shell.workspaceContext, opportunityId, {
-    title: value(formData, "title"),
-    summary: value(formData, "summary"),
-    status: value(formData, "status"),
-    impact: value(formData, "impact"),
-    confidence: value(formData, "confidence"),
-    urgency: value(formData, "urgency"),
-    strategicFit: value(formData, "strategicFit"),
-    planFit: value(formData, "planFit"),
-    staleness: value(formData, "staleness"),
-    effort: value(formData, "effort"),
-    dependencyState: value(formData, "dependencyState"),
-    clientInputState: value(formData, "clientInputState"),
-    approvalBlockedState: value(formData, "approvalBlockedState"),
-    ownerUserId: value(formData, "ownerUserId"),
-  });
+    await updateOpportunity(shell.workspaceContext, opportunityId, {
+      title: value(formData, "title"),
+      summary: value(formData, "summary"),
+      status: value(formData, "status"),
+      impact: value(formData, "impact"),
+      confidence: value(formData, "confidence"),
+      urgency: value(formData, "urgency"),
+      strategicFit: value(formData, "strategicFit"),
+      planFit: value(formData, "planFit"),
+      staleness: value(formData, "staleness"),
+      effort: value(formData, "effort"),
+      dependencyState: value(formData, "dependencyState"),
+      clientInputState: value(formData, "clientInputState"),
+      approvalBlockedState: value(formData, "approvalBlockedState"),
+      ownerUserId: value(formData, "ownerUserId"),
+    });
 
-  revalidatePath("/opportunities");
-  revalidatePath(`/opportunities/${opportunityId}`);
-  redirect(`/opportunities/${opportunityId}` as never);
+    revalidatePath("/opportunities");
+    revalidatePath(`/opportunities/${opportunityId}`);
+    redirect(`/opportunities/${opportunityId}` as never);
+  } catch (error) {
+    failAction(error, `/opportunities/${value(formData, "opportunityId")}`);
+  }
 }
 
 export async function requestPrepareDraftAction(formData: FormData) {
@@ -76,7 +80,6 @@ export async function requestPrepareDraftAction(formData: FormData) {
   revalidatePath("/approvals");
   redirect(`/opportunities/${opportunityId}` as never);
   } catch (error) {
-    if (error instanceof OperationsValidationError) redirect(`/operations?validation=${encodeURIComponent(error.message)}` as never);
-    throw error;
+    failAction(error, `/opportunities/${value(formData, "opportunityId")}`);
   }
 }

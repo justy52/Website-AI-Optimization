@@ -1,4 +1,5 @@
 "use server";
+import { failAction } from "../action-errors";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -20,25 +21,33 @@ function destination(formData: FormData) {
 }
 
 export async function selectOpportunityForWorkPlanAction(formData: FormData) {
-  const shell = await getWorkspaceShellContext();
+  try {
+    const shell = await getWorkspaceShellContext();
 
-  await selectOpportunityForWorkPlan(
-    shell.workspaceContext,
-    value(formData, "opportunityId"),
-  );
+    await selectOpportunityForWorkPlan(
+      shell.workspaceContext,
+      value(formData, "opportunityId"),
+    );
 
-  revalidatePath("/work-plan");
-  redirect(destination(formData) as never);
+    revalidatePath("/work-plan");
+    redirect(destination(formData) as never);
+  } catch (error) {
+    failAction(error, destination(formData));
+  }
 }
 
 export async function removeOpportunityFromWorkPlanAction(formData: FormData) {
-  const shell = await getWorkspaceShellContext();
+  try {
+    const shell = await getWorkspaceShellContext();
 
-  await removeOpportunityFromWorkPlan(
-    shell.workspaceContext,
-    value(formData, "opportunityId"),
-  );
+    await removeOpportunityFromWorkPlan(
+      shell.workspaceContext,
+      value(formData, "opportunityId"),
+    );
 
-  revalidatePath("/work-plan");
-  redirect(destination(formData) as never);
+    revalidatePath("/work-plan");
+    redirect(destination(formData) as never);
+  } catch (error) {
+    failAction(error, destination(formData));
+  }
 }

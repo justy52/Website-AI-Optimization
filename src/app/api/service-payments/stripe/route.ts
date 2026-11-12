@@ -1,3 +1,4 @@
+import { notifyOwnerLater } from "@/server/email";
 import { paymentConfiguration } from "@/domain/payments/policy";
 import { parsePaymentEvent, StripeServicePayments } from "@/domain/payments/stripe";
 import { processServicePaymentEvent } from "@/server/service-payments";
@@ -26,8 +27,13 @@ export async function POST(request: Request) {
   try {
     await processServicePaymentEvent(event, { configuration: config, provider });
     return Response.json({ received: true });
-  } catch {
+  } catch (error) {
     // No raw payment, email, credential, or provider error details in responses/logs.
+    console.error("service_payment_event_failed", { eventId: event.id, type: event.type, name: error instanceof Error ? error.name : typeof error });
+    notifyOwnerLater(
+      "A Stripe payment event needs review",
+      "Virelantic could not process a payment event from Stripe. Stripe will retry it. If this repeats, open Service orders in the app and review the payment.",
+    );
     return Response.json({ error: "Reconciliation pending; retry delivery" }, { status: 503 });
   }
 }

@@ -760,3 +760,44 @@ textarea.mx-input {
   flex: 1;
   min-width: 0;
 }
+
+.mx-notice-problem {
+  margin: 0 0 14px;
+  border: 1px solid var(--red);
+  border-radius: 2px;
+  padding: 10px 14px;
+  color: var(--red);
+  font-size: 13px;
+}
+
+.mx-nav-count {
+  margin-left: auto;
+  border-radius: 999px;
+  background: var(--green);
+  padding: 1px 7px;
+  color: var(--void);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mx-attention {
+  border-color: var(--amber, #ffb000);
+}
+
+.mx-attention-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+  font-size: 13px;
+}
+
+.mx-attention-item:first-of-type {
+  border-top: 0;
+}
+
+.mx-attention-item > span:first-child {
+  flex: 1 1 280px;
+}

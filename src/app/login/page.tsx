@@ -4,6 +4,7 @@ import { getOptionalAuthenticatedUser } from "@/server/auth";
 import { enrollmentPolicy } from "@/auth/enrollment";
 import { serverEnv } from "@/lib/env";
 
+import { emailConfigured } from "@/server/email";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage() {
@@ -17,7 +18,7 @@ export default async function LoginPage() {
     <main className="mx-auth-root">
       <div className="mx-rain" aria-hidden />
       <div className="mx-scan" aria-hidden />
-      <LoginForm signupEnabled={enrollmentPolicy(serverEnv).signupEnabled} />
+      <LoginForm resetEnabled={emailConfigured()} signupEnabled={enrollmentPolicy(serverEnv).signupEnabled} />
     </main>
   );
 }

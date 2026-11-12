@@ -11,7 +11,8 @@ import type { WorkspaceContext } from "@/domain/tenancy/context";
 import type { AuditSnapshotData, BuiltAuditReport } from "@/domain/audits/report";
 import { serverEnv } from "@/lib/env";
 import { syncUsageLedger } from "./usage-ledger";
-import { listAudits, setAuditsHidden } from "./audits";
+import { closeAbandonedAudits, listAudits, setAuditsHidden } from "./audits";
+import { DAILY_AUDIT_LIMIT } from "@/domain/audits/recovery";
 import { AUDIT_REPEAT_WINDOW_MS, createReportForAudit, finalizeAudit, findDuplicateAuditForWebsite, startAuditForWebsite } from "./audits";
 
 vi.mock("@/security/safe-fetch", () => ({
@@ -152,5 +153,40 @@ describe("mobile lab evidence through the audit workflow", () => {
     await setAuditsHidden(context, [audit.id], false, database);
     expect(await hiddenOf()).toBe(false);
     await expect(setAuditsHidden({ ...context, role: "ANALYST" }, [audit.id], true, database)).rejects.toThrow();
+  }, 60_000);
+
+  it("closes audits that were cut off so they stop blocking new ones", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 429 })));
+    const old = new Date(Date.now() - 20 * 60 * 1000);
+    const stuck = await withTenantContext(database, context, async tx => {
+      const ids: string[] = [];
+      // Two dead runs fill the crawl concurrency ceiling of 2.
+      for (let i = 0; i < 2; i++) {
+        const [audit] = await tx.insert(schema.audits).values({ workspaceId: context.workspaceId, websiteId, title: "Cut off", status: "RUNNING" }).returning();
+        await tx.insert(schema.auditRuns).values({ workspaceId: context.workspaceId, auditId: audit.id, websiteId, status: "RUNNING", collectorVersion: "test", startedAt: old, createdAt: old });
+        ids.push(audit.id);
+      }
+      return ids;
+    });
+    const fresh = await startAuditForWebsite(context, websiteId, database);
+    const rows = await listAudits(context, database);
+    expect(rows.find(row => row.id === fresh.id)?.status).not.toBe("RUNNING");
+    for (const id of stuck) expect(rows.find(row => row.id === id)?.status).toBe("FAILED");
+    const runs = await withTenantContext(database, context, tx => tx.select().from(schema.auditRuns).where(eq(schema.auditRuns.auditId, stuck[0])));
+    expect(runs[0]).toMatchObject({ status: "FAILED" });
+    expect(runs[0].errorSummary).toMatch(/closed automatically/);
+    expect(await closeAbandonedAudits(context, database)).toBe(0);
+  }, 60_000);
+
+  it("refuses to start more audits than the daily limit", async () => {
+    await withTenantContext(database, context, async tx => {
+      const existing = await tx.select({ id: schema.auditRuns.id }).from(schema.auditRuns).where(eq(schema.auditRuns.workspaceId, context.workspaceId));
+      for (let i = existing.length; i < DAILY_AUDIT_LIMIT; i++) {
+        const [audit] = await tx.insert(schema.audits).values({ workspaceId: context.workspaceId, websiteId, title: "Filler", status: "FAILED" }).returning();
+        await tx.insert(schema.auditRuns).values({ workspaceId: context.workspaceId, auditId: audit.id, websiteId, status: "FAILED", collectorVersion: "test", startedAt: new Date(), completedAt: new Date() });
+      }
+    });
+    // A system actor is exempt from the per-minute click limit, which earlier tests have used up.
+    await expect(startAuditForWebsite({ ...context, actorType: "SYSTEM" }, websiteId, database)).rejects.toThrow(/daily limit/);
   }, 60_000);
 });

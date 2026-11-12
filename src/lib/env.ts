@@ -67,6 +67,11 @@ const rawEnvSchema = z.object({
   PLATFORM_OPERATOR_USER_IDS: optionalNonEmpty,
   AUTOMATION_EMERGENCY_STOP: z.enum(["true", "false"]).optional().transform(value => value === "true"),
   GEMINI_API_KEY: optionalNonEmpty,
+  // Transactional email (password reset, owner alerts). All optional: without
+  // them the app runs and simply offers no email features.
+  RESEND_API_KEY: optionalNonEmpty,
+  EMAIL_FROM: optionalNonEmpty,
+  OWNER_NOTIFICATION_EMAIL: optionalNonEmpty,
 });
 
 const deployedRequiredKeys = [

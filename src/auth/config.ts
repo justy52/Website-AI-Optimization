@@ -6,6 +6,9 @@ import { authSchema } from "@/db/schema";
 import { serverEnv } from "@/lib/env";
 import { authOriginOptions } from "./origins";
 import { authEnrollmentOptions } from "./enrollment";
+import { passwordResetOptions } from "./password-reset";
+
+const enrollment = authEnrollmentOptions(serverEnv);
 
 export const auth = betterAuth({
   appName: "Virelantic",
@@ -15,7 +18,8 @@ export const auth = betterAuth({
     provider: "pg",
     schema: authSchema,
   }),
-  ...authEnrollmentOptions(serverEnv),
+  ...enrollment,
+  emailAndPassword: { ...enrollment.emailAndPassword, ...passwordResetOptions() },
   // Shared database storage preserves Better Auth's atomic special endpoint rules
   // across serverless instances; origin/CSRF checks remain enabled.
   rateLimit: { enabled: true, storage: "database" },

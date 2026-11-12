@@ -1,4 +1,5 @@
 "use server";
+import { failAction } from "../action-errors";
 import { OperationsValidationError } from "@/domain/operations/policy";
 import { AuthorizationError } from "@/domain/tenancy/context";
 
@@ -36,27 +37,34 @@ export async function startAuditAction(formData: FormData) {
   revalidatePath("/audits");
   redirect(`/audits/${audit.id}`);
   } catch (error) {
-    if (error instanceof OperationsValidationError) redirect(`/operations?validation=${encodeURIComponent(error.message)}` as never);
-    throw error;
+    failAction(error, "/audits");
   }
 }
 
 export async function setAuditsHiddenAction(formData: FormData) {
-  const shell = await getWorkspaceShellContext();
-  const hidden = value(formData, "intent") !== "restore";
-  const ids = formData.getAll("auditId").filter((item): item is string => typeof item === "string");
-  await setAuditsHidden(shell.workspaceContext, ids, hidden);
-  revalidatePath("/audits");
-  redirect((hidden ? "/audits" : "/audits?show=hidden") as never);
+  try {
+    const shell = await getWorkspaceShellContext();
+    const hidden = value(formData, "intent") !== "restore";
+    const ids = formData.getAll("auditId").filter((item): item is string => typeof item === "string");
+    await setAuditsHidden(shell.workspaceContext, ids, hidden);
+    revalidatePath("/audits");
+    redirect((hidden ? "/audits" : "/audits?show=hidden") as never);
+  } catch (error) {
+    failAction(error, "/audits");
+  }
 }
 
 export async function finalizeAuditAction(formData: FormData) {
-  const shell = await getWorkspaceShellContext();
-  const auditId = value(formData, "auditId");
+  try {
+    const shell = await getWorkspaceShellContext();
+    const auditId = value(formData, "auditId");
 
-  await finalizeAudit(shell.workspaceContext, auditId);
-  revalidatePath(`/audits/${auditId}`);
-  redirect(`/audits/${auditId}`);
+    await finalizeAudit(shell.workspaceContext, auditId);
+    revalidatePath(`/audits/${auditId}`);
+    redirect(`/audits/${auditId}`);
+  } catch (error) {
+    failAction(error, `/audits/${value(formData, "auditId")}`);
+  }
 }
 
 export async function closeStaleAuditRunAction(formData: FormData) {
@@ -82,12 +90,16 @@ export async function closeStaleAuditRunAction(formData: FormData) {
 }
 
 export async function createReportAction(formData: FormData) {
-  const shell = await getWorkspaceShellContext();
-  const report = await createReportForAudit(
-    shell.workspaceContext,
-    value(formData, "auditId"),
-  );
+  try {
+    const shell = await getWorkspaceShellContext();
+    const report = await createReportForAudit(
+      shell.workspaceContext,
+      value(formData, "auditId"),
+    );
 
-  revalidatePath("/reports");
-  redirect(`/reports/${report.id}`);
+    revalidatePath("/reports");
+    redirect(`/reports/${report.id}`);
+  } catch (error) {
+    failAction(error, `/audits/${value(formData, "auditId")}`);
+  }
 }

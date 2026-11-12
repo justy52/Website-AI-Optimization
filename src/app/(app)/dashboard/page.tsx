@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { getAttentionSummary } from "@/server/attention";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { getAgentDashboardSummary } from "@/server/agents";
 import { getCompetitorDashboardSummary } from "@/server/competitors";
@@ -23,7 +24,8 @@ import { getDashboardSummary } from "@/server/revenue";
 import { getVerificationDashboard } from "@/server/verification";
 import { getVisibilityDashboard } from "@/server/ai-visibility";
 
-import { EmptyState, PageHeader, Panel, RowLink, StatusChip } from "../ui";
+import { EmptyState, formatDate, PageHeader, Panel, RowLink, StatusChip } from "../ui";
+import { markAlertsReadAction } from "./actions";
 
 const statCards = [
   { key: "activeLeads", label: "Active leads", href: "/leads", icon: Radar },
@@ -42,6 +44,7 @@ export default async function DashboardPage() {
     monthlyCycleSummary,
     verificationSummary,
     visibilitySummary,
+    attention,
   ] = await Promise.all([
     getDashboardSummary(shell.workspaceContext),
     getOpportunityDashboardSummary(shell.workspaceContext),
@@ -51,7 +54,9 @@ export default async function DashboardPage() {
     getMonthlyCycleDashboardSummary(shell.workspaceContext),
     getVerificationDashboard(shell.workspaceContext),
     getVisibilityDashboard(shell.workspaceContext),
+    getAttentionSummary(shell.workspaceContext),
   ]);
+  const needsAttention = attention.pendingRequests > 0 || attention.alerts.length > 0 || attention.failedAudits.length > 0;
 
   return (
     <>
@@ -65,6 +70,52 @@ export default async function DashboardPage() {
         eyebrow="Governed PREPARE and recurring observation"
         title="Command Center"
       />
+      {needsAttention ? (
+        <section aria-label="Needs your attention" className="mx-panel mx-attention">
+          <div className="mx-panel-title">
+            <h2 style={{ fontSize: "inherit", fontWeight: 700, margin: 0 }}>Needs your attention</h2>
+          </div>
+          {attention.pendingRequests > 0 ? (
+            <div className="mx-attention-item">
+              <span>
+                {attention.pendingRequests === 1
+                  ? "1 new audit request is waiting for review."
+                  : `${attention.pendingRequests} new audit requests are waiting for review.`}
+              </span>
+              <Link className="mx-btn" href="/intake">Review requests</Link>
+            </div>
+          ) : null}
+          {attention.failedAudits.map((audit) => (
+            <div className="mx-attention-item" key={audit.auditId}>
+              <span>
+                <strong>{audit.title}</strong> failed. {audit.reason ?? "Open it to see what happened."}
+              </span>
+              <Link className="mx-btn mx-btn-ghost" href={`/audits/${audit.auditId}`}>Open audit</Link>
+            </div>
+          ))}
+          {attention.alerts.map((alert) => (
+            <div className="mx-attention-item" key={alert.id}>
+              <span>
+                <StatusChip tone={alert.severity === "CRITICAL" || alert.severity === "HIGH" ? "bad" : "warn"}>
+                  {alert.severity === "CRITICAL" ? "Critical" : alert.severity === "HIGH" ? "High" : alert.severity === "MEDIUM" ? "Medium" : "Low"}
+                </StatusChip>{" "}
+                <strong>{alert.title}</strong> {alert.summary}
+              </span>
+              <span className="mx-muted">{formatDate(alert.createdAt)}</span>
+            </div>
+          ))}
+          {attention.alerts.length > 0 ? (
+            <form action={markAlertsReadAction}>
+              {attention.alerts.map((alert) => <input key={alert.id} name="alertId" type="hidden" value={alert.id} />)}
+              <button className="mx-btn mx-btn-ghost" type="submit">
+                {attention.unreadAlerts > attention.alerts.length
+                  ? `Mark these ${attention.alerts.length} as read (${attention.unreadAlerts - attention.alerts.length} more)`
+                  : "Mark alerts as read"}
+              </button>
+            </form>
+          ) : null}
+        </section>
+      ) : null}
       <Panel title="Implementation verification — current cycles">
         <div className="mx-grid mx-grid-3">{[["Awaiting verification", verificationSummary.awaiting], ["Verification failures", verificationSummary.failed], ["Verification warnings", verificationSummary.warnings], ["Verified this cycle", verificationSummary.verified]].map(([label, count]) => <Link className="mx-kpi" href="/monthly-cycles" key={label}><span className="mx-kpi-label">{label}</span><span className="mx-kpi-value">{count}</span></Link>)}</div>
       </Panel>

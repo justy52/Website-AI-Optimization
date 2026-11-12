@@ -8,6 +8,7 @@ import {
   CalendarDays,
   FileText,
   Globe2,
+  Inbox,
   LayoutDashboard,
   ListChecks,
   Plug,
@@ -20,8 +21,11 @@ import {
 import { switchWorkspaceAction } from "@/app/workspace-actions";
 import { getWorkspaceShellContext } from "@/server/auth";
 
+import { Fragment, Suspense } from "react";
+
+import { NoticeBanner } from "./notice-banner";
 import { SignOutButton } from "./sign-out-button";
-import { getIntakeConfig } from "@/server/intake-config";
+import { countPendingAuditRequests, receivesPublicRequests } from "@/server/attention";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -49,6 +53,8 @@ export default async function AppLayout({
   children: React.ReactNode;
 }>) {
   const shell = await getWorkspaceShellContext();
+  const showRequests = receivesPublicRequests(shell.workspaceContext);
+  const pendingRequests = showRequests ? await countPendingAuditRequests(shell.workspaceContext) : 0;
 
   return (
     <div className="mx-root">
@@ -66,13 +72,24 @@ export default async function AppLayout({
               const Icon = item.icon;
 
               return (
-                <a className="mx-nav-item" href={item.href} key={item.href}>
-                  <Icon aria-hidden size={15} />
-                  {item.label}
-                </a>
+                <Fragment key={item.href}>
+                  <a className="mx-nav-item" href={item.href}>
+                    <Icon aria-hidden size={15} />
+                    {item.label}
+                  </a>
+                  {/* New enquiries are the first thing to act on, so they sit directly under the dashboard. */}
+                  {item.href === "/dashboard" && showRequests ? (
+                    <a className="mx-nav-item" href="/intake">
+                      <Inbox aria-hidden size={15} />
+                      Audit requests
+                      {pendingRequests > 0 ? (
+                        <span className="mx-nav-count" aria-label={`${pendingRequests} waiting`}>{pendingRequests}</span>
+                      ) : null}
+                    </a>
+                  ) : null}
+                </Fragment>
               );
             })}
-          {getIntakeConfig(process.env, false)?.PUBLIC_INTAKE_WORKSPACE_ID === shell.workspaceContext.workspaceId && ["OWNER", "ADMIN"].includes(shell.workspaceContext.role) ? <Link className="mx-nav-item" href="/intake">Audit requests</Link> : null}
           {serverEnv.APP_ENV === "qa" ? <a className="mx-nav-item" href="/qa-execution">QA Execution</a> : null}
           </nav>
           <div className="mx-rail-foot">
@@ -119,7 +136,10 @@ export default async function AppLayout({
               <SignOutButton />
             </div>
           </header>
-          <main id="main-content" tabIndex={-1} className="mx-view">{children}</main>
+          <main id="main-content" tabIndex={-1} className="mx-view">
+            <Suspense fallback={null}><NoticeBanner /></Suspense>
+            {children}
+          </main>
         </div>
       </div>
     </div>

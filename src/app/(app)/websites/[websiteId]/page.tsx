@@ -30,7 +30,7 @@ import { StartAuditButton } from "../../audits/start-audit-button";
 import { EmptyState, formatDate, PageHeader, Panel, StatusChip } from "../../ui";
 
 // This page can also start the mobile lab audit through a server action.
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export default async function WebsiteDetailPage({
   params,

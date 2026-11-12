@@ -1,3 +1,4 @@
+import { UserInputError } from "@/domain/errors";
 import { z } from "zod";
 import {
   and,
@@ -96,7 +97,7 @@ function parseScale(value: string, name: string, min: number, max: number) {
   const parsed = Number.parseInt(value, 10);
 
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    throw new Error(`${name} must be an integer from ${min} to ${max}.`);
+    throw new UserInputError(`${name} must be an integer from ${min} to ${max}.`);
   }
 
   return parsed;
@@ -104,7 +105,7 @@ function parseScale(value: string, name: string, min: number, max: number) {
 
 function parseDependencyState(value: string): DependencyState {
   if (!dependencyStates.includes(value as DependencyState)) {
-    throw new Error("Dependency state is not valid.");
+    throw new UserInputError("Dependency state is not valid.");
   }
 
   return value as DependencyState;
@@ -112,7 +113,7 @@ function parseDependencyState(value: string): DependencyState {
 
 function parseClientInputState(value: string): ClientInputState {
   if (!clientInputStates.includes(value as ClientInputState)) {
-    throw new Error("Client-input state is not valid.");
+    throw new UserInputError("Client-input state is not valid.");
   }
 
   return value as ClientInputState;
@@ -120,7 +121,7 @@ function parseClientInputState(value: string): ClientInputState {
 
 function parseApprovalBlockedState(value: string): ApprovalBlockedState {
   if (!approvalBlockedStates.includes(value as ApprovalBlockedState)) {
-    throw new Error("Approval-blocked state is not valid.");
+    throw new UserInputError("Approval-blocked state is not valid.");
   }
 
   return value as ApprovalBlockedState;
@@ -129,7 +130,7 @@ function parseApprovalBlockedState(value: string): ApprovalBlockedState {
 function optionalOwnerUserId(value: string, context: WorkspaceContext) {
   if (!value || value === "UNASSIGNED") return null;
   if (value === context.userId) return value;
-  throw new Error("Only assigning the current user is supported in Phase 2.");
+  throw new UserInputError("Only assigning the current user is supported in Phase 2.");
 }
 
 function recalculatePriority(input: {
@@ -217,7 +218,7 @@ export async function generateOpportunitiesForAuditRun(
     .limit(1);
 
   if (!client) {
-    throw new Error("Client was not found for opportunity generation.");
+    throw new UserInputError("Client was not found for opportunity generation.");
   }
 
   getServicePlanDefinition(client.servicePlan, client.servicePlanVersion);
@@ -623,10 +624,10 @@ export async function updateOpportunity(
   const summary = input.summary.trim();
   const status = input.status.trim();
 
-  if (!title) throw new Error("Opportunity title is required.");
-  if (!summary) throw new Error("Opportunity summary is required.");
+  if (!title) throw new UserInputError("Opportunity title is required.");
+  if (!summary) throw new UserInputError("Opportunity summary is required.");
   if (!isOpportunityStatus(status)) {
-    throw new Error("Opportunity status is not valid.");
+    throw new UserInputError("Opportunity status is not valid.");
   }
 
   const dependencyState = parseDependencyState(input.dependencyState);
@@ -657,7 +658,7 @@ export async function updateOpportunity(
       .limit(1);
 
     if (!current) {
-      throw new Error("Opportunity was not found.");
+      throw new UserInputError("Opportunity was not found.");
     }
 
     const recalculated = recalculatePriority({
@@ -871,7 +872,7 @@ async function ensureOpenWorkPlanCycle(
     .limit(1);
 
   if (!client) {
-    throw new Error("Client was not found.");
+    throw new UserInputError("Client was not found.");
   }
 
   const [cycle] = await tx
@@ -940,7 +941,7 @@ export async function getClientWorkPlan(
       .limit(1);
 
     if (!client) {
-      throw new Error("Client was not found.");
+      throw new UserInputError("Client was not found.");
     }
 
     const cycle = await getOpenWorkPlanCycle(tx, context, clientId);
@@ -1046,7 +1047,7 @@ export async function selectOpportunityForWorkPlan(
       .limit(1);
 
     if (!opportunity) {
-      throw new Error("Opportunity was not found.");
+      throw new UserInputError("Opportunity was not found.");
     }
 
     const cycle = await ensureOpenWorkPlanCycle(
@@ -1095,7 +1096,7 @@ export async function removeOpportunityFromWorkPlan(
       .limit(1);
 
     if (!opportunity) {
-      throw new Error("Opportunity was not found.");
+      throw new UserInputError("Opportunity was not found.");
     }
 
     const cycle = await getOpenWorkPlanCycle(

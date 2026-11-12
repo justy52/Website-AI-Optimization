@@ -1,4 +1,4 @@
-import { listAudits } from "@/server/audits";
+import { closeAbandonedAudits, listAudits } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { listWebsites } from "@/server/revenue";
 
@@ -11,7 +11,7 @@ import { StartAuditButton } from "./start-audit-button";
 import { EmptyState, formatDate, PageHeader, Panel, RowLink, StatusChip } from "../ui";
 
 // A mobile lab measurement can take over a minute before the audit is saved.
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export default async function AuditsPage({
   searchParams,
@@ -20,6 +20,7 @@ export default async function AuditsPage({
 }) {
   const { show } = await searchParams;
   const shell = await getWorkspaceShellContext();
+  await closeAbandonedAudits(shell.workspaceContext);
   const [websites, allAudits] = await Promise.all([
     listWebsites(shell.workspaceContext),
     listAudits(shell.workspaceContext),

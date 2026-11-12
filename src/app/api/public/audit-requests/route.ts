@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { notifyOwnerLater } from "@/server/email";
 import { inquirySchema } from "@/domain/intake/validation";
 import { verifyIntakeNonce } from "@/security/intake-nonce";
 import { getIntakeConfig } from "@/server/intake-config";
@@ -44,6 +45,14 @@ export async function POST(request: Request) {
     if (outcome === "limited") return reply({ error: "Please wait a few minutes before sending another request." }, 429, { "Retry-After": "900" });
     if (outcome === "conflict") return reply({ error: "This form was already submitted with different details. Refresh the form to send a new request.", refreshNonce: true }, 409);
     if (!["saved", "duplicate"].includes(outcome)) throw new Error("INTAKE_NOT_SAVED");
+    if (outcome === "saved") {
+      // Tell the owner after the response is sent. The email carries no
+      // details from the request; they are read in the app.
+      notifyOwnerLater(
+        "New audit request on Virelantic",
+        `A new audit request is waiting for review.\n\nOpen it here: ${config.PUBLIC_INTAKE_ORIGIN}/intake`,
+      );
+    }
     return reply({ received: true }, outcome === "saved" ? 201 : 200);
   } catch {
     // No payload, email, URL, credential or provider exception is logged.

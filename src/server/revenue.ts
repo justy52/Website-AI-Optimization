@@ -1,3 +1,4 @@
+import { UserInputError } from "@/domain/errors";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
@@ -180,11 +181,11 @@ export async function createLead(
   const status = input.status ? input.status.trim() : "NEW";
 
   if (!companyName) {
-    throw new Error("Company name is required.");
+    throw new UserInputError("Company name is required.");
   }
 
   if (!isLeadStatus(status)) {
-    throw new Error("Lead status is not valid.");
+    throw new UserInputError("Lead status is not valid.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -230,11 +231,11 @@ export async function updateLead(
   const status = input.status.trim();
 
   if (!companyName) {
-    throw new Error("Company name is required.");
+    throw new UserInputError("Company name is required.");
   }
 
   if (!isLeadStatus(status)) {
-    throw new Error("Lead status is not valid.");
+    throw new UserInputError("Lead status is not valid.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -254,7 +255,7 @@ export async function updateLead(
       .returning();
 
     if (!lead) {
-      throw new Error("Lead was not found.");
+      throw new UserInputError("Lead was not found.");
     }
 
     await recordActivity(tx, context, "lead.updated", "lead", lead.id, {
@@ -279,7 +280,7 @@ export async function archiveLead(
       .returning();
 
     if (!lead) {
-      throw new Error("Lead was not found.");
+      throw new UserInputError("Lead was not found.");
     }
 
     await recordActivity(tx, context, "lead.archived", "lead", lead.id);
@@ -300,7 +301,7 @@ export async function convertLeadToClient(
       .limit(1);
 
     if (!lead) {
-      throw new Error("Lead was not found.");
+      throw new UserInputError("Lead was not found.");
     }
 
     const [existingClient] = await tx
@@ -391,7 +392,7 @@ export async function updateClient(
   const plan = getServicePlanDefinition(input.servicePlan);
 
   if (!name) {
-    throw new Error("Client name is required.");
+    throw new UserInputError("Client name is required.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -407,7 +408,7 @@ export async function updateClient(
       .returning();
 
     if (!client) {
-      throw new Error("Client was not found.");
+      throw new UserInputError("Client was not found.");
     }
 
     await recordActivity(tx, context, "client.updated", "client", client.id, {
@@ -433,7 +434,7 @@ export async function archiveClient(
       .returning();
 
     if (!client) {
-      throw new Error("Client was not found.");
+      throw new UserInputError("Client was not found.");
     }
 
     await recordActivity(tx, context, "client.archived", "client", client.id);
@@ -540,11 +541,11 @@ export async function createWebsite(
   const authorizationScope = input.authorizationScope.trim();
 
   if (!displayName) {
-    throw new Error("Website display name is required.");
+    throw new UserInputError("Website display name is required.");
   }
 
   if (!isWebsiteAuthorizationScope(authorizationScope)) {
-    throw new Error("Website authorization scope is not valid.");
+    throw new UserInputError("Website authorization scope is not valid.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -561,7 +562,7 @@ export async function createWebsite(
       .limit(1);
 
     if (!client) {
-      throw new Error("Client was not found.");
+      throw new UserInputError("Client was not found.");
     }
 
     // One website per domain per workspace. Report the existing record rather
@@ -617,11 +618,11 @@ export async function updateWebsite(
   const authorizationScope = input.authorizationScope.trim();
 
   if (!displayName) {
-    throw new Error("Website display name is required.");
+    throw new UserInputError("Website display name is required.");
   }
 
   if (!isWebsiteAuthorizationScope(authorizationScope)) {
-    throw new Error("Website authorization scope is not valid.");
+    throw new UserInputError("Website authorization scope is not valid.");
   }
 
   return withTenantContext(database, context, async (tx) => {
@@ -646,7 +647,7 @@ export async function updateWebsite(
       .returning();
 
     if (!website) {
-      throw new Error("Website was not found.");
+      throw new UserInputError("Website was not found.");
     }
 
     await recordActivity(tx, context, "website.updated", "website", website.id, {
@@ -675,7 +676,7 @@ export async function archiveWebsite(
       .returning();
 
     if (!website) {
-      throw new Error("Website was not found.");
+      throw new UserInputError("Website was not found.");
     }
 
     await recordActivity(tx, context, "website.archived", "website", website.id);
