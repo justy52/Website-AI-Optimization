@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAuditReportFromSnapshot, canFinalizeAudit, hasReportableScore, type AuditSnapshotData } from "./report";
+import { buildAuditReportFromSnapshot, canFinalizeAudit, hasReportableScore, type AuditSnapshotData, isCategoryScoreWithheld } from "./report";
 
 describe("audit finalization readiness", () => {
   it("accepts only completed runs in reviewable audit states", () => {
@@ -104,5 +104,16 @@ describe("audit report builder", () => {
     const report = buildAuditReportFromSnapshot({ ...snapshot, findings: [...high, medium] });
     expect(report.reportData.highPriorityFindings).toHaveLength(10);
     expect(report.reportData.additionalFindings?.map(f => f.checkKey)).toEqual(["high-10", "seo.meta_description"]);
+  });
+});
+
+describe("category score display", () => {
+  it("shows an AI readiness score only for audits collected with the site-sample collector", () => {
+    expect(isCategoryScoreWithheld("aiReadiness", 82, false, "site-sample-deterministic-v2.0")).toBe(false);
+    expect(isCategoryScoreWithheld("aiReadiness", 82, false, "phase1-deterministic-v1.11")).toBe(true);
+    expect(isCategoryScoreWithheld("aiReadiness", 82, false, undefined)).toBe(true);
+    expect(isCategoryScoreWithheld("aiReadiness", 82, true, "site-sample-deterministic-v2.0")).toBe(true);
+    expect(isCategoryScoreWithheld("seo", 90, false, "phase1-deterministic-v1.11")).toBe(false);
+    expect(isCategoryScoreWithheld("seo", null, false, "site-sample-deterministic-v2.0")).toBe(true);
   });
 });

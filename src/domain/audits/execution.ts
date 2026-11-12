@@ -18,7 +18,11 @@ import {
   type ScoreCategoryKey,
 } from "./scoring";
 import type { EvidenceConfidence } from "@/domain/opportunities/generation";
+import { fetchSamplePages, selectSamplePages, type CrawlSummary, type SampledPage } from "./crawl";
+import { evaluateDeclaredFactCheck, evaluateExtendedCheck, type ExtendedOutcome, type SiteContext, type SitePage } from "./extended-checks";
 import { collectMobileLabEvidence, type MobileLabEvidence } from "./pagespeed";
+import { collectPlacesEvidence, type PlacesEvidence } from "./places";
+import { analyzeSignals, type PageSignals } from "./site-signals";
 import {
   safeFetchText,
   type SafeFetchOptions,
@@ -85,6 +89,21 @@ export type CollectedWebsiteEvidence = {
   collectionError: string | null;
   pageAnalysis: PageAnalysis | null;
   mobileLab?: MobileLabEvidence | null;
+  /** Static signals for the homepage; derived on demand when absent. */
+  homepageSignals?: PageSignals | null;
+  /** A bounded sample of same-site pages linked from the homepage or sitemap. */
+  sampledPages?: SampledPage[];
+  crawl?: CrawlSummary | null;
+  places?: PlacesEvidence | null;
+  placesConfigured?: boolean;
+};
+
+export type AuditCollectionOptions = {
+  pagespeedApiKey?: string;
+  placesApiKey?: string;
+  verifiedPublicFacts?: AuditBusinessContext["verifiedPublicFacts"];
+  /** Injected in tests; defaults to the global fetch for provider APIs. */
+  providerTransport?: typeof fetch;
 };
 
 export type AuditBusinessContext = {
@@ -93,39 +112,13 @@ export type AuditBusinessContext = {
 };
 
 // Record evaluator changes independently of the unchanged scoring weights.
-export const AUDIT_COLLECTOR_VERSION = "phase1-deterministic-v1.11";
+export const AUDIT_COLLECTOR_VERSION = "site-sample-deterministic-v2.0";
 
 const unsupportedCheckReasons: Record<string, string> = {
   "perf.lcp": "Core Web Vitals are unavailable until an official lab or field data source is connected.",
-  "perf.inp": "Interaction to Next Paint requires real-user field data; a simulated lab test cannot measure it.",
+  "perf.inp": "No real-user or lab responsiveness measurement was available for this page.",
   "perf.cls": "Core Web Vitals are unavailable until an official lab or field data source is connected.",
-  "perf.mobile_render": "Mobile rendering requires a browser/lab runner that is not part of Phase 1.",
-  "perf.critical_functionality": "Critical functionality checks require configured forms or browser workflows.",
-  "seo.content_targeting": "Content targeting requires approved service/location facts and intent evidence.",
-  "local.business_identity": "Business identity scoring requires verified business facts.",
-  "local.gbp_presence": "Google Business Profile evidence requires a read-only integration.",
-  "local.category_service_alignment": "Category alignment requires verified GBP/category evidence.",
-  "local.location_clarity": "Location clarity requires verified service-area facts beyond one page.",
-  "local.local_pages": "Local page coverage requires a bounded crawl and verified target locations.",
-  "local.review_signal": "Review signals require third-party review evidence.",
-  "conv.lead_form": "Lead-form usability requires configured form targets or browser execution.",
-  "conv.offer_clarity": "Offer clarity is deferred until deterministic business-fact rules exist.",
-  "conv.trust_signals": "Trust signal scoring requires deterministic evidence rules beyond Phase 1.",
-  "conv.friction": "Conversion friction requires configured journeys or browser instrumentation.",
-  "conv.measurement": "Measurement checks require analytics/tag integrations.",
-  "ai.identity_clarity": "Identity clarity requires verified business facts.",
-  "ai.service_clarity": "Service clarity requires verified service facts.",
-  "ai.location_clarity": "Location clarity requires verified service-area facts.",
-  "ai.entity_consistency": "Entity consistency requires verified business facts across sources.",
-  "ai.answerability": "Answerability requires approved question/service facts and page coverage.",
-  "ai.citability": "Citability requires deterministic citation/source-depth rules.",
-  "auth.reviews": "Review authority requires third-party review evidence.",
-  "auth.third_party_mentions": "Third-party mentions require a configured authority data source.",
-  "auth.referring_domains": "Referring domains require backlink data from a legitimate provider.",
-  "auth.credentials": "Credentials require verified business facts or structured third-party evidence.",
-  "auth.business_transparency": "Business transparency requires verified business facts and crawl coverage.",
-  "auth.expertise_content": "Expertise content requires crawl coverage and deterministic content rules.",
-  "auth.entity_consistency": "Entity consistency requires verified external authority evidence.",
+  "auth.referring_domains": "Referring-domain counts require backlink data from a licensed provider, and none is configured. No link data was inferred.",
 };
 
 function excerpt(value: string | null | undefined, maxLength = 500) {
@@ -201,7 +194,9 @@ type AuditFetchTransport = Pick<SafeFetchOptions, "requestImpl" | "lookupHost">;
 
 async function collectOptional(url: string, options: SafeFetchOptions) {
   try {
-    const response = await safeFetchText(url, { ...options, maxBytes: 500_000, timeoutMs: 5_000 });
+    // A sitemap can be tens of megabytes. Only its opening is needed to
+    // recognise it, so read a bounded prefix rather than calling it missing.
+    const response = await safeFetchText(url, { ...options, maxBytes: 1_000_000, allowTruncated: true, timeoutMs: 6_000 });
     return { response, outOfScope: false };
   } catch (error) {
     return { response: null, outOfScope: error instanceof SafeFetchError && error.code === "OUT_OF_SCOPE" };
@@ -210,7 +205,7 @@ async function collectOptional(url: string, options: SafeFetchOptions) {
 
 export async function collectWebsiteEvidence(
   canonicalUrl: string,
-  options: { pagespeedApiKey?: string } = {},
+  options: AuditCollectionOptions = {},
   transport: AuditFetchTransport = {},
 ): Promise<CollectedWebsiteEvidence> {
   try {
@@ -224,8 +219,11 @@ export async function collectWebsiteEvidence(
     const page = await safeFetchText(canonicalUrl, {
       ...transport,
       isTargetAllowed: (target, from) => allowTarget(target, from ?? canonical),
-      maxBytes: 1_000_000,
-      timeoutMs: 8_000,
+      // Page-builder homepages routinely exceed 1 MB of HTML; a smaller cap
+      // turned every check for those sites into an error.
+      maxBytes: 5_000_000,
+      allowTruncated: true,
+      timeoutMs: 10_000,
     });
     const finalPage = new URL(page.finalUrl);
     const origin = finalPage.origin;
@@ -233,10 +231,45 @@ export async function collectWebsiteEvidence(
       ...transport,
       isTargetAllowed: (target, from) => allowTarget(target, from ?? finalPage),
     };
-    const labPromise = options.pagespeedApiKey ? collectMobileLabEvidence(page.finalUrl, options.pagespeedApiKey) : Promise.resolve(null);
+    const labPromise = options.pagespeedApiKey ? collectMobileLabEvidence(page.finalUrl, options.pagespeedApiKey, options.providerTransport) : Promise.resolve(null);
     const robots = await collectOptional(`${origin}/robots.txt`, auxiliaryFetch);
     const sitemapUrl = firstSitemapUrl(robots.response?.bodyText) ?? `${origin}/sitemap.xml`;
     const sitemap = await collectOptional(sitemapUrl, auxiliaryFetch);
+    const pageAnalysis = analyzeHtml(page.bodyText);
+    const homepageSignals = analyzeSignals(page.bodyText, page.finalUrl);
+
+    // Sample a few same-site pages. A non-2xx homepage is not worth sampling from.
+    let sampledPages: SampledPage[] = [];
+    let crawl: CrawlSummary | null = null;
+    if (successful(page)) {
+      const robotsText = successful(robots.response) ? robots.response?.bodyText : null;
+      const selection = selectSamplePages(page.finalUrl, pageAnalysis.anchors, appearsToBeSitemap(sitemap.response) ? sitemap.response?.bodyText : null,
+        (hostname) => [canonicalHost, counterpart].includes(hostname.replace(/\.$/, "")));
+      const fetchedSample = await fetchSamplePages(selection.candidates, robotsText, auxiliaryFetch);
+      sampledPages = fetchedSample.pages;
+      crawl = {
+        candidateCount: selection.candidateCount,
+        attempted: fetchedSample.pages.length,
+        fetched: fetchedSample.pages.filter((sampled) => sampled.analysis).length,
+        skippedByRobots: fetchedSample.skippedByRobots,
+        source: selection.usedSitemap ? "homepage_links_and_sitemap" : "homepage_links",
+      };
+    }
+
+    let places: PlacesEvidence | null = null;
+    if (options.placesApiKey && successful(page)) {
+      const facts = options.verifiedPublicFacts ?? [];
+      const fact = (types: string[]) => facts.find((item) => types.includes(item.factType) && item.value.trim().length >= 3)?.value.trim() ?? null;
+      const entity = homepageSignals.entities.find((item) => item.name && !item.types.includes("WebSite")) ?? null;
+      const businessName = fact(["business_name", "display_name", "brand_name"]) ?? entity?.name ?? homepageSignals.ogSiteName;
+      const locality = fact(["location", "service_area"]) ?? (entity?.locality ? [entity.locality, entity.region].filter(Boolean).join(", ") : null) ?? homepageSignals.locationMentions[0] ?? null;
+      if (businessName) {
+        places = await collectPlacesEvidence({
+          businessName, locality, websiteHost: finalPage.hostname,
+          phones: [...new Set([homepageSignals, ...sampledPages.map((sampled) => sampled.signals)].flatMap((signals) => signals?.phones ?? []))],
+        }, options.placesApiKey, options.providerTransport);
+      }
+    }
     const mobileLab = await labPromise;
 
     return {
@@ -246,8 +279,13 @@ export async function collectWebsiteEvidence(
       sitemap: sitemap.response,
       auxiliaryScopeLimited: robots.outOfScope || sitemap.outOfScope,
       collectionError: null,
-      pageAnalysis: analyzeHtml(page.bodyText),
+      pageAnalysis,
       mobileLab,
+      homepageSignals,
+      sampledPages,
+      crawl,
+      places,
+      placesConfigured: Boolean(options.placesApiKey),
     };
   } catch (error) {
     return {
@@ -343,10 +381,45 @@ function factMatchVariants(value: string, isLocation: boolean): string[] {
   return name ? [value, `${parts[0]} ${name}`, `${parts[0]} ${usStates[name]}`] : [value];
 }
 
+export function sampledPageRef(index: number): string {
+  return `sampled-page-${index + 1}`;
+}
+
+function buildSiteContext(collected: CollectedWebsiteEvidence, businessContext: AuditBusinessContext): SiteContext | null {
+  const page = collected.page;
+  const analysis = collected.pageAnalysis;
+  if (!page || !analysis || !successful(page)) return null;
+  const home: SitePage = { ref: "homepage-html", url: page.finalUrl, kind: "home", analysis, signals: collected.homepageSignals ?? analyzeSignals(page.bodyText, page.finalUrl) };
+  const sampled = collected.sampledPages ?? [];
+  const usable = sampled.flatMap((item, index): SitePage[] => item.analysis && item.signals ? [{ ref: sampledPageRef(index), url: item.url, kind: item.kind, analysis: item.analysis, signals: item.signals }] : []);
+  return {
+    home,
+    pages: [home, ...usable],
+    failed: sampled.filter((item) => !item.analysis),
+    crawl: collected.crawl ?? null,
+    facts: (businessContext.verifiedPublicFacts ?? []).filter((fact) => fact.value.trim().length >= 3 && fact.value.trim().length <= 200),
+    places: collected.places ?? null,
+    placesConfigured: collected.placesConfigured ?? false,
+    siteHost: new URL(page.finalUrl).hostname.replace(/^www\./, ""),
+    homeHasPrimaryCta: hasPrimaryCta(analysis),
+  };
+}
+
+function fromOutcome(check: AuditCheckDefinition, outcome: ExtendedOutcome): Phase1CheckResult {
+  if (outcome.status === "UNAVAILABLE") return unavailable(check, outcome.reason);
+  return result(check, outcome.status, outcome.reason, {
+    severity: outcome.severity,
+    evidenceConfidence: outcome.evidenceConfidence,
+    evidenceRefs: outcome.evidenceRefs,
+    observedValue: outcome.observedValue,
+  });
+}
+
 function evaluateImplementedCheck(
   check: AuditCheckDefinition,
   collected: CollectedWebsiteEvidence,
   businessContext: AuditBusinessContext,
+  site: SiteContext | null,
 ): Phase1CheckResult {
   const analysis = collected.pageAnalysis;
   const page = collected.page;
@@ -371,7 +444,22 @@ function evaluateImplementedCheck(
   switch (check.key) {
     case "perf.inp": {
       const value = collected.mobileLab?.fieldInpMs;
-      if (value == null) return unavailable(check, "No usable page-level real-user mobile INP was available for this check; a lab test cannot substitute for field data.");
+      if (value == null) {
+        // Prefer real-user data for the whole origin, then a labeled lab proxy.
+        const origin = collected.mobileLab?.originFieldInpMs;
+        if (origin != null) {
+          return result(check, origin <= 200 ? "PASS" : origin > 500 ? "FAIL" : "WARNING", `Google's Chrome User Experience Report measured a 75th-percentile mobile INP of ${origin} ms across the whole website over the rolling 28-day period. Page-level data for the homepage was not available, so this is a site-wide figure.`, {
+            evidenceConfidence: "MEDIUM", evidenceRefs: ["pagespeed-field"], observedValue: { value: origin, unit: "ms", percentile: 75, scope: "origin", dataType: "field", fetchedAt: collected.mobileLab?.fetchedAt },
+          });
+        }
+        const tbt = collected.mobileLab?.tbtMs;
+        if (tbt != null) {
+          return result(check, tbt <= 200 ? "PASS" : tbt > 600 ? "FAIL" : "WARNING", `No real-user INP data exists for this site, so INP itself could not be measured. As a lab proxy, one simulated mobile PageSpeed test measured Total Blocking Time of ${Math.round(tbt)} ms (good is 200 ms or less). This is lab data, not INP and not real-user data.`, {
+            evidenceConfidence: "LOW", evidenceRefs: ["pagespeed-mobile"], observedValue: { value: Math.round(tbt), unit: "ms", metric: "total-blocking-time", dataType: "lab proxy", fetchedAt: collected.mobileLab?.fetchedAt },
+          });
+        }
+        return unavailable(check, "No real-user INP data exists for this page or site, and no lab responsiveness measurement was returned. Nothing was inferred.");
+      }
       return result(check, value <= 200 ? "PASS" : value > 500 ? "FAIL" : "WARNING", `Google's Chrome User Experience Report measured a 75th-percentile mobile INP of ${value} ms for this homepage over the rolling 28-day field-data period.`, {
         evidenceRefs: ["pagespeed-field"], observedValue: { value, unit: "ms", percentile: 75, scope: "homepage", dataType: "field", fetchedAt: collected.mobileLab?.fetchedAt },
       });
@@ -382,7 +470,12 @@ function evaluateImplementedCheck(
       const types = check.key === "ai.identity_clarity" ? ["business_name", "display_name", "brand_name"]
         : check.key === "ai.service_clarity" ? ["service"] : ["location", "service_area"];
       const facts = (businessContext.verifiedPublicFacts ?? []).filter(f => types.includes(f.factType) && f.value.trim().length >= 3 && f.value.trim().length <= 200);
-      if (!successful(page) || !facts.length) return unavailable(check, "A successful homepage response and a current, public, verified business fact are required for this check.");
+      if (!successful(page)) return unavailable(check, "A successful homepage response is required for this check.");
+      if (!facts.length) {
+        // No verified fact on file: assess what the site itself declares.
+        const declared = site ? evaluateDeclaredFactCheck(check.key, site) : null;
+        return declared ? fromOutcome(check, declared) : unavailable(check, "A successful homepage response is required for this check.");
+      }
       const normalize = (s: string) => ` ${s.normalize("NFKC").toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim()} `;
       const visible = normalize(analysis.visibleText);
       const isLocation = check.key === "ai.location_clarity";
@@ -482,6 +575,14 @@ function evaluateImplementedCheck(
           return result(check, "PASS", "robots.txt is reachable and the sitemap response contains an XML sitemap root.", {
             evidenceRefs: ["robots", "sitemap"],
             observedValue: { sitemapDeclared },
+          });
+        }
+
+        if (sitemapDeclared && !collected.sitemap) {
+          return result(check, "WARNING", "robots.txt is reachable and declares a sitemap, but the sitemap did not respond within the audit's time limit, so it could not be confirmed.", {
+            evidenceConfidence: "LOW",
+            evidenceRefs: ["robots"],
+            observedValue: { sitemapDeclared, sitemapStatus },
           });
         }
 
@@ -662,6 +763,19 @@ function evaluateImplementedCheck(
         });
       }
 
+      if (site?.pages.some((sampled) => sampled.signals.telLinks.length > 0)) {
+        return result(check, "WARNING", "A click-to-call link exists on another sampled page, but not on the homepage.", {
+          evidenceRefs: ["homepage-html"],
+        });
+      }
+
+      if (site) {
+        return result(check, "FAIL", "No click-to-call link, email link or contact page link was found in the fetched homepage or sampled pages. Controls drawn only by JavaScript are not visible to this static check.", {
+          evidenceConfidence: "MEDIUM",
+          evidenceRefs: ["homepage-html"],
+        });
+      }
+
       return unavailable(
         check,
         "No deterministic mobile-contact evidence was available without a browser workflow.",
@@ -727,16 +841,23 @@ function evaluateImplementedCheck(
       });
     }
 
-    default:
+    default: {
+      const outcome = site ? evaluateExtendedCheck(check.key, site) : null;
+      if (outcome) return fromOutcome(check, outcome);
+      if (!site && !successful(page) && check.key !== "auth.referring_domains") {
+        return unavailable(check, `The homepage returned HTTP ${page.status}, so this check could not be assessed.`);
+      }
       return unavailable(check);
+    }
   }
 }
 
 function evidenceItems(collected: CollectedWebsiteEvidence): AuditEvidenceItem[] {
   const items: AuditEvidenceItem[] = [];
 
-  if (collected.mobileLab && (collected.mobileLab.lcpMs != null || collected.mobileLab.cls != null)) items.push({ id: "pagespeed-mobile", evidenceType: "TEXT", sourceUrl: collected.mobileLab.requestedUrl, sourceLabel: "Google PageSpeed Insights: simulated mobile lab", metadata: { requestedUrl: collected.mobileLab.requestedUrl, fetchedAt: collected.mobileLab.fetchedAt, lighthouseVersion: collected.mobileLab.lighthouseVersion, lcpMs: collected.mobileLab.lcpMs, cls: collected.mobileLab.cls, dataType: "lab" } });
+  if (collected.mobileLab && (collected.mobileLab.lcpMs != null || collected.mobileLab.cls != null || collected.mobileLab.tbtMs != null)) items.push({ id: "pagespeed-mobile", evidenceType: "TEXT", sourceUrl: collected.mobileLab.requestedUrl, sourceLabel: "Google PageSpeed Insights: simulated mobile lab", metadata: { requestedUrl: collected.mobileLab.requestedUrl, fetchedAt: collected.mobileLab.fetchedAt, lighthouseVersion: collected.mobileLab.lighthouseVersion, lcpMs: collected.mobileLab.lcpMs, cls: collected.mobileLab.cls, tbtMs: collected.mobileLab.tbtMs ?? null, dataType: "lab" } });
   if (collected.mobileLab?.fieldInpMs != null) items.push({ id: "pagespeed-field", evidenceType: "TEXT", sourceUrl: collected.mobileLab.requestedUrl, sourceLabel: "Google CrUX: homepage mobile field data", metadata: { fieldInpMs: collected.mobileLab.fieldInpMs, percentile: 75, period: "rolling 28 days", dataType: "field", fetchedAt: collected.mobileLab.fetchedAt } });
+  else if (collected.mobileLab?.originFieldInpMs != null) items.push({ id: "pagespeed-field", evidenceType: "TEXT", sourceUrl: collected.mobileLab.requestedUrl, sourceLabel: "Google CrUX: site-wide mobile field data", metadata: { originFieldInpMs: collected.mobileLab.originFieldInpMs, percentile: 75, period: "rolling 28 days", scope: "origin", dataType: "field", fetchedAt: collected.mobileLab.fetchedAt } });
 
   if (collected.page) {
     items.push({
@@ -791,6 +912,37 @@ function evidenceItems(collected: CollectedWebsiteEvidence): AuditEvidenceItem[]
     });
   }
 
+  (collected.sampledPages ?? []).forEach((sampled, index) => {
+    items.push({
+      id: sampledPageRef(index),
+      evidenceType: sampled.analysis ? "HTML" : "ERROR",
+      sourceUrl: sampled.url,
+      sourceLabel: `Sampled page (${sampled.kind})`,
+      httpStatus: sampled.status ?? undefined,
+      contentHash: sampled.contentHash ?? undefined,
+      excerpt: sampled.analysis ? excerpt(sampled.analysis.title ?? sampled.analysis.h1[0] ?? "") : sampled.error ?? `HTTP ${sampled.status}`,
+      metadata: { kind: sampled.kind, linkText: sampled.linkText, words: sampled.signals?.wordCount ?? null },
+    });
+  });
+  if (collected.crawl) {
+    items.push({ id: "page-sample", evidenceType: "TEXT", sourceUrl: collected.page?.finalUrl, sourceLabel: "Same-site page sample", metadata: { ...collected.crawl } });
+  }
+  if (collected.places) {
+    const listing = collected.places.listing;
+    items.push({
+      id: "places",
+      evidenceType: "TEXT",
+      sourceLabel: "Google Places listing lookup",
+      excerpt: listing ? `${listing.name}${listing.address ? `, ${listing.address}` : ""}` : "No matching listing",
+      metadata: {
+        query: collected.places.query, fetchedAt: collected.places.fetchedAt, matchBasis: collected.places.matchBasis,
+        candidateCount: collected.places.candidateCount, reviewCount: listing?.reviewCount ?? null, rating: listing?.rating ?? null,
+        primaryType: listing?.primaryTypeLabel ?? listing?.primaryType ?? null, competitorMedianReviews: collected.places.competitorMedianReviews,
+        competitorsCompared: collected.places.competitors.length,
+      },
+    });
+  }
+
   return items;
 }
 
@@ -801,6 +953,7 @@ export function evaluatePhase1Checks(
   getAuditScoringDefinition(SCORING_DEFINITION_VERSION);
 
   const localSearchApplicable = businessContext.localSearchApplicable ?? true;
+  const site = buildSiteContext(collected, businessContext);
   const checkResults = auditCheckDefinitions.map((check) => {
     if (!localSearchApplicable && check.category === "localSearch") {
       return result(
@@ -811,7 +964,7 @@ export function evaluatePhase1Checks(
       );
     }
 
-    return evaluateImplementedCheck(check, collected, businessContext);
+    return evaluateImplementedCheck(check, collected, businessContext, site);
   });
   const categoryScores = scoreCategoryKeys.map((category) => {
     const score = calculateCategoryScore(category, checkResults);
@@ -848,8 +1001,8 @@ export function evaluatePhase1Checks(
 export async function runPhase1DeterministicAudit(
   canonicalUrl: string,
   businessContext: AuditBusinessContext = {},
-  options: { pagespeedApiKey?: string } = {},
+  options: AuditCollectionOptions = {},
 ): Promise<Phase1AuditResult> {
-  const collected = await collectWebsiteEvidence(canonicalUrl, options);
+  const collected = await collectWebsiteEvidence(canonicalUrl, { ...options, verifiedPublicFacts: options.verifiedPublicFacts ?? businessContext.verifiedPublicFacts });
   return evaluatePhase1Checks(collected, businessContext);
 }

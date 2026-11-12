@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Lock } from "lucide-react";
 
 import { scoreCategoryKeys } from "@/domain/audits/scoring";
-import { canFinalizeAudit, hasReportableScore } from "@/domain/audits/report";
+import { canFinalizeAudit, hasReportableScore, isCategoryScoreWithheld } from "@/domain/audits/report";
 import { canManageWorkspace } from "@/domain/tenancy/context";
 import { getAuditDetail } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
@@ -151,14 +151,14 @@ export default async function AuditDetailPage({
               <div className="mx-mini-panel" key={category}>
                 <span className="mx-eyebrow">{category}</span>
                 <span className="mx-kpi-value">
-                  {category === "aiReadiness" || score?.score === null || score?.score === undefined || score.lowCoverage
+                  {!score || isCategoryScoreWithheld(category, score.score, score.lowCoverage, run?.collectorVersion)
                     ? "NA"
                     : score.score}
                 </span>
                 <span className="mx-muted">
                   Coverage {percentFromBasisPoints(score?.evidenceCoverageBasisPoints)}
                 </span>
-                {category === "aiReadiness" && <span className="mx-muted">AI score withheld: core checks are incomplete.</span>}
+                {category === "aiReadiness" && (!score || isCategoryScoreWithheld(category, score.score, score.lowCoverage, run?.collectorVersion)) && <span className="mx-muted">AI score withheld: core checks are incomplete.</span>}
               </div>
             );
           })}

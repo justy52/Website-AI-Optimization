@@ -73,14 +73,21 @@ describe("mobile lab evidence through the audit workflow", () => {
     expect(results.find(c => c.checkKey === "perf.cls")).toMatchObject({ status: "PASS" });
     expect(results.find(c => c.checkKey === "perf.inp")).toMatchObject({ status: "UNAVAILABLE" });
     expect(results.find(c => c.checkKey === "ai.identity_clarity")).toMatchObject({ status: "PASS" });
-    expect(results.find(c => c.checkKey === "ai.service_clarity")).toMatchObject({ status: "UNAVAILABLE" });
-    expect(results.find(c => c.checkKey === "ai.location_clarity")).toMatchObject({ status: "UNAVAILABLE" });
+    // The confidential, unapproved and other-site facts must never reach the audit: these checks
+    // fall back to what the page itself declares and cite no business fact.
+    for (const key of ["ai.service_clarity", "ai.location_clarity"]) {
+      const check = results.find(c => c.checkKey === key);
+      expect(check?.status).not.toBe("UNAVAILABLE");
+      expect(check?.evidenceRefs.some(ref => ref.startsWith("business-fact:"))).toBe(false);
+      expect(check?.reason).not.toMatch(/Private service|Unapproved service|Other site location/);
+    }
     const evidence = await withTenantContext(database, context, tx => tx.select().from(schema.auditEvidence).where(eq(schema.auditEvidence.auditRunId, results[0].auditRunId)));
     expect(evidence.filter(e => e.sourceLabel.startsWith("Public verified business fact:"))).toHaveLength(1);
     const snapshot = await finalizeAudit(context, audit.id, database);
     expect((snapshot.snapshot as AuditSnapshotData).checkResults.find(c => c.checkKey === "ai.identity_clarity")?.evidenceRefs).toContainEqual(expect.stringMatching(/^business-fact:/));
     const report = await createReportForAudit(context, audit.id, database);
-    expect((report.reportData as BuiltAuditReport["reportData"]).unavailableChecks.some(c => c.checkKey === "ai.service_clarity")).toBe(true);
+    expect((report.reportData as BuiltAuditReport["reportData"]).unavailableChecks.some(c => c.checkKey === "perf.inp")).toBe(true);
+    expect((report.reportData as BuiltAuditReport["reportData"]).unavailableChecks.some(c => c.checkKey === "ai.service_clarity")).toBe(false);
   }, 60_000);
 
   it("retains page-level field INP separately in the audit and report", async () => {

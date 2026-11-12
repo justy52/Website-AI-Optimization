@@ -376,7 +376,7 @@ export async function startAuditForWebsite(
 
   try {
     await checkMaterialStep(context, "audit", database);
-    const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl, { verifiedPublicFacts: prepared.facts }, { pagespeedApiKey: serverEnv.GOOGLE_PAGESPEED_API_KEY });
+    const result = await runPhase1DeterministicAudit(prepared.website.canonicalUrl, { verifiedPublicFacts: prepared.facts }, { pagespeedApiKey: serverEnv.GOOGLE_PAGESPEED_API_KEY, placesApiKey: serverEnv.GOOGLE_PLACES_API_KEY });
 
     await withTenantContext(database, context, async (tx) => {
       // Use the same run row lock as stale recovery before writing any evidence.

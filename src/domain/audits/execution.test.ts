@@ -127,7 +127,9 @@ describe("Phase 1 deterministic audit execution", () => {
     for (const key of ["ai.identity_clarity", "ai.service_clarity", "ai.location_clarity"]) expect(statusOf(audit, key)).toBe("PASS");
     expect(audit.checkResults.find(c => c.checkKey === "ai.service_clarity")?.reason).toContain("not proof of AI visibility");
     expect(audit.evidence.find(e => e.id === "business-fact:service")?.excerpt).toBe("fence installation");
-    expect(audit.categoryScores.find(s => s.category === "aiReadiness")).toMatchObject({ lowCoverage: true });
+    // The core AI-readiness checks are now evaluated from the page itself, so the category is no longer withheld.
+    expect(audit.categoryScores.find(s => s.category === "aiReadiness")).toMatchObject({ lowCoverage: false, evidenceCoverage: 1 });
+    // Without a PageSpeed measurement the performance category still keeps the overall score provisional.
     expect(audit.overall.provisional).toBe(true);
   });
 
@@ -135,7 +137,11 @@ describe("Phase 1 deterministic audit execution", () => {
     const audit = evaluatePhase1Checks(collected('<h1>Aloha Fences</h1><p>We install fences.</p>'), { verifiedPublicFacts: [{ id: "name", factType: "business_name", value: "Aloha Fence" }] });
     expect(statusOf(audit, "ai.identity_clarity")).toBe("WARNING");
     expect(audit.checkResults.find(c => c.checkKey === "ai.identity_clarity")?.reason).toContain("alternate wording");
-    expect(statusOf(audit, "ai.service_clarity")).toBe("UNAVAILABLE");
+    // With no verified service on file, the check falls back to what the page itself declares
+    // and never cites a business fact it was not given.
+    const service = audit.checkResults.find(c => c.checkKey === "ai.service_clarity");
+    expect(service?.status).toBe("FAIL");
+    expect(service?.evidenceRefs.some(ref => ref.startsWith("business-fact:"))).toBe(false);
   });
 
   it("recognizes equivalent US state names and abbreviations without matching another state", () => {
@@ -332,7 +338,8 @@ describe("Phase 1 deterministic audit execution", () => {
       (score) => score.category === "websitePerformance",
     );
 
-    expect(performance?.evidenceCoverage).toBe(0.14);
+    // HTTPS, mobile viewport and the functional smoke test are measurable without a lab run: 46 of 100 weight.
+    expect(performance?.evidenceCoverage).toBe(0.46);
     expect(performance?.lowCoverage).toBe(true);
     expect(result.overall.provisional).toBe(true);
     expect(result.scoringDefinitionVersion).toBe(SCORING_DEFINITION_VERSION);

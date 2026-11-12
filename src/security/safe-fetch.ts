@@ -37,6 +37,8 @@ export type SafeFetchResult = {
   bodyText: string;
   contentHash: string;
   redirects: string[];
+  /** True when the body was cut at maxBytes (only with allowTruncated). */
+  truncated?: boolean;
 };
 
 export type SafeFetchOptions = {
@@ -46,6 +48,11 @@ export type SafeFetchOptions = {
   lookupHost?: (hostname: string) => Promise<string[]>;
   requestImpl?: PinnedHttpRequest;
   isTargetAllowed?: (target: URL, redirectedFrom: URL | null) => boolean;
+  /**
+   * Keep the first maxBytes of an oversized body instead of failing. The
+   * download still stops at the cap, so the bound on memory is unchanged.
+   */
+  allowTruncated?: boolean;
 };
 
 type ValidatedAddress = {
@@ -59,12 +66,14 @@ export type PinnedHttpRequestOptions = {
   headers: Record<string, string>;
   lookup: LookupFunction;
   validatedAddresses: ValidatedAddress[];
+  allowTruncated?: boolean;
 };
 
 export type PinnedHttpResponse = {
   status: number;
   headers: Record<string, string>;
   bodyText: string;
+  truncated?: boolean;
 };
 
 export type PinnedHttpRequest = (
@@ -350,7 +359,7 @@ function createPinnedLookup(
 
 const requestHeaders = {
   accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
-  "user-agent": "OPTIQ-Phase1-Audit/1.0",
+  "user-agent": "VirelanticAudit/2.0 (+https://virelantic.com)",
 } as const;
 
 const defaultPinnedRequest: PinnedHttpRequest = (url, options) =>
@@ -384,6 +393,21 @@ const defaultPinnedRequest: PinnedHttpRequest = (url, options) =>
 
         response.on("data", (chunk: Buffer) => {
           bytesRead += chunk.byteLength;
+
+          if (bytesRead > options.maxBytes && options.allowTruncated) {
+            // Keep what fits, stop the download, and report the cut.
+            const room = options.maxBytes - (bytesRead - chunk.byteLength);
+            if (room > 0) chunks.push(chunk.subarray(0, room));
+            clearRequestTimeout();
+            resolve({
+              status: response.statusCode ?? 0,
+              headers: selectedHeaders(response.headers),
+              bodyText: Buffer.concat(chunks).toString("utf8"),
+              truncated: true,
+            });
+            response.destroy();
+            return;
+          }
 
           if (bytesRead > options.maxBytes) {
             response.destroy(
@@ -474,6 +498,7 @@ export async function safeFetchText(
           headers: requestHeaders,
           lookup: createPinnedLookup(currentUrl.hostname, validatedAddresses),
           validatedAddresses,
+          allowTruncated: options.allowTruncated,
         }),
         timeoutPromise,
       ]);
@@ -492,7 +517,7 @@ export async function safeFetchText(
       }
     }
 
-    if (Buffer.byteLength(response.bodyText, "utf8") > maxBytes) {
+    if (!response.truncated && Buffer.byteLength(response.bodyText, "utf8") > maxBytes) {
       throw new SafeFetchError(
         "RESPONSE_TOO_LARGE",
         "Website response exceeded the configured size limit.",
@@ -524,6 +549,7 @@ export async function safeFetchText(
       bodyText: response.bodyText,
       contentHash: createHash("sha256").update(response.bodyText).digest("hex"),
       redirects,
+      ...(response.truncated ? { truncated: true } : {}),
     };
   }
 

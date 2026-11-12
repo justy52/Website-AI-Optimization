@@ -8,4 +8,4 @@ If the client’s authorization is still current, start a separate audit manuall
 
 ## Audit collection scope
 
-The page, robots.txt, and sitemap fetches stay on the saved website hostname and its exact www counterpart. HTTP can upgrade to HTTPS. A redirect from HTTPS to HTTP or to any other hostname is rejected before DNS lookup. An off-scope robots.txt or sitemap destination is treated as unavailable. Store the intended canonical hostname and include the permitted website scope in the client’s written authorization.
+The page, robots.txt, sitemap, and up to ten sampled same-site pages are fetched only from the saved website hostname and its exact www counterpart. Sampled pages honour robots.txt and carry no query string; see `docs/audit-check-coverage.md`. HTTP can upgrade to HTTPS. A redirect from HTTPS to HTTP or to any other hostname is rejected before DNS lookup. An off-scope robots.txt or sitemap destination is treated as unavailable. Store the intended canonical hostname and include the permitted website scope in the client’s written authorization.

@@ -1,4 +1,4 @@
-import { findingGuidance, hasReportableScore, type BuiltAuditReport } from "./audits/report";
+import { findingGuidance, hasReportableScore, isCategoryScoreWithheld, type BuiltAuditReport } from "./audits/report";
 import type { ScoreCategoryKey } from "./audits/scoring";
 
 const categoryLabels: Record<ScoreCategoryKey, string> = {
@@ -77,7 +77,7 @@ export function renderAuditReport(
       `Methodology: ${data.methodology.scoringDefinitionVersion} · ${data.methodology.checkCatalogVersion} · ${data.methodology.collectorVersion}`,
     ], "")),
     section("Category scores", list(data.categoryScores.map((category) => {
-      const withheld = category.category === "aiReadiness" || category.lowCoverage || category.score === null;
+      const withheld = isCategoryScoreWithheld(category.category, category.score, category.lowCoverage, data.methodology.collectorVersion);
       return `${categoryLabels[category.category]}: ${withheld ? "Withheld" : `${category.score}/100`} · ${coverage(category.evidenceCoverageBasisPoints)} coverage`;
     }), "No category scores were recorded.")),
     section("High-priority findings", list(findings(data.highPriorityFindings), "No high or critical findings were recorded.")),

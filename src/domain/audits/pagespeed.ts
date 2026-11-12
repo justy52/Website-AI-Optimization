@@ -6,6 +6,10 @@ export type MobileLabEvidence = {
   lcpMs: number | null;
   cls: number | null;
   fieldInpMs?: number | null;
+  /** Origin-wide (not page-level) real-user INP, kept separate and labeled as such. */
+  originFieldInpMs?: number | null;
+  /** Lab Total Blocking Time: a responsiveness proxy, never reported as INP. */
+  tbtMs?: number | null;
 };
 
 export async function collectMobileLabEvidence(
@@ -26,7 +30,7 @@ export async function collectMobileLabEvidence(
     api.searchParams.set("url", page.origin + "/");
     api.searchParams.set("strategy", "mobile");
     api.searchParams.set("category", "performance");
-    api.searchParams.set("fields", "loadingExperience(id,initial_url,origin_fallback,metrics),lighthouseResult(requestedUrl,finalDisplayedUrl,lighthouseVersion,runtimeError,audits)");
+    api.searchParams.set("fields", "loadingExperience(id,initial_url,origin_fallback,metrics),originLoadingExperience(id,metrics),lighthouseResult(requestedUrl,finalDisplayedUrl,lighthouseVersion,runtimeError,audits)");
     // A real mobile Lighthouse run can exceed 45 seconds. Keep it bounded,
     // but allow enough time for Google's lab to finish under normal load.
     const response = await transport(api, { headers: { "X-Goog-Api-Key": apiKey }, redirect: "error", signal: AbortSignal.timeout(90_000) });
@@ -42,7 +46,7 @@ export async function collectMobileLabEvidence(
       content += decoder.decode(part.value, { stream: true });
     }
     content += decoder.decode();
-    const result = JSON.parse(content) as { loadingExperience?: { id?: string; initial_url?: string; origin_fallback?: boolean; metrics?: Record<string, { percentile?: unknown }> }; lighthouseResult?: { requestedUrl?: string; finalDisplayedUrl?: string; lighthouseVersion?: string; runtimeError?: unknown; audits?: Record<string, { numericValue?: unknown; scoreDisplayMode?: string }> } };
+    const result = JSON.parse(content) as { originLoadingExperience?: { id?: string; metrics?: Record<string, { percentile?: unknown }> }; loadingExperience?: { id?: string; initial_url?: string; origin_fallback?: boolean; metrics?: Record<string, { percentile?: unknown }> }; lighthouseResult?: { requestedUrl?: string; finalDisplayedUrl?: string; lighthouseVersion?: string; runtimeError?: unknown; audits?: Record<string, { numericValue?: unknown; scoreDisplayMode?: string }> } };
     const lab = result.lighthouseResult;
     if (!lab || lab.runtimeError || !lab.requestedUrl || new URL(lab.requestedUrl).origin !== page.origin || !lab.finalDisplayedUrl || new URL(lab.finalDisplayedUrl).origin !== page.origin) return unavailable("invalid_or_incomplete_lab");
     const metric = (name: string) => {
@@ -55,8 +59,14 @@ export async function collectMobileLabEvidence(
     // Origin fallback is not a page measurement. Only accept explicitly bound
     // data for this exact homepage, with a finite integer percentile in ms.
     const fieldInpMs = field?.origin_fallback !== true && field?.id === page.origin + "/" && field?.initial_url === page.origin + "/" && typeof fieldValue === "number" && Number.isSafeInteger(fieldValue) && fieldValue >= 0 ? fieldValue : null;
-    if (lcpMs === null && cls === null && fieldInpMs === null) return unavailable("metrics_missing");
-    return { requestedUrl: page.origin + "/", fetchedAt: new Date().toISOString(), lighthouseVersion: lab.lighthouseVersion ?? null, lcpMs, cls, fieldInpMs };
+    const tbtMs = metric("total-blocking-time");
+    const originField = result.originLoadingExperience;
+    const originValue = originField?.metrics?.INTERACTION_TO_NEXT_PAINT?.percentile;
+    let originMatches = false;
+    try { originMatches = typeof originField?.id === "string" && new URL(originField.id).origin === page.origin; } catch { originMatches = false; }
+    const originFieldInpMs = originMatches && typeof originValue === "number" && Number.isSafeInteger(originValue) && originValue >= 0 ? originValue : null;
+    if (lcpMs === null && cls === null && fieldInpMs === null && originFieldInpMs === null && tbtMs === null) return unavailable("metrics_missing");
+    return { requestedUrl: page.origin + "/", fetchedAt: new Date().toISOString(), lighthouseVersion: lab.lighthouseVersion ?? null, lcpMs, cls, fieldInpMs, originFieldInpMs, tbtMs };
   } catch (error) {
     return unavailable(error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name) ? "timeout" : "request_or_parse_error");
   }

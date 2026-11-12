@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
-import { findingGuidance, hasReportableScore, type BuiltAuditReport } from "@/domain/audits/report";
+import { findingGuidance, hasReportableScore, isCategoryScoreWithheld, type BuiltAuditReport } from "@/domain/audits/report";
 import { getReport } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
 
@@ -115,12 +115,12 @@ export default async function ReportDetailPage({
               <div className="mx-mini-panel" key={score.category}>
                 <span className="mx-eyebrow">{score.category}</span>
                 <span className="mx-kpi-value">
-                  {score.category === "aiReadiness" || score.score === null || score.lowCoverage ? "NA" : score.score}
+                  {isCategoryScoreWithheld(score.category, score.score, score.lowCoverage, data.methodology.collectorVersion) ? "NA" : score.score}
                 </span>
                 <span className="mx-muted">
                   Coverage {percent(score.evidenceCoverageBasisPoints)}
                 </span>
-                {score.category === "aiReadiness" && <span className="mx-muted">AI score withheld: core checks are incomplete.</span>}
+                {score.category === "aiReadiness" && isCategoryScoreWithheld(score.category, score.score, score.lowCoverage, data.methodology.collectorVersion) && <span className="mx-muted">AI score withheld: core checks are incomplete.</span>}
               </div>
             ))}
           </div>
