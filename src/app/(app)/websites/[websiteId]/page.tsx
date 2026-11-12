@@ -26,6 +26,7 @@ import {
   updateWebsiteAction,
 } from "../actions";
 import { startAuditAction } from "../../audits/actions";
+import { StartAuditButton } from "../../audits/start-audit-button";
 import { EmptyState, formatDate, PageHeader, Panel, StatusChip } from "../../ui";
 
 // This page can also start the mobile lab audit through a server action.
@@ -161,10 +162,7 @@ export default async function WebsiteDetailPage({
           {!website.archivedAt && (
             <form action={startAuditAction} className="mx-action-inline">
               <input name="websiteId" type="hidden" value={website.id} />
-              <button className="mx-btn" type="submit">
-                <Play aria-hidden size={14} />
-                Start audit
-              </button>
+              <StartAuditButton />
             </form>
           )}
         </Panel>

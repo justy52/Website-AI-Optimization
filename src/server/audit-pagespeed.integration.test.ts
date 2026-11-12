@@ -10,7 +10,7 @@ import { withTenantContext } from "@/db/tenant";
 import type { WorkspaceContext } from "@/domain/tenancy/context";
 import type { AuditSnapshotData, BuiltAuditReport } from "@/domain/audits/report";
 import { serverEnv } from "@/lib/env";
-import { createReportForAudit, finalizeAudit, startAuditForWebsite } from "./audits";
+import { AUDIT_REPEAT_WINDOW_MS, createReportForAudit, finalizeAudit, findDuplicateAuditForWebsite, startAuditForWebsite } from "./audits";
 
 vi.mock("@/security/safe-fetch", () => ({
   SafeFetchError: class SafeFetchError extends Error {},
@@ -103,5 +103,16 @@ describe("mobile lab evidence through the audit workflow", () => {
     await finalizeAudit(context, audit.id, database);
     const report = await createReportForAudit(context, audit.id, database);
     expect((report.reportData as BuiltAuditReport["reportData"]).additionalFindings?.find(f => f.checkKey === "perf.inp")?.summary).toContain("28-day field-data");
+  }, 60_000);
+
+  it("treats a repeat request just after an audit as a duplicate of it, but not a later one", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 429 })));
+    const audit = await startAuditForWebsite(context, websiteId, database);
+    expect(await findDuplicateAuditForWebsite(context, websiteId, database)).toBe(audit.id);
+    const later = new Date(Date.now() + AUDIT_REPEAT_WINDOW_MS + 1_000);
+    expect(await findDuplicateAuditForWebsite(context, websiteId, database, later)).toBeNull();
+    // An unknown or malformed website never matches another site's audit.
+    expect(await findDuplicateAuditForWebsite(context, randomUUID(), database)).toBeNull();
+    expect(await findDuplicateAuditForWebsite(context, "not-a-uuid", database)).toBeNull();
   }, 60_000);
 });

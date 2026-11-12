@@ -1,10 +1,10 @@
-import { Play } from "lucide-react";
 
 import { listAudits } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { listWebsites } from "@/server/revenue";
 
 import { startAuditAction } from "./actions";
+import { StartAuditButton } from "./start-audit-button";
 import { EmptyState, formatDate, PageHeader, Panel, RowLink, StatusChip } from "../ui";
 
 // A mobile lab measurement can take over a minute before the audit is saved.
@@ -34,10 +34,7 @@ export default async function AuditsPage() {
                   ))}
                 </select>
               </label>
-              <button className="mx-btn" type="submit">
-                <Play aria-hidden size={14} />
-                Start audit
-              </button>
+              <StartAuditButton />
             </form>
           ) : (
             <EmptyState>Add a client website before starting an audit.</EmptyState>

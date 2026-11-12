@@ -9,6 +9,7 @@ import {
   closeStaleAuditRun,
   createReportForAudit,
   finalizeAudit,
+  findDuplicateAuditForWebsite,
   startAuditForWebsite,
 } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
@@ -22,9 +23,13 @@ function value(formData: FormData, key: string): string {
 export async function startAuditAction(formData: FormData) {
   try {
   const shell = await getWorkspaceShellContext();
+  const websiteId = value(formData, "websiteId");
+  // A repeated click must open the audit it duplicates, not start another.
+  const duplicateOf = await findDuplicateAuditForWebsite(shell.workspaceContext, websiteId);
+  if (duplicateOf) redirect(`/audits/${duplicateOf}`);
   const audit = await startAuditForWebsite(
     shell.workspaceContext,
-    value(formData, "websiteId"),
+    websiteId,
   );
 
   revalidatePath("/audits");

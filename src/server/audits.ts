@@ -308,6 +308,35 @@ export async function closeStaleAuditRun(
   });
 }
 
+/** A repeat request this soon after an audit is treated as the same request. */
+export const AUDIT_REPEAT_WINDOW_MS = 30_000;
+
+/**
+ * The website's audit that a new manual request would duplicate: one that is
+ * still running (and not stale), or one that finished moments ago. Extra
+ * clicks on a slow form queue up and would otherwise each start an audit.
+ */
+export async function findDuplicateAuditForWebsite(
+  context: WorkspaceContext,
+  websiteId: string,
+  database = db,
+  at: Date = now(),
+) {
+  if (!z.uuid().safeParse(websiteId).success) return null;
+  return withTenantContext(database, context, async (tx) => {
+    const [latest] = await tx
+      .select({ auditId: auditRuns.auditId, status: auditRuns.status, startedAt: auditRuns.startedAt, completedAt: auditRuns.completedAt, createdAt: auditRuns.createdAt })
+      .from(auditRuns)
+      .where(and(eq(auditRuns.workspaceId, context.workspaceId), eq(auditRuns.websiteId, websiteId)))
+      .orderBy(desc(auditRuns.createdAt))
+      .limit(1);
+    if (!latest) return null;
+    if (latest.status === "RUNNING") return isStaleAuditRun(latest, at) ? null : latest.auditId;
+    if (!["SUCCEEDED", "PARTIAL"].includes(latest.status) || !latest.completedAt) return null;
+    return at.getTime() - latest.completedAt.getTime() < AUDIT_REPEAT_WINDOW_MS ? latest.auditId : null;
+  });
+}
+
 export async function startAuditForWebsite(
   context: WorkspaceContext,
   websiteId: string,
