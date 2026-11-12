@@ -42,4 +42,34 @@ describe("public mobile lab collection", () => {
     expect(await collect({ ...field, id: "https://example.com/other" })).toMatchObject({ fieldInpMs: null });
     expect(await collect({ ...field, metrics: { INTERACTION_TO_NEXT_PAINT: { percentile: "240" } } })).toMatchObject({ fieldInpMs: null });
   });
+  it("names a rejected key with a fixed category and never logs the provider message", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const rejected = vi.fn(async () => new Response(JSON.stringify({ error: { code: 400, message: "API key not valid. Please pass a valid API key. https://example.com/" } }), { status: 400 }));
+      expect(await collectMobileLabEvidence("https://example.com/", "private-key", rejected as typeof fetch)).toBeNull();
+      expect(rejected).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith("pagespeed_lab_unavailable", { reason: "api_key_invalid", status: 400 });
+      expect(JSON.stringify(warn.mock.calls)).not.toMatch(/private-key|example\.com|Please pass/);
+    } finally { warn.mockRestore(); }
+  });
+  it("retries once without the optional site-wide field when the field selection is refused", async () => {
+    const urls: string[] = [];
+    const transport = vi.fn(async (url: URL) => {
+      urls.push(url.searchParams.get("fields") ?? "");
+      return urls.length === 1
+        ? new Response(JSON.stringify({ error: { code: 400, message: "Invalid field selection originLoadingExperience" } }), { status: 400 })
+        : new Response(JSON.stringify(valid), { status: 200 });
+    });
+    const result = await collectMobileLabEvidence("https://example.com/", "key", transport as unknown as typeof fetch);
+    expect(result).toMatchObject({ lcpMs: 4400, cls: 0.002 });
+    expect(urls[0]).toContain("originLoadingExperience");
+    expect(urls[1]).not.toContain("originLoadingExperience");
+  });
+  it("reads site-wide field INP and lab blocking time separately from page-level INP", async () => {
+    const body = { ...valid, originLoadingExperience: { id: "https://example.com", metrics: { INTERACTION_TO_NEXT_PAINT: { percentile: 310 } } }, lighthouseResult: { ...valid.lighthouseResult, audits: { ...valid.lighthouseResult.audits, "total-blocking-time": { numericValue: 420.4, scoreDisplayMode: "numeric" } } } };
+    const result = await collectMobileLabEvidence("https://example.com/", "key", vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })) as typeof fetch);
+    expect(result).toMatchObject({ fieldInpMs: null, originFieldInpMs: 310, tbtMs: 420.4 });
+    const other = { ...body, originLoadingExperience: { id: "https://other.example", metrics: body.originLoadingExperience.metrics } };
+    expect(await collectMobileLabEvidence("https://example.com/", "key", vi.fn(async () => new Response(JSON.stringify(other), { status: 200 })) as typeof fetch)).toMatchObject({ originFieldInpMs: null });
+  });
 });

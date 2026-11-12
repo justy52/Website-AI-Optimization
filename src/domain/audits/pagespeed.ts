@@ -30,10 +30,30 @@ export async function collectMobileLabEvidence(
     api.searchParams.set("url", page.origin + "/");
     api.searchParams.set("strategy", "mobile");
     api.searchParams.set("category", "performance");
-    api.searchParams.set("fields", "loadingExperience(id,initial_url,origin_fallback,metrics),originLoadingExperience(id,metrics),lighthouseResult(requestedUrl,finalDisplayedUrl,lighthouseVersion,runtimeError,audits)");
+    const baseFields = "loadingExperience(id,initial_url,origin_fallback,metrics),lighthouseResult(requestedUrl,finalDisplayedUrl,lighthouseVersion,runtimeError,audits)";
+    api.searchParams.set("fields", `${baseFields},originLoadingExperience(id,metrics)`);
     // A real mobile Lighthouse run can exceed 45 seconds. Keep it bounded,
     // but allow enough time for Google's lab to finish under normal load.
-    const response = await transport(api, { headers: { "X-Goog-Api-Key": apiKey }, redirect: "error", signal: AbortSignal.timeout(90_000) });
+    const request = () => transport(api, { headers: { "X-Goog-Api-Key": apiKey }, redirect: "error", signal: AbortSignal.timeout(90_000) });
+    // Name the cause of a rejected request with a fixed category. The provider's
+    // own message is never logged: it can echo the requested URL.
+    const rejection = async (failed: Response) => {
+      const text = (await failed.text().catch(() => "")).slice(0, 4_000);
+      if (/API key not valid|API_KEY_INVALID/i.test(text)) return "api_key_invalid";
+      if (/API key expired|API_KEY_EXPIRED/i.test(text)) return "api_key_expired";
+      if (/has not been used in project|SERVICE_DISABLED|is disabled/i.test(text)) return "api_not_enabled";
+      if (/referer|IP address|API_KEY_(?:HTTP_REFERRER|IP_ADDRESS|SERVICE)_BLOCKED|are blocked/i.test(text)) return "api_key_restricted";
+      if (/Invalid field selection|fields/i.test(text)) return "invalid_field_selection";
+      return "provider_http";
+    };
+    let response = await request();
+    if (response.status === 400 || response.status === 403) {
+      const reason = await rejection(response);
+      if (reason !== "invalid_field_selection") return unavailable(reason, response.status);
+      // Site-wide field data is optional: retry once without asking for it.
+      api.searchParams.set("fields", baseFields);
+      response = await request();
+    }
     if (!response.ok || !response.body) return unavailable("provider_http", response.status);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
