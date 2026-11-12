@@ -84,7 +84,11 @@ export const servicePlanDefinitions: Record<
     },
     limits: {
       trackedPriorityKeywords: 0,
-      configuredCompetitors: 0,
+      // Amended 2026-11-12 (owner decision): a one-off audit may name up to
+      // three competitors so its comparisons use the customer's real rivals.
+      // The original definition gave no competitor limit for this plan, and
+      // no stored cycle or report depends on it.
+      configuredCompetitors: 3,
       observedAiVisibilityPrompts: 0,
       observedAiVisibilitySurfaces: 0,
       majorContentAssets: 0,

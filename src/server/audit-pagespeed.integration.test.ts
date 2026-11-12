@@ -11,6 +11,7 @@ import type { WorkspaceContext } from "@/domain/tenancy/context";
 import type { AuditSnapshotData, BuiltAuditReport } from "@/domain/audits/report";
 import { serverEnv } from "@/lib/env";
 import { syncUsageLedger } from "./usage-ledger";
+import { listAudits, setAuditsHidden } from "./audits";
 import { AUDIT_REPEAT_WINDOW_MS, createReportForAudit, finalizeAudit, findDuplicateAuditForWebsite, startAuditForWebsite } from "./audits";
 
 vi.mock("@/security/safe-fetch", () => ({
@@ -137,5 +138,19 @@ describe("mobile lab evidence through the audit workflow", () => {
     } finally {
       serverEnv.GOOGLE_PLACES_API_KEY = previousPlaces;
     }
+  }, 60_000);
+
+  it("hides and restores audits without deleting them or their history", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 429 })));
+    const audit = await startAuditForWebsite(context, websiteId, database);
+    const hiddenOf = async () => (await listAudits(context, database)).find(row => row.id === audit.id)?.hidden;
+    expect(await hiddenOf()).toBe(false);
+    expect(await setAuditsHidden(context, [audit.id, "not-a-uuid", randomUUID()], true, database)).toBe(1);
+    expect(await hiddenOf()).toBe(true);
+    const results = await withTenantContext(database, context, tx => tx.select().from(schema.auditCheckResults).where(eq(schema.auditCheckResults.auditId, audit.id)));
+    expect(results.length).toBeGreaterThan(0);
+    await setAuditsHidden(context, [audit.id], false, database);
+    expect(await hiddenOf()).toBe(false);
+    await expect(setAuditsHidden({ ...context, role: "ANALYST" }, [audit.id], true, database)).rejects.toThrow();
   }, 60_000);
 });

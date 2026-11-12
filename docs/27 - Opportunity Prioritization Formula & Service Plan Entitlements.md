@@ -98,6 +98,7 @@ Out-of-scope high-value opportunities remain visible and may create an add-on/ch
 
 ## AUDIT_ONLY
 - recurring monitoring: none after audit unless separately purchased
+- configured competitors: up to 3, used only for the audit's own comparisons (amended 2026-11-12 by owner decision; no competitor monitoring is included)
 - content deliverables: 0
 - existing-page optimizations: 0
 - report: audit report only

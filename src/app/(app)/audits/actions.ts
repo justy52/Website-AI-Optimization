@@ -10,6 +10,7 @@ import {
   createReportForAudit,
   finalizeAudit,
   findDuplicateAuditForWebsite,
+  setAuditsHidden,
   startAuditForWebsite,
 } from "@/server/audits";
 import { getWorkspaceShellContext } from "@/server/auth";
@@ -38,6 +39,15 @@ export async function startAuditAction(formData: FormData) {
     if (error instanceof OperationsValidationError) redirect(`/operations?validation=${encodeURIComponent(error.message)}` as never);
     throw error;
   }
+}
+
+export async function setAuditsHiddenAction(formData: FormData) {
+  const shell = await getWorkspaceShellContext();
+  const hidden = value(formData, "intent") !== "restore";
+  const ids = formData.getAll("auditId").filter((item): item is string => typeof item === "string");
+  await setAuditsHidden(shell.workspaceContext, ids, hidden);
+  revalidatePath("/audits");
+  redirect((hidden ? "/audits" : "/audits?show=hidden") as never);
 }
 
 export async function finalizeAuditAction(formData: FormData) {

@@ -82,6 +82,12 @@ export async function listAudits(context: WorkspaceContext, database = db) {
         domain: websites.domain,
         createdAt: audits.createdAt,
         finalizedAt: audits.finalizedAt,
+        // Hidden is derived from the activity log, so hiding never changes or
+        // removes the audit, its evidence or its usage history.
+        hidden: sql<boolean>`coalesce((select e.action = 'audit.hidden' from activity_events e
+          where e.workspace_id = ${audits.workspaceId} and e.resource_type = 'audit' and e.resource_id = ${audits.id}::text
+            and e.action in ('audit.hidden', 'audit.restored')
+          order by e.created_at desc, e.id desc limit 1), false)`,
       })
       .from(audits)
       .innerJoin(
@@ -94,6 +100,29 @@ export async function listAudits(context: WorkspaceContext, database = db) {
       .where(eq(audits.workspaceId, context.workspaceId))
       .orderBy(desc(audits.createdAt)),
   );
+}
+
+/**
+ * Hide audits from the default list, or restore them. Nothing is deleted:
+ * the audits stay reachable by link and in the full list.
+ */
+export async function setAuditsHidden(
+  context: WorkspaceContext,
+  auditIds: string[],
+  hidden: boolean,
+  database = db,
+) {
+  assertWorkspaceRole(context, ["OWNER", "ADMIN"]);
+  const ids = [...new Set(auditIds)].filter((id) => z.uuid().safeParse(id).success).slice(0, 100);
+  if (ids.length === 0) return 0;
+  return withTenantContext(database, context, async (tx) => {
+    const found = await tx.select({ id: audits.id }).from(audits)
+      .where(and(eq(audits.workspaceId, context.workspaceId), inArray(audits.id, ids)));
+    for (const audit of found) {
+      await recordActivity(tx, context, hidden ? "audit.hidden" : "audit.restored", "audit", audit.id);
+    }
+    return found.length;
+  });
 }
 
 export async function listReports(context: WorkspaceContext, database = db) {
