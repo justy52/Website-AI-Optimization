@@ -35,6 +35,19 @@ describe("Stripe service payment adapter", () => {
     const create = vi.spyOn(provider.stripe.customers, "create");
     await provider.verifyAccount(); expect(webhook).toHaveBeenCalledWith("we_fixture"); expect(create).not.toHaveBeenCalled();
   });
+  it("accepts an account whose requirements list is hidden from a restricted key when the visible conditions pass", async () => {
+    const provider = new StripeServicePayments(paymentConfiguration(livePaymentEnvironment()));
+    vi.spyOn(provider.stripe, "rawRequest").mockResolvedValue({ ...readyAccount, requirements: undefined });
+    const webhook = vi.spyOn(provider.stripe.webhookEndpoints, "retrieve").mockResolvedValue(readyEndpoint as never);
+    await expect(provider.verifyAccount()).resolves.toBeUndefined();
+    // The webhook match is still checked.
+    expect(webhook).toHaveBeenCalledWith("we_fixture");
+  });
+  it("names the unfinished account conditions without account data", async () => {
+    const provider = new StripeServicePayments(paymentConfiguration(livePaymentEnvironment()));
+    vi.spyOn(provider.stripe, "rawRequest").mockResolvedValue({ ...readyAccount, payouts_enabled: false, requirements: { disabled_reason: null, currently_due: ["individual.verification.document"], past_due: [], pending_verification: [] } });
+    await expect(provider.verifyAccount()).rejects.toThrow(/payouts are not enabled; information due now: individual\.verification\.document/);
+  });
   it("can reconcile existing payments after merchant collection eligibility regresses", async () => {
     const provider = new StripeServicePayments(paymentConfiguration(livePaymentEnvironment()));
     vi.spyOn(provider.stripe, "rawRequest").mockResolvedValue({ ...readyAccount, charges_enabled: false, payouts_enabled: false });
@@ -44,7 +57,8 @@ describe("Stripe service payment adapter", () => {
   });
   it.each([
     { id: "acct_other" }, { charges_enabled: false }, { payouts_enabled: false }, { details_submitted: false },
-    { capabilities: { card_payments: "pending" } }, { requirements: undefined },
+    { capabilities: { card_payments: "pending" } }, { capabilities: undefined },
+    { requirements: undefined, charges_enabled: false }, { requirements: undefined, payouts_enabled: false },
     { requirements: { disabled_reason: "requirements.past_due" } },
     { requirements: { currently_due: ["company.verification"] } },
     { requirements: { past_due: ["external_account"] } },

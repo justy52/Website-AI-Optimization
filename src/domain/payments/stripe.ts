@@ -33,8 +33,11 @@ export class StripeServicePayments implements ServicePaymentProvider {
       if (!account.payouts_enabled) gaps.push("payouts are not enabled");
       if (!account.details_submitted) gaps.push("account details are not submitted");
       if (account.capabilities?.card_payments !== "active") gaps.push(`card payments capability is ${account.capabilities ? String(account.capabilities.card_payments ?? "missing").replace(/[^a-z_]/gi, "") : "not reported to this key"}`);
-      if (!requirements) gaps.push("verification requirements are not reported to this key");
-      else {
+      // Stripe omits the requirements list for a restricted key. Owner decision
+      // (2026-11-12): when it is not visible, rely on the four conditions above,
+      // which Stripe itself turns off for any blocking problem. When the list is
+      // visible it is still enforced in full.
+      if (requirements) {
         if (requirements.disabled_reason) gaps.push(`Stripe reports the account as disabled (${requirements.disabled_reason.replace(/[^a-z0-9_.]/gi, "").slice(0, 60)})`);
         if ((requirements.currently_due?.length ?? 0) > 0) gaps.push(`information due now: ${names(requirements.currently_due)}`);
         if ((requirements.past_due?.length ?? 0) > 0) gaps.push(`information past due: ${names(requirements.past_due)}`);

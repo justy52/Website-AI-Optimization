@@ -48,7 +48,9 @@ Before preparing a live Checkout, the server retrieves the current Stripe accoun
 - Exact account ID match.
 - `charges_enabled`, `payouts_enabled`, and `details_submitted` true.
 - `capabilities.card_payments` active.
-- No disabled reason, currently due or past-due requirements, or pending verification.
+- No disabled reason, currently due or past-due requirements, or pending verification, when Stripe reports the requirements list to the configured key.
+
+Stripe does not return the requirements list to a restricted key. By owner decision on 2026-11-12, when the list is absent the check relies on the conditions above it, which Stripe itself switches off for any blocking problem; an item that is due later but not yet blocking is then not detected. When the list is present it is enforced in full. A failed check names each unmet condition using Stripe's own status and requirement names.
 
 These are technical collection gates. They do not prove bank ownership, legal authority, tax treatment, the correctness of public policies, or capacity to deliver. Those require owner review in the referenced launch record. No bank details or personal verification documents are copied into application records.
 
