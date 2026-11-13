@@ -37,5 +37,10 @@ export function createRuntimePool(connectionString: string) {
   // Neon may otherwise route pool.query() over HTTP, skipping pg-pool.verify.
   // A connect listener disables that fast path in the installed driver.
   pool.on("connect", () => {});
+  // An idle connection the database closes emits "error" on the pool. With no
+  // listener Node treats that as fatal and the request in progress fails.
+  pool.on("error", (error: Error) => {
+    console.error("db_pool_idle_connection_error", { name: error?.name ?? "Error" });
+  });
   return pool;
 }

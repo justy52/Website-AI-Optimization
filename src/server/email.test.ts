@@ -41,10 +41,16 @@ describe("transactional email", () => {
       await sendEmail(message, refuse(403, "The example.test domain is not verified. Please, add and verify your domain."), settings);
       await sendEmail(message, refuse(422, "Invalid `from` field. The email address needs to follow the `email@example.com` format."), { ...settings, from: "Virelantic" });
       await sendEmail(message, refuse(403, "You can only send testing emails to your own email address (owner@example.test)."), settings);
+      await sendEmail(message, vi.fn(async () => new Response(JSON.stringify({ statusCode: 403, name: "invalid_api_key", message: "API key is invalid" }), { status: 403 })) as unknown as typeof fetch, settings);
+      await sendEmail(message, vi.fn(async () => new Response("error code: 1010", { status: 403 })) as unknown as typeof fetch, settings);
+      await sendEmail(message, vi.fn(async () => new Response(JSON.stringify({ name: "validation_error", message: "Something new." }), { status: 403 })) as unknown as typeof fetch, settings);
       expect(error.mock.calls.map(call => call[1])).toEqual([
         { status: 403, reason: "sender_domain_not_verified", senderFormatValid: true },
         { status: 422, reason: "sender_invalid", senderFormatValid: false },
         { status: 403, reason: "test_mode_own_address_only", senderFormatValid: true },
+        { status: 403, reason: "api_key_invalid_api_key", senderFormatValid: true },
+        { status: 403, reason: "blocked_at_network_edge_1010", senderFormatValid: true },
+        { status: 403, reason: "other_validation_error", senderFormatValid: true },
       ]);
       expect(JSON.stringify(error.mock.calls)).not.toMatch(/example\.test|owner@/);
     } finally { error.mockRestore(); }

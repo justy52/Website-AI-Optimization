@@ -33,11 +33,16 @@ async function rejectionReason(response: Response) {
   if (response.status === 429) return "rate_limited";
   let text = "";
   try { text = (await response.text()).slice(0, 2000); } catch { return "unreadable"; }
+  // The provider's own short error code (for example "invalid_api_key"), or the
+  // numbered block its network edge returns. Only that fixed token is kept.
+  const code = text.match(/"name"\s*:\s*"([a-z_]{1,40})"/)?.[1] ?? text.match(/error code:\s*(\d{3,5})/i)?.[1];
+  if (code === "invalid_api_key" || code === "restricted_api_key" || code === "missing_api_key") return `api_key_${code}`;
+  if (code && /^\d+$/.test(code)) return `blocked_at_network_edge_${code}`;
   if (/not verified|verify (a|your) domain/i.test(text)) return "sender_domain_not_verified";
   if (/testing emails|your own email address/i.test(text)) return "test_mode_own_address_only";
   if (/`from`|from field|from address/i.test(text)) return "sender_invalid";
   if (/`to`|to field|recipient/i.test(text)) return "recipient_invalid";
-  return "other";
+  return code ? `other_${code}` : "other";
 }
 
 /** Whether transactional email can be sent from this deployment. */
@@ -59,7 +64,8 @@ export async function sendEmail(
   try {
     const response = await transport("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${configured.apiKey}`, "Content-Type": "application/json" },
+      // The provider's network edge refuses requests that carry no client name.
+      headers: { Authorization: `Bearer ${configured.apiKey}`, "Content-Type": "application/json", "User-Agent": "virelantic-app/1.0" },
       body: JSON.stringify({ from: configured.from, to: [cleanAddress(message.to)], subject: message.subject, text: message.text }),
       signal: AbortSignal.timeout(10_000),
     });
