@@ -1,12 +1,17 @@
 import { notifyOwnerLater } from "@/server/email";
-import { paymentConfiguration } from "@/domain/payments/policy";
+import { paymentConfiguration, paymentConfigurationProblem } from "@/domain/payments/policy";
 import { parsePaymentEvent, StripeServicePayments } from "@/domain/payments/stripe";
 import { processServicePaymentEvent } from "@/server/service-payments";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   let config;
-  try { config = paymentConfiguration(); } catch { return Response.json({ error: "Service payments unavailable" }, { status: 503 }); }
+  try { config = paymentConfiguration(); } catch {
+    // A selected mode that cannot start is a setup fault; name the rule, never a value.
+    const problem = paymentConfigurationProblem();
+    if (problem) console.error("service_payment_configuration_invalid", { problem });
+    return Response.json({ error: "Service payments unavailable" }, { status: 503 });
+  }
   const signature = request.headers.get("stripe-signature");
   if (!signature || !request.body) return Response.json({ error: "Signature required" }, { status: 400 });
   const limit = 262144;

@@ -1,5 +1,5 @@
 import { canManageWorkspace } from "@/domain/tenancy/context";
-import { paymentConfiguration } from "@/domain/payments/policy";
+import { paymentConfiguration, paymentConfigurationProblem } from "@/domain/payments/policy";
 import { getWorkspaceShellContext } from "@/server/auth";
 import { listServiceOrders } from "@/server/service-payments";
 import { listClients, listWebsites } from "@/server/revenue";
@@ -22,7 +22,10 @@ export default async function ServiceOrdersPage({ searchParams }: { searchParams
   const { error, verified } = await searchParams;
   let configuration: ReturnType<typeof paymentConfiguration> | undefined;
   try { const selected = paymentConfiguration(); if (selected.workspaceId === shell.workspaceContext.workspaceId) configuration = selected; } catch { /* Disabled by default. */ }
-  if (!configuration) return <><PageHeader eyebrow="Client services" title="Service orders"/><Panel title="Payments are disabled"><p>Payments require a complete, approved environment configuration and matching merchant account. Keep payment collection disabled until the launch checks are complete.</p><p>Audit: $495 prepaid. Launch: a signed quote from $1,500, 50% before work and 50% upon completion. Monthly managed services and future software subscriptions remain separate.</p></Panel></>;
+  // When a payment mode is selected but cannot start, tell an owner or admin
+  // which setting is at fault. Only the setting's name and rule are shown.
+  const problem = canManageWorkspace(shell.workspaceContext) ? paymentConfigurationProblem() : null;
+  if (!configuration) return <><PageHeader eyebrow="Client services" title="Service orders"/>{problem ? <p className="mx-notice-problem" role="alert">Payments cannot start: {problem}</p> : null}<Panel title="Payments are disabled"><p>Payments require a complete, approved environment configuration and matching merchant account. Keep payment collection disabled until the launch checks are complete.</p><p>Audit: $495 prepaid. Launch: a signed quote from $1,500, 50% before work and 50% upon completion. Monthly managed services and future software subscriptions remain separate.</p></Panel></>;
   const [panel, clients, websites] = await Promise.all([listServiceOrders(shell.workspaceContext, undefined, configuration.mode), listClients(shell.workspaceContext), listWebsites(shell.workspaceContext)]);
   const manage = canManageWorkspace(shell.workspaceContext);
   return <>

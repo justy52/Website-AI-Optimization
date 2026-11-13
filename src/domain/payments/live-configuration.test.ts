@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paymentConfiguration, verifySession } from "./policy";
+import { paymentConfiguration, paymentConfigurationProblem, verifySession } from "./policy";
 import { livePaymentEnvironment } from "./test-fixtures";
 describe("Explicit production payment configuration", () => {
   it("remains disabled by default, even when live credentials exist", () => {
@@ -40,5 +40,23 @@ describe("Explicit production payment configuration", () => {
     expect(() => verifySession(payment, { ...session, livemode: false })).toThrow();
     expect(() => verifySession(payment, { ...session, metadata: { ...session.metadata, service_payment_mode: "test" } })).toThrow();
     expect(() => verifySession({ ...payment, paymentMode: "test" }, session)).toThrow();
+  });
+  it("explains a rejected configuration by setting name and rule, never by value", () => {
+    expect(paymentConfigurationProblem(livePaymentEnvironment())).toBeNull();
+    expect(paymentConfigurationProblem(livePaymentEnvironment({ SERVICE_PAYMENTS_MODE: "disabled" }))).toBeNull();
+    const cases: Array<[Record<string, string | undefined>, RegExp]> = [
+      [{ STRIPE_SERVICE_LIVE_SECRET_KEY: "pk_live_secretvalue" }, /secret or restricted key/],
+      [{ STRIPE_SERVICE_LIVE_WEBHOOK_SECRET: "we_secretvalue" }, /webhook signing secret/],
+      [{ SERVICE_PAYMENTS_LIVE_ACTIVATION: "yes-secretvalue" }, /explicitly approved/],
+      [{ SERVICE_PAYMENTS_LIVE_WORKSPACE_ID: "secretvalue" }, /SERVICE_PAYMENTS_LIVE_WORKSPACE_ID/],
+      [{ SERVICE_PAYMENTS_LIVE_BASE_URL: "secretvalue" }, /SERVICE_PAYMENTS_LIVE_BASE_URL/],
+      [{ SERVICE_PAYMENTS_LIVE_TERMS_VERSION: "x" }, /SERVICE_PAYMENTS_LIVE_TERMS_VERSION/],
+      [{ STRIPE_SERVICE_LIVE_WEBHOOK_ENDPOINT_ID: "whsec_secretvalue" }, /STRIPE_SERVICE_LIVE_WEBHOOK_ENDPOINT_ID/],
+    ];
+    for (const [change, expected] of cases) {
+      const problem = paymentConfigurationProblem(livePaymentEnvironment(change));
+      expect(problem).toMatch(expected);
+      expect(problem).not.toMatch(/secretvalue/);
+    }
   });
 });

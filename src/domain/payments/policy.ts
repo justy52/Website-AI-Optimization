@@ -105,6 +105,34 @@ export function paymentConfiguration(source: Record<string, string | undefined> 
   return { mode, collectionEnabled: mode === "test" || source.SERVICE_PAYMENTS_LIVE_COLLECTION_ENABLED === "true", workspaceId, accountId: accountId!, secretKey: secretKey!, webhookSecret: webhookSecret!, baseUrl: url.origin, ...(live ? { live } : {}) };
 }
 
+/**
+ * Why a selected payment mode cannot start, in words safe to show an owner:
+ * the setting's name and the rule it breaks, never its value. Returns null
+ * when payments are deliberately disabled or the configuration is valid.
+ */
+export function paymentConfigurationProblem(source: Record<string, string | undefined> = process.env): string | null {
+  const mode = source.SERVICE_PAYMENTS_MODE;
+  if (mode !== "test" && mode !== "live") return null;
+  try {
+    paymentConfiguration(source);
+    return null;
+  } catch (error) {
+    if (error instanceof ServicePaymentError) return error.message;
+    const live = mode === "live";
+    const workspace = live ? source.SERVICE_PAYMENTS_LIVE_WORKSPACE_ID : source.SERVICE_PAYMENTS_TEST_WORKSPACE_ID || source.SERVICE_PAYMENTS_WORKSPACE_ID;
+    if (!z.uuid().safeParse(workspace).success) return `SERVICE_PAYMENTS_${live ? "LIVE" : "TEST"}_WORKSPACE_ID must be the workspace ID, with nothing around it.`;
+    const base = live ? source.SERVICE_PAYMENTS_LIVE_BASE_URL : source.SERVICE_PAYMENTS_TEST_BASE_URL || source.SERVICE_PAYMENTS_BASE_URL;
+    if (!URL.canParse(base ?? "")) return `SERVICE_PAYMENTS_${live ? "LIVE" : "TEST"}_BASE_URL must be a full address such as https://example.com.`;
+    if (live) {
+      for (const name of ["SERVICE_PAYMENTS_LIVE_APPROVAL_REFERENCE", "SERVICE_PAYMENTS_LIVE_LEGAL_SELLER", "SERVICE_PAYMENTS_LIVE_TERMS_VERSION"]) {
+        if (!reference.safeParse(source[name]).success) return `${name} must be between 3 and 200 characters.`;
+      }
+      if (!/^we_[A-Za-z0-9]+$/.test(source.STRIPE_SERVICE_LIVE_WEBHOOK_ENDPOINT_ID ?? "")) return "STRIPE_SERVICE_LIVE_WEBHOOK_ENDPOINT_ID must be the webhook ID starting with we_, with nothing around it.";
+    }
+    return "A payment setting has an invalid format.";
+  }
+}
+
 export type PaymentMatch = { id: string; orderId: string; amountCents: number; sessionId: string | null; customerId: string | null; paymentMode?: PaymentMode };
 export type SessionSnapshot = {
   id: string; livemode: boolean; mode: string; status: string | null;
