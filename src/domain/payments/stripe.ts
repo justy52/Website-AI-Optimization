@@ -25,7 +25,22 @@ export class StripeServicePayments implements ServicePaymentProvider {
     if (account.id !== this.config.accountId) throw new ServicePaymentError("Stripe key belongs to a different merchant account.");
     if (this.config.mode === "live" && purpose === "collection") {
       const requirements = account.requirements;
-      if (!account.charges_enabled || !account.payouts_enabled || !account.details_submitted || account.capabilities?.card_payments !== "active" || !requirements || requirements.disabled_reason || (requirements.currently_due?.length ?? 0) > 0 || (requirements.past_due?.length ?? 0) > 0 || (requirements.pending_verification?.length ?? 0) > 0) throw new ServicePaymentError("Merchant activation, payouts, card capability or account verification is incomplete.");
+      // Name each failed condition so the owner knows what to finish in Stripe.
+      // These are Stripe's own status and requirement names, not account data.
+      const gaps: string[] = [];
+      const names = (list: string[] | null | undefined) => (list ?? []).slice(0, 5).map(item => item.replace(/[^a-z0-9_.]/gi, "").slice(0, 60)).join(", ");
+      if (!account.charges_enabled) gaps.push("charges are not enabled");
+      if (!account.payouts_enabled) gaps.push("payouts are not enabled");
+      if (!account.details_submitted) gaps.push("account details are not submitted");
+      if (account.capabilities?.card_payments !== "active") gaps.push(`card payments capability is ${account.capabilities ? String(account.capabilities.card_payments ?? "missing").replace(/[^a-z_]/gi, "") : "not reported to this key"}`);
+      if (!requirements) gaps.push("verification requirements are not reported to this key");
+      else {
+        if (requirements.disabled_reason) gaps.push(`Stripe reports the account as disabled (${requirements.disabled_reason.replace(/[^a-z0-9_.]/gi, "").slice(0, 60)})`);
+        if ((requirements.currently_due?.length ?? 0) > 0) gaps.push(`information due now: ${names(requirements.currently_due)}`);
+        if ((requirements.past_due?.length ?? 0) > 0) gaps.push(`information past due: ${names(requirements.past_due)}`);
+        if ((requirements.pending_verification?.length ?? 0) > 0) gaps.push(`Stripe is still verifying: ${names(requirements.pending_verification)}`);
+      }
+      if (gaps.length > 0) throw new ServicePaymentError(`Merchant activation, payouts, card capability or account verification is incomplete: ${gaps.join("; ")}.`.slice(0, 290));
       const endpoint = await this.stripe.webhookEndpoints.retrieve(this.config.live!.webhookEndpointId);
       if (endpoint.id !== this.config.live!.webhookEndpointId || endpoint.livemode !== true || endpoint.status !== "enabled" || endpoint.url !== `${this.config.baseUrl}/api/service-payments/stripe` || endpoint.api_version !== STRIPE_SERVICE_API_VERSION || endpoint.enabled_events.length !== SERVICE_PAYMENT_EVENTS.length || !SERVICE_PAYMENT_EVENTS.every(type => endpoint.enabled_events.includes(type))) throw new ServicePaymentError("Live webhook endpoint mode, origin, version or event selection does not match the approved configuration.");
     }
