@@ -801,3 +801,142 @@ textarea.mx-input {
 .mx-attention-item > span:first-child {
   flex: 1 1 280px;
 }
+
+/* Forms: plain-language help text, facts and checkboxes */
+.mx-help {
+  color: var(--green-ghost);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mx-form-fact {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  color: var(--green-dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mx-form-fact strong {
+  color: var(--green-soft);
+  font-size: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mx-form label.mx-form-check,
+.mx-form-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--green-body);
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mx-form-check input {
+  flex: none;
+  margin-top: 3px;
+}
+
+.mx-checklist {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding-top: 12px;
+}
+
+.mx-details {
+  flex-basis: 100%;
+  font-size: 13px;
+}
+
+.mx-details > summary {
+  cursor: pointer;
+  color: var(--green-dim);
+}
+
+.mx-details[open] > summary {
+  margin-bottom: 10px;
+}
+
+.mx-subhead {
+  margin: 18px 0 6px;
+  color: var(--green-soft);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mx-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding-top: 12px;
+}
+
+.mx-notice-ok,
+.mx-notice-info {
+  margin: 0 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  padding: 10px 14px;
+  color: var(--green-soft);
+  font-size: 13px;
+}
+
+.mx-notice-info {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+/* Classes several pages already use but that were never defined. */
+.mx-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.mx-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--green-dim);
+  font-size: 12px;
+}
+
+.mx-form-grid input:not([type="checkbox"]),
+.mx-form-grid select,
+.mx-form-grid textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.34);
+  color: var(--green-soft);
+  min-height: 34px;
+  padding: 8px 10px;
+}
+
+.mx-link {
+  color: var(--cyan);
+  text-decoration: underline;
+}
+
+.mx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.mx-label {
+  color: var(--green-dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
